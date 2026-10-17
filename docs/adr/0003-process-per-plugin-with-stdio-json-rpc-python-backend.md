@@ -1,0 +1,16 @@
+# One process per open plugin part; Python Backends talk JSON-RPC over stdio, never local servers
+
+Plugins are trusted internal code, so the runtime isolates them for crash containment, resource reclamation and clean unload, not to contain hostile code. Each open **Plugin** gets its own `WebContentsView` (own partition, Hub preload, `hawkeye-plugin://<id>/` protocol) for its **Plugin UI**, and, if it has one, its own OS process for its **Backend**. The only Backend kind is Python: one shared python-build-standalone interpreter per declared minor version, a per-plugin venv built by uv from the plugin's lockfile at install, and a separate Python process per open Plugin. The Plugin UI and Backend speak JSON-RPC 2.0, newline-delimited over the Backend's stdin/stdout, which the Hub relays onto a `MessagePort` given to the Plugin UI. Plugins never open local HTTP servers.
+
+We chose this over a shared extension host (VS Code, Raycast), where closing a plugin frees memory only if its code cleans up and one crash takes down every plugin. We accepted roughly one or two OS processes per open Plugin without measuring them, because staff keep a handful open, not dozens. We chose PBS + uv over per-plugin frozen bundles (PyInstaller, Nuitka) because they need no per-plugin CI matrix, share the interpreter and deduplicate wheels on disk, and give one model on Windows and macOS. Signing that interpreter is the cost, and it belongs to distribution. We chose stdio JSON-RPC, the pattern LSP and MCP use, over local HTTP, which brings port clashes, Windows firewall prompts and other local processes able to reach the plugin. We dropped a Node Backend because no known plugin needs one: TS plugins are UI-only, using the Hub API plus Web Workers.
+
+## Consequences
+
+- Lifecycle is Closed → Open (foreground) ↔ Open (background). Nothing starts until the user opens a Plugin. Background Plugins keep running, and only the user closes one. There is no auto-unload and no resource limits.
+- Close sends a `shutdown` notification, waits a fixed grace period (~5 s), then kills the Backend's whole process tree (`taskkill /T /F` on Windows, process group on macOS), so children such as a Playwright browser die too. The Plugin UI is destroyed with `webContents.close()`, because detaching a view leaks it.
+- A Plugin can mark itself **Busy**; the Hub asks before closing it or quitting.
+- If any part dies, the whole Plugin closes and the user is told. Nothing restarts automatically, so no Plugin has to handle a half-alive state.
+- The Hub's Python SDK moves `sys.stdout` to stderr, so stray `print()`s can't corrupt the protocol; stderr is the Backend's log.
+- Hidden Plugin UIs are throttled by Chromium. Long-running work belongs in the Backend or a Web Worker.
+- A Node Backend, if a plugin ever needs Node-only code, is one `utilityProcess` per open Plugin on the same JSON-RPC bridge, so Plugin UIs can't tell the two kinds apart.
+- Supported Platforms (`win32-x64`, `darwin-arm64`, …) is a required manifest field. The Python minor version is required for plugins with a Python Backend.

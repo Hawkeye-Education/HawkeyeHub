@@ -14,6 +14,22 @@ _Avoid_: Shell, launcher, host app
 An installable mini-program that runs inside the Hub.
 _Avoid_: Mini-program, app, extension
 
+**Plugin UI**:
+The screen a Plugin shows staff while it is open; every Plugin has exactly one.
+_Avoid_: Frontend, view, window
+
+**Backend**:
+The optional part of a Plugin that does work its Plugin UI cannot, written in Node or Python; a Plugin has at most one.
+_Avoid_: Sidecar, server, worker, service
+
+**Busy**:
+A state an open Plugin declares while closing it would lose work in progress; the Hub asks staff before closing a Busy Plugin.
+_Avoid_: Locked, working, in use
+
+**Supported Platforms**:
+The operating system and processor combinations a Plugin declares it runs on; the Hub only installs a Plugin on a machine that matches one.
+_Avoid_: Targets, OS list
+
 ### AI
 
 **AI Provider**:
