@@ -1,0 +1,9 @@
+/* Layout only (ADR 0006): spacing and arrangement from --hub-* tokens, never colour, font, radius or shadow. */
+main { padding: var(--hub-space-4); max-width: 60rem; }
+.stack { display: flex; flex-direction: column; gap: var(--hub-space-3); }
+.stack-tight { display: flex; flex-direction: column; gap: var(--hub-space-1); }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--hub-space-3); }
+#page { width: 5rem; }
+#text { max-height: 16rem; overflow: auto; white-space: pre-wrap; }
+progress { width: 100%; }
+hub-log { height: 14rem; }

@@ -1,0 +1,44 @@
+{
+  "id": "pdf-watermark-eraser",
+  "version": "0.1.0",
+  "hubApi": "^1.0.0",
+  "name": {
+    "en-HK": "PDF Watermark Eraser",
+    "zh-HK": "PDF 水印清除"
+  },
+  "description": {
+    "en-HK": "Remove a text watermark from every PDF in a folder, keeping the folder structure.",
+    "zh-HK": "移除資料夾內所有 PDF 的文字水印，並保留資料夾結構。"
+  },
+  "icon": "icon.svg",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "python", "python": "3.12" },
+  "assistant": {
+    "kind": "enabled",
+    "prompt": "assistant.md",
+    "templates": [
+      {
+        "label": {
+          "en-HK": "Draft a watermark regex",
+          "zh-HK": "草擬水印正規表示式"
+        },
+        "text": {
+          "en-HK": "Draft a Python regex that matches only the watermark in this page text, and nothing in the real content. Here is the page text I copied:\n\n<paste the page text here>",
+          "zh-HK": "請草擬一個 Python 正規表示式，只配對以下頁面文字中的水印，不要配對正文。這是我複製的頁面文字：\n\n<在此貼上頁面文字>"
+        }
+      },
+      {
+        "label": {
+          "en-HK": "Why did a file fail?",
+          "zh-HK": "為何有檔案失敗？"
+        },
+        "text": {
+          "en-HK": "This file failed with the message below. What does it mean and what can I try?\n\n<paste the failed line here>",
+          "zh-HK": "這個檔案失敗了，訊息如下。這是甚麼意思？我可以怎樣做？\n\n<在此貼上失敗訊息>"
+        }
+      }
+    ]
+  }
+}

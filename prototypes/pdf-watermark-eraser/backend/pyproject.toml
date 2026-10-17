@@ -1,0 +1,8 @@
+[project]
+name = "pdf-watermark-eraser-backend"
+version = "0.1.0"
+requires-python = "==3.12.*"  # must agree with manifest backend.python; packaging would check
+dependencies = [
+  "pymupdf>=1.24",
+  "hawkeye-hub>=1,<2",  # the Hub's Python SDK; where it is published is an open question (see PROTOTYPE.md)
+]

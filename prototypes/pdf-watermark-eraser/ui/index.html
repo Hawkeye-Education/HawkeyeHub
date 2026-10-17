@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <!-- In the Hub, the preload has already set <html lang>, injected the --hub-* tokens, the native-element
+       stylesheet and the Hub Kit, and exposed window.hub before this page runs (ADRs 0006, 0007, 0009).
+       PROTOTYPE ONLY: outside the Hub, fake-hub.js stands in for all of that. -->
+  <script src="../_hub_stubs/fake-hub.js"></script>
+  <link rel="stylesheet" href="layout.css">
+</head>
+<body>
+  <main class="stack">
+    <section class="stack">
+      <hub-folder-field id="input"></hub-folder-field>
+      <hub-folder-field id="output"></hub-folder-field>
+    </section>
+
+    <section class="stack">
+      <label class="stack-tight">
+        <span data-t="pattern"></span>
+        <input id="pattern" type="text">
+      </label>
+      <div class="row">
+        <label><input id="regex" type="checkbox"> <span data-t="regex"></span></label>
+        <label><input id="ignoreCase" type="checkbox"> <span data-t="ignoreCase"></span></label>
+      </div>
+    </section>
+
+    <details id="finder">
+      <summary data-t="finder"></summary>
+      <div class="stack">
+        <p data-t="finderHint"></p>
+        <div class="row">
+          <select id="file"></select>
+          <label><span data-t="page"></span> <input id="page" type="number" min="1" value="1"></label>
+          <button id="show" type="button" data-t="show"></button>
+          <button id="copy" type="button" data-t="copy" disabled></button>
+        </div>
+        <p id="repeated"></p>
+        <pre id="text"></pre>
+      </div>
+    </details>
+
+    <section class="stack">
+      <div class="row">
+        <button id="run" type="button" data-t="run"></button>
+        <button id="cancel" type="button" data-t="cancel" hidden></button>
+        <button id="openOutput" type="button" data-t="openOutput" hidden></button>
+      </div>
+      <progress id="progress" value="0" max="1"></progress>
+      <p id="summary" role="status"></p>
+    </section>
+
+    <hub-log id="log"></hub-log>
+  </main>
+  <script src="strings.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
