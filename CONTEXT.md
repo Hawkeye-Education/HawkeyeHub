@@ -34,6 +34,24 @@ _Avoid_: Targets, OS list
 The versioned contract the Hub offers Plugins; each Plugin declares which Hub API versions it works with, independent of the Hub's own version.
 _Avoid_: SDK version, Hub version
 
+### Look and feel
+
+**Hub Chrome**:
+Everything the Hub draws around the Plugin UIs, such as the switcher between open Plugins, the Assistant Panel, dialogs and settings; Plugins never add to it.
+_Avoid_: Shell UI, frame, toolbar
+
+**Hub Kit**:
+The shared set of ready-styled interface pieces the Hub provides to every Plugin UI and builds its own Hub Chrome from; Plugins compose their screens from it rather than styling their own.
+_Avoid_: Component library, design system, widgets
+
+**Theme**:
+A named look for the whole Hub, such as Hawkeye, chosen company-wide with a per-installation override and never chosen by a Plugin.
+_Avoid_: Skin, style, brand
+
+**Colour Scheme**:
+Whether the Hub shows its Theme light or dark, or follows the operating system; separate from the Theme.
+_Avoid_: Dark mode, appearance, theme
+
 ### Distribution
 
 **Registry**:
