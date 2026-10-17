@@ -31,3 +31,25 @@ _Avoid_: Bot, agent, copilot
 **Playbook**:
 The set of documents a plugin ships for its Assistant to draw on.
 _Avoid_: Knowledge base, resources, prompt pack
+
+### Identity
+
+**Auth Provider**:
+The one directory or identity service (LDAP or OAuth2/OIDC) a company's Hub configuration uses to sign staff in; a configuration has exactly one or none.
+_Avoid_: IdP, login server, auth backend
+
+**Staff Identity**:
+Who the signed-in staff member is — a stable id, name, email and Roles — as proven by the Auth Provider; never includes a credential.
+_Avoid_: User, account, session
+
+**Role**:
+A Hub-level name a plugin can require before it may be installed or opened.
+_Avoid_: Group, permission, entitlement
+
+**Role Mapping**:
+The company-wide rule set that turns an Auth Provider's directory groups into Roles.
+_Avoid_: Group mapping, ACL
+
+**Sign-in Lifetime**:
+How long a Staff Identity stays usable after it was last proven, including while the Auth Provider is unreachable.
+_Avoid_: Session timeout, grace period
