@@ -30,6 +30,24 @@ _Avoid_: Locked, working, in use
 The operating system and processor combinations a Plugin declares it runs on; the Hub only installs a Plugin on a machine that matches one.
 _Avoid_: Targets, OS list
 
+**Hub API**:
+The versioned contract the Hub offers Plugins; each Plugin declares which Hub API versions it works with, independent of the Hub's own version.
+_Avoid_: SDK version, Hub version
+
+### Distribution
+
+**Registry**:
+The one company-wide place the Hub learns which Plugins and Hub versions exist and downloads them from.
+_Avoid_: Store, marketplace, repository
+
+**Plugin Package**:
+One published version of a Plugin as a single downloadable file, the same for every Supported Platform.
+_Avoid_: Bundle, build, release
+
+**Company Configuration**:
+The company-wide settings every Hub installation shares, such as its Auth Provider, Role Mapping and Sign-in Lifetime; it holds no secrets.
+_Avoid_: Hub config, settings, tenant config
+
 ### AI
 
 **AI Provider**:
