@@ -44,9 +44,21 @@ _Avoid_: Primary provider, fallback provider
 A plugin's AI helper that advises the human using that plugin and never operates the plugin itself.
 _Avoid_: Bot, agent, copilot
 
+**Assistant Panel**:
+The chat panel the Hub draws beside a Plugin UI for that plugin's Assistant; plugins configure it but never draw it.
+_Avoid_: Chat window, bot UI, sidebar
+
 **Playbook**:
-The set of documents a plugin ships for its Assistant to draw on.
+The set of Skills a plugin ships for its Assistant to draw on; written by the plugin's developers and read-only to staff.
 _Avoid_: Knowledge base, resources, prompt pack
+
+**Skill**:
+One topic of a Playbook, such as how to write a watermark regex, with its supporting reference documents.
+_Avoid_: Prompt, recipe, tool
+
+**Prompt Template**:
+A ready-made message a plugin offers in its Assistant Panel that staff pick, edit and send themselves.
+_Avoid_: Preset, quick action, slash command
 
 ### Identity
 
