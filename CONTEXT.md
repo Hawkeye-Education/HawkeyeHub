@@ -52,6 +52,10 @@ _Avoid_: Skin, style, brand
 Whether the Hub shows its Theme light or dark, or follows the operating system; separate from the Theme.
 _Avoid_: Dark mode, appearance, theme
 
+**Display Language**:
+The language the Hub shows staff, chosen per installation and following the operating system by default; a Plugin shows it where it has a translation and English otherwise.
+_Avoid_: Locale, UI language
+
 ### Distribution
 
 **Registry**:
