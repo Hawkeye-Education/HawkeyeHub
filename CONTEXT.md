@@ -26,6 +26,14 @@ _Avoid_: Sidecar, server, worker, service
 A state an open Plugin declares while closing it would lose work in progress; the Hub asks staff before closing a Busy Plugin.
 _Avoid_: Locked, working, in use
 
+**Plugin Data**:
+What a Plugin keeps on the machine between opens, private to that Plugin and belonging to the OS user rather than to a Staff Identity; it never leaves the machine.
+_Avoid_: Plugin storage, app data, state
+
+**Shared Store**:
+A named folder of files the Hub keeps so that every Plugin declaring it can read and write the same data; owned by no Plugin, belonging to the OS user, and never leaving the machine.
+_Avoid_: Shared storage, common folder, data bus
+
 **Supported Platforms**:
 The operating system and processor combinations a Plugin declares it runs on; the Hub only installs a Plugin on a machine that matches one.
 _Avoid_: Targets, OS list
