@@ -42,6 +42,10 @@ _Avoid_: Targets, OS list
 The versioned contract the Hub offers Plugins; each Plugin declares which Hub API versions it works with, independent of the Hub's own version.
 _Avoid_: SDK version, Hub version
 
+**Manifest**:
+The `manifest.json` at the root of every Plugin, stating who the Plugin is and which parts it has; every field is required, and a part the Plugin lacks is stated, never omitted.
+_Avoid_: Plugin config, package.json, descriptor
+
 ### Look and feel
 
 **Hub Chrome**:
