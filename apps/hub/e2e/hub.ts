@@ -1,6 +1,6 @@
 // The smoke harness: every test gets a fresh HAWKEYE_HUB_DATA_DIR and the built Hub running in it.
 
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -23,7 +23,8 @@ export function launchHub(dataDir: string): Promise<ElectronApplication> {
 export const test = base.extend<{ dataDir: string; hub: ElectronApplication }>({
   // eslint-disable-next-line no-empty-pattern -- Playwright requires the fixtures argument to be destructured.
   dataDir: async ({}, use) => {
-    await use(mkdtempSync(join(tmpdir(), "hawkeye-hub-")));
+    // Canonical, because the Hub resolves symlinks in its logs path: macOS's /var is /private/var.
+    await use(realpathSync(mkdtempSync(join(tmpdir(), "hawkeye-hub-"))));
   },
   hub: async ({ dataDir }, use) => {
     const hub = await launchHub(dataDir);
