@@ -511,6 +511,30 @@ Reject a request with `RpcError(reason, message)`. The `reason` is a kebab-case 
 - Reach other programs as child processes. The Backend never listens on a port: no local HTTP servers, no sockets (ADR 0003).
 - Never rely on the process locale. The Backend gets no `LANG`, and the SDK sets UTF-8 stdio itself.
 
+### 5.6 Driving a browser
+
+A Playwright Backend drives the browser staff already have, never a downloaded one. The Hub ships no browser and sets no `PLAYWRIGHT_BROWSERS_PATH`, so never run `playwright install` (ADR 0003).
+
+- Use `channel="msedge"` on `win32-x64`, where Edge is always installed, and `channel="chrome"` on `darwin-arm64`.
+- Launch with `launch_persistent_context` and a profile under `ctx.data_dir`, so a sign-in survives between runs and stays in the Plugin's private data. Never point it at staff's own browser profile.
+- When the browser is missing, the launch fails. Raise `RpcError("browser-not-found", ...)` and let the UI tell staff which browser to install. The Manifest says nothing about browsers.
+- A headed window is fine when staff must sign in or watch. It is a website, not Plugin UI, so ADR 0006's no-windows rule does not cover it.
+
+```python
+import sys
+
+from playwright.sync_api import Error as PlaywrightError, sync_playwright
+
+channel = "msedge" if sys.platform == "win32" else "chrome"
+with sync_playwright() as p:
+    try:
+        browser = p.chromium.launch_persistent_context(
+            ctx.data_dir / "browser-profile", channel=channel, headless=False
+        )
+    except PlaywrightError as e:
+        raise RpcError("browser-not-found", str(e)) from e
+```
+
 ## 6. Shared Stores
 
 A Shared Store is how two Plugins work on the same data: an ownerless folder that every Plugin declaring it may read and write (ADR 0008).
@@ -679,6 +703,7 @@ Updates reach staff silently, installed side by side and swapped in while the Pl
 - Long work sets and clears Busy in a `finally`.
 - Handlers take a frozen `Model`. Every raised reason is in `protocol.ts`. Regexes and other input are validated in Python.
 - Long requests check `cancel`. `shutdown` stops work cleanly. Output files and store writes are atomic replaces.
+- A Playwright Backend uses `channel=` with a profile under `ctx.data_dir`, never `playwright install`, and reports `browser-not-found`.
 - Shared Store changes are additive and documented in `stores/<name>.md`.
 - Skills use only the allowed frontmatter and contain no `scripts/`. Nothing the Assistant needs lives outside `agents/`.
 - Each part has a test. New reasons and migrations have tests.
