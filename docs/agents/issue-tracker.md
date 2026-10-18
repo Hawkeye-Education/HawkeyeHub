@@ -13,6 +13,8 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
+**Stacked PRs close nothing.** Spec work lands on `spec/*` branches, not `main`, so a PR's `Closes #n` never fires. After the merge, close each issue with `gh issue close`.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
