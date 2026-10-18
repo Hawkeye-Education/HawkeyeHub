@@ -1,11 +1,12 @@
 // The smoke harness: every test gets a fresh HAWKEYE_HUB_DATA_DIR and the built Hub running in it.
 
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   _electron,
   test as base,
+  expect,
   type ElectronApplication,
 } from "@playwright/test";
 
@@ -38,4 +39,22 @@ export const test = base.extend<{ dataDir: string; hub: ElectronApplication }>({
   },
 });
 
-export { expect } from "@playwright/test";
+export function hubLogLines(dataDir: string): unknown[] {
+  return readFileSync(join(dataDir, "logs", "hub.log"), "utf8")
+    .trimEnd()
+    .split("\n")
+    .map((line): unknown => JSON.parse(line));
+}
+
+export function lifecycleLine(message: string): unknown {
+  return {
+    time: expect.any(String),
+    source: "hub",
+    level: "info",
+    message,
+    pluginId: null,
+    pluginVersion: null,
+  };
+}
+
+export { expect };

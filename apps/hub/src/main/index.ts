@@ -21,35 +21,48 @@ if (dataDirRaw !== undefined) {
   app.setAppLogsPath(join(dataDir, "logs"));
 }
 
-// 2. The single-instance lock (#38) goes here: a launch that fails to take it must exit before
-// Diagnostics opens, so it logs nothing.
-
-// 3. Diagnostics on the logs path, which step 1 may have moved.
-const diagnostics = openDiagnostics(
-  parseAbsolutePath(app.getPath("logs")),
-  () => new Date(),
-);
-diagnostics.recordHubEvent({ kind: "hub-opened" });
-// will-quit fires once all windows have closed, however the quit began; `once` keeps it to one line.
-app.once("will-quit", () => {
-  diagnostics.recordHubEvent({ kind: "hub-closing" });
-});
-
-// Closing the window quits the Hub on every platform, macOS included: there is no Dock-only state.
-app.on("window-all-closed", () => {
+// 2. The single-instance lock, keyed on userData. A launch that fails to take it quits before
+// Diagnostics opens or any handler is registered, so it logs nothing. The running Hub hears of it
+// through second-instance and brings its window forward.
+if (app.requestSingleInstanceLock()) {
+  runHub();
+} else {
   app.quit();
-});
+}
 
-// Not a top-level await: Electron holds `ready` back until an ESM main module has finished
-// evaluating, so awaiting it here would never resolve. A rejection is an unhandled one, which
-// #27 turns into a crash report.
-void app.whenReady().then(async () => {
-  // Windows: no menu bar. macOS: only the app and Edit menus, for Cmd+Q and the clipboard
-  // shortcuts. Either way the default menu, and its Toggle Developer Tools item, is gone.
-  Menu.setApplicationMenu(
-    process.platform === "darwin"
-      ? Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }])
-      : null,
+function runHub(): void {
+  // 3. Diagnostics on the logs path, which step 1 may have moved.
+  const diagnostics = openDiagnostics(
+    parseAbsolutePath(app.getPath("logs")),
+    () => new Date(),
   );
-  await openHubWindow();
-});
+  diagnostics.recordHubEvent({ kind: "hub-opened" });
+  // will-quit fires once all windows have closed, however the quit began; `once` keeps it to one line.
+  app.once("will-quit", () => {
+    diagnostics.recordHubEvent({ kind: "hub-closing" });
+  });
+
+  // Closing the window quits the Hub on every platform, macOS included: there is no Dock-only state.
+  app.on("window-all-closed", () => {
+    app.quit();
+  });
+
+  // Not a top-level await: Electron holds `ready` back until an ESM main module has finished
+  // evaluating, so awaiting it here would never resolve. A rejection is an unhandled one, which
+  // #27 turns into a crash report.
+  void app.whenReady().then(async () => {
+    // Windows: no menu bar. macOS: only the app and Edit menus, for Cmd+Q and the clipboard
+    // shortcuts. Either way the default menu, and its Toggle Developer Tools item, is gone.
+    Menu.setApplicationMenu(
+      process.platform === "darwin"
+        ? Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }])
+        : null,
+    );
+    const window = await openHubWindow();
+    // A launch that arrives before the window exists still exits; there is just nothing to focus.
+    app.on("second-instance", () => {
+      if (window.isMinimized()) window.restore();
+      window.focus();
+    });
+  });
+}
