@@ -28,6 +28,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The base branch's history, for --only-changed below.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -37,6 +40,10 @@ jobs:
       # Electron downloads its binary on first use; do it here, not inside the first test's timeout.
       - run: pnpm --filter @hawkeye-hub/hub exec install-electron
       - run: pnpm --filter @hawkeye-hub/hub smoke
+      # A racy smoke test can pass one run. Repeat the smoke files this PR changes, and those that
+      # import a changed file, on the build the step above made.
+      - if: github.event_name == 'pull_request'
+        run: pnpm --filter @hawkeye-hub/hub exec playwright test --only-changed=origin/${{ github.base_ref }} --repeat-each 5 --pass-with-no-tests
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
