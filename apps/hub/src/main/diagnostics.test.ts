@@ -6,20 +6,37 @@ import { beforeEach, expect, test } from "vitest";
 import {
   openDiagnostics,
   type HubEvent,
+  type PluginCrash,
   type SystemDescription,
 } from "./diagnostics";
-import { parseAiProviderLabel, parsePluginId, parsePluginVersion } from "./ids";
+import {
+  parseAbsolutePath,
+  parseAiProviderKind,
+  parseAiProviderLabel,
+  parseHubVersion,
+  parsePluginId,
+  parsePluginVersion,
+  parsePythonVersion,
+  parseRpcErrorReason,
+  type AbsolutePath,
+} from "./ids";
 
 const NOW = new Date("2026-03-04T05:06:07.890Z");
 const plugin = {
   id: parsePluginId("marking-assistant"),
   version: parsePluginVersion("1.2.3"),
 };
-let logsDir: string;
+let logsDir: AbsolutePath;
 
 beforeEach(() => {
-  logsDir = mkdtempSync(join(tmpdir(), "hub-diagnostics-"));
+  logsDir = parseAbsolutePath(mkdtempSync(join(tmpdir(), "hub-diagnostics-")));
 });
+
+/** A destination path in a fresh temp folder, and that folder. */
+function exportTarget(): { folder: string; destination: AbsolutePath } {
+  const folder = mkdtempSync(join(tmpdir(), "hub-export-"));
+  return { folder, destination: parseAbsolutePath(join(folder, "b.zip")) };
+}
 
 function readLines(relativePath: string): unknown[] {
   return readFileSync(join(logsDir, relativePath), "utf8")
@@ -149,7 +166,16 @@ const cases: [string, HubEvent, unknown][] = [
       origin: "uncaughtException",
       error: uncaught,
     },
-    hubLine("error", "uncaughtException: Error: boom\n    at main.ts:1:1"),
+    hubLine("error", "uncaughtException: Error\n    at main.ts:1:1"),
+  ],
+  [
+    "uncaught exception without a stack",
+    {
+      kind: "uncaught-exception",
+      origin: "uncaughtException",
+      error: Object.assign(new TypeError("boom"), { stack: undefined }),
+    },
+    hubLine("error", "uncaughtException: TypeError"),
   ],
   [
     "unhandled rejection of a non-Error value",
@@ -162,59 +188,11 @@ const cases: [string, HubEvent, unknown][] = [
   ],
   [
     "Hub Chrome renderer gone",
-    { kind: "hub-chrome-renderer-gone", reason: "oom", exitCode: 137 },
-    hubLine("error", "Hub Chrome renderer gone: oom (exit code 137)"),
-  ],
-  [
-    "Plugin stopped responding",
     {
-      kind: "plugin-closed-abnormally",
-      plugin,
-      crash: { cause: "stopped-responding" },
+      kind: "hub-chrome-renderer-gone",
+      exit: { reason: "oom", exitCode: 137 },
     },
-    pluginLine("error", "Plugin closed abnormally: stopped responding"),
-  ],
-  [
-    "Plugin UI crashed",
-    {
-      kind: "plugin-closed-abnormally",
-      plugin,
-      crash: {
-        cause: "crashed",
-        exit: { kind: "plugin-ui-gone", reason: "oom", exitCode: 137 },
-      },
-    },
-    pluginLine(
-      "error",
-      "Plugin closed abnormally: crashed (Plugin UI gone: oom, exit code 137)",
-    ),
-  ],
-  [
-    "Backend crashed on a signal",
-    {
-      kind: "plugin-closed-abnormally",
-      plugin,
-      crash: {
-        cause: "crashed",
-        exit: {
-          kind: "backend-exited",
-          exit: { kind: "signal", signal: "SIGSEGV" },
-        },
-      },
-    },
-    pluginLine(
-      "error",
-      "Plugin closed abnormally: crashed (Backend exited on signal SIGSEGV)",
-    ),
-  ],
-  [
-    "Plugin failed to start with its Backend still running",
-    {
-      kind: "plugin-closed-abnormally",
-      plugin,
-      crash: { cause: "failed-to-start", exit: { kind: "no-exit" } },
-    },
-    pluginLine("error", "Plugin closed abnormally: failed to start"),
+    hubLine("error", "Hub Chrome renderer gone: oom, exit code 137"),
   ],
 ];
 
@@ -228,6 +206,46 @@ test.each(cases)(
     expect(readLines("hub.log")).toEqual([expected]);
   },
 );
+
+const crashes: [string, PluginCrash, string][] = [
+  [
+    "Plugin stopped responding",
+    { cause: "stopped-responding" },
+    "Plugin closed abnormally: stopped responding",
+  ],
+  [
+    "Plugin UI crashed",
+    {
+      cause: "crashed",
+      exit: { kind: "plugin-ui-gone", exit: { reason: "oom", exitCode: 137 } },
+    },
+    "Plugin closed abnormally: crashed (Plugin UI gone: oom, exit code 137)",
+  ],
+  [
+    "Backend crashed on a signal",
+    {
+      cause: "crashed",
+      exit: {
+        kind: "backend-exited",
+        exit: { kind: "signal", signal: "SIGSEGV" },
+      },
+    },
+    "Plugin closed abnormally: crashed (Backend exited on signal SIGSEGV)",
+  ],
+  [
+    "Plugin failed to start with its Backend still running",
+    { cause: "failed-to-start", exit: { kind: "no-exit" } },
+    "Plugin closed abnormally: failed to start",
+  ],
+];
+
+test.each(crashes)("%s is summarised in hub.log once", (_, crash, summary) => {
+  const diagnostics = openDiagnostics(logsDir, () => NOW);
+
+  diagnostics.startPluginSession(plugin).recordCrash(crash);
+
+  expect(readLines("hub.log")).toEqual([pluginLine("error", summary)]);
+});
 
 test("events append to hub.log in order", () => {
   const diagnostics = openDiagnostics(logsDir, () => NOW);
@@ -265,6 +283,28 @@ test("hub.log rolls before it would pass the limit, keeping exactly one .1 that 
   expect(readdirSync(logsDir).sort()).toEqual(["hub.log", "hub.log.1"]);
 });
 
+test("an uncaught exception's message never reaches hub.log, even across lines, but its stack frames do", () => {
+  const diagnostics = openDiagnostics(logsDir, () => NOW);
+  const error = new Error("prompt: Mark this essay\nkey sk-secret");
+  error.stack =
+    "Error: prompt: Mark this essay\nkey sk-secret\n    at mark (main.ts:1:1)\n    at main.ts:2:2";
+
+  diagnostics.recordHubEvent({
+    kind: "uncaught-exception",
+    origin: "uncaughtException",
+    error,
+  });
+
+  const log = readFileSync(join(logsDir, "hub.log"), "utf8");
+  expect(log).not.toMatch(/Mark this essay|sk-secret/);
+  expect(readLines("hub.log")).toEqual([
+    hubLine(
+      "error",
+      "uncaughtException: Error\n    at mark (main.ts:1:1)\n    at main.ts:2:2",
+    ),
+  ]);
+});
+
 test("the Hub-event union cannot express a secret, prompt, reply, file contents or identity", () => {
   const events: HubEvent[] = [
     {
@@ -294,8 +334,14 @@ test("the Hub-event union cannot express a secret, prompt, reply, file contents 
     { kind: "plugin-installed", plugin, contents: "student essay" },
     // @ts-expect-error there is no free-text event
     { kind: "message", message: "anything at all" },
+    {
+      // @ts-expect-error only PluginSession.recordCrash logs a Plugin closing abnormally
+      kind: "plugin-closed-abnormally",
+      plugin,
+      crash: { cause: "stopped-responding" },
+    },
   ];
-  expect(events).toHaveLength(6);
+  expect(events).toHaveLength(7);
 });
 
 const PLUGIN_LOG = "plugins/marking-assistant.log";
@@ -382,7 +428,7 @@ test("a JSON-RPC error response is written as its method, data.reason and messag
   );
   const response = {
     method: "markEssays",
-    reason: "same-folder",
+    reason: parseRpcErrorReason("same-folder"),
     message: "Input and output are the same folder",
     // What the relay also has to hand; none of it may reach the log.
     params: { folder: "C:/Users/staff/essays" },
@@ -514,18 +560,20 @@ test("deleting the logs of a Plugin that never logged does nothing", () => {
 });
 
 const system: SystemDescription = {
-  hubVersion: "0.3.0",
+  hubVersion: parseHubVersion("0.3.0"),
   os: { name: "Windows", version: "10.0.19045", arch: "x64" },
   displayLanguage: "zh-HK",
   theme: "hawkeye",
   colourScheme: "system",
   plugins: [plugin, otherPlugin],
-  pythonVersions: ["3.12.7"],
+  pythonVersions: [parsePythonVersion("3.12.7")],
   aiProviders: [
-    { label: parseAiProviderLabel("School Azure"), kind: "azure-openai" },
+    {
+      label: parseAiProviderLabel("School Azure"),
+      kind: parseAiProviderKind("azure-openai"),
+    },
   ],
-  authProviderKind: "oidc",
-  signedIn: true,
+  authProvider: { kind: "oidc", signedIn: true },
 };
 
 /** The exported zip, read back with fflate: entry path to its text. */
@@ -546,7 +594,7 @@ function entry(bundle: Record<string, string>, name: string): string {
 
 test("an exported bundle holds every log at its path relative to the logs folder plus system.json, and nothing else", () => {
   const diagnostics = writeEveryKindOfLog();
-  const destination = join(mkdtempSync(join(tmpdir(), "hub-export-")), "b.zip");
+  const { destination } = exportTarget();
 
   diagnostics.exportBundle(destination, system);
 
@@ -574,15 +622,30 @@ test("an exported bundle holds every log at its path relative to the logs folder
     ],
     pythonVersions: ["3.12.7"],
     aiProviders: [{ label: "School Azure", kind: "azure-openai" }],
-    authProviderKind: "oidc",
-    signedIn: true,
+    authProvider: { kind: "oidc", signedIn: true },
   });
+});
+
+test("with no Auth Provider, system.json says so and reports no sign-in", () => {
+  const diagnostics = openDiagnostics(logsDir, () => NOW);
+  const { destination } = exportTarget();
+
+  diagnostics.exportBundle(destination, {
+    ...system,
+    authProvider: { kind: "none" },
+  });
+
+  const systemJson = entry(readBundle(destination), "system.json");
+  expect(JSON.parse(systemJson)).toMatchObject({
+    authProvider: { kind: "none" },
+  });
+  expect(systemJson).not.toMatch(/signedIn/);
 });
 
 test("a bundle exported before any Plugin has logged holds hub.log and system.json", () => {
   const diagnostics = openDiagnostics(logsDir, () => NOW);
   diagnostics.recordHubEvent({ kind: "hub-opened" });
-  const destination = join(mkdtempSync(join(tmpdir(), "hub-export-")), "b.zip");
+  const { destination } = exportTarget();
 
   diagnostics.exportBundle(destination, system);
 
@@ -594,27 +657,28 @@ test("a bundle exported before any Plugin has logged holds hub.log and system.js
 
 test("system.json holds only the described fields, even when handed an object with more", () => {
   const diagnostics = openDiagnostics(logsDir, () => NOW);
-  const destination = join(mkdtempSync(join(tmpdir(), "hub-export-")), "b.zip");
+  const { destination } = exportTarget();
   const settings = {
     ...system,
     aiProviders: [{ ...system.aiProviders[0], apiKey: "sk-secret" }],
+    authProvider: { kind: "oidc", signedIn: true, identity: "a@b.c" },
     staffIdentity: { email: "a@b.c" },
   };
 
   diagnostics.exportBundle(destination, settings as SystemDescription);
 
   expect(entry(readBundle(destination), "system.json")).not.toMatch(
-    /sk-secret|a@b\.c|apiKey|staffIdentity/,
+    /sk-secret|a@b\.c|apiKey|identity|staffIdentity/,
   );
 });
 
 test("a failed export leaves no file at the destination and nothing beside it", () => {
   const diagnostics = writeEveryKindOfLog();
   mkdirSync(join(logsDir, "plugins", "unreadable.log")); // a log that cannot be read
-  const folder = mkdtempSync(join(tmpdir(), "hub-export-"));
+  const { folder, destination } = exportTarget();
 
   expect(() => {
-    diagnostics.exportBundle(join(folder, "b.zip"), system);
+    diagnostics.exportBundle(destination, system);
   }).toThrow();
 
   expect(readdirSync(folder)).toEqual([]);
@@ -622,8 +686,7 @@ test("a failed export leaves no file at the destination and nothing beside it", 
 
 test("an export that fails while moving the zip into place leaves no temp file behind", () => {
   const diagnostics = writeEveryKindOfLog();
-  const folder = mkdtempSync(join(tmpdir(), "hub-export-"));
-  const destination = join(folder, "b.zip");
+  const { folder, destination } = exportTarget();
   mkdirSync(join(destination, "occupied"), { recursive: true }); // a zip cannot replace a folder
 
   expect(() => {
@@ -633,8 +696,14 @@ test("an export that fails while moving the zip into place leaves no temp file b
   expect(readdirSync(folder)).toEqual(["b.zip"]);
 });
 
-test("Plugin ids and versions are parsed, not taken as bare strings", () => {
+test("constrained strings are parsed, not taken as bare strings", () => {
   expect(() => parsePluginId("Marking_Assistant")).toThrow();
   expect(() => parsePluginVersion("1.2")).toThrow();
+  expect(() => parseHubVersion("v0.3")).toThrow();
+  expect(() => parsePythonVersion("3.12")).toThrow();
+  expect(parsePythonVersion("3.14.0rc1")).toBe("3.14.0rc1");
   expect(() => parseAiProviderLabel(" ")).toThrow();
+  expect(() => parseAiProviderKind("Azure OpenAI")).toThrow();
+  expect(() => parseRpcErrorReason("Same folder")).toThrow();
+  expect(() => parseAbsolutePath("logs")).toThrow();
 });
