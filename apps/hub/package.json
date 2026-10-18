@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
-    "smoke": "playwright test",
+    "smoke": "electron-vite build && playwright test",
     "typecheck": "tsc && tsc -p src/renderer",
     "test": "vitest run"
   },
