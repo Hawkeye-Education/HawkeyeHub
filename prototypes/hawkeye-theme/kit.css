@@ -1,0 +1,30 @@
+/* PROTOTYPE (wayfinder #19): Hub Kit v1 Shadow DOM styles, tokens only. Linked inside each element's shadow root. */
+:host(hub-folder-field) { display: flex; flex-direction: column; gap: var(--hub-space-1); }
+:host(hub-log) {
+  display: block; overflow: auto; background: var(--hub-color-surface);
+  border: 1px solid var(--hub-color-line); border-radius: var(--hub-radius-3);
+  font: var(--hub-text-sm)/1.7 var(--hub-font-mono);
+}
+.label { font-weight: var(--hub-weight-strong); }
+.row { display: flex; gap: var(--hub-space-2); }
+output {
+  flex: 1; display: flex; align-items: center; box-sizing: border-box; min-height: 32px; min-width: 0;
+  background: var(--hub-color-surface); border: 1px solid var(--hub-color-line);
+  border-radius: var(--hub-radius-2); padding: var(--hub-space-1) var(--hub-space-3);
+  font-family: var(--hub-font-mono); font-size: var(--hub-text-sm);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+output:empty::before { content: "—"; color: var(--hub-color-fg-muted); }
+button {
+  box-sizing: border-box; min-height: 32px; font: inherit; cursor: pointer;
+  color: var(--hub-color-fg); background: var(--hub-color-surface);
+  border: 1px solid var(--hub-color-line); border-radius: var(--hub-radius-2);
+  padding: var(--hub-space-1) var(--hub-space-4); box-shadow: var(--hub-shadow-1);
+}
+button:hover { background-image: linear-gradient(rgb(127 127 127 / .12), rgb(127 127 127 / .12)); }
+button:focus-visible { outline: 2px solid var(--hub-color-focus); outline-offset: 2px; }
+ol { list-style: none; margin: 0; padding: var(--hub-space-3) var(--hub-space-4); }
+ol:empty::before { content: attr(data-empty); color: var(--hub-color-fg-muted); font-family: var(--hub-font-body); }
+li { white-space: pre-wrap; }
+.success { color: var(--hub-color-success); }
+.danger { color: var(--hub-color-danger); }

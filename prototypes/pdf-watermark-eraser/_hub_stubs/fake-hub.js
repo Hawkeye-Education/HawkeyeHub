@@ -1,20 +1,25 @@
 // PROTOTYPE: a browser stand-in for the Hub preload, so ui/index.html opens by double-click.
 // Fakes window.hub (ADR 0009), crude --hub-* tokens + native styles (ADR 0006), the two proposed
 // Hub Kit v1 elements, and a canned Backend. Every Hub API call is printed in the traffic panel.
-// ?lang=zh-HK switches the Display Language.
+// ?lang=zh-HK switches the Display Language. ?theme=A|B|C&scheme=light|dark pick the Hawkeye Theme candidate
+// (prototypes/hawkeye-theme, wayfinder #19); inside that prototype's Hub Chrome the parent page drives both.
 (() => {
   if (window.hub) return;
-  const lang = new URLSearchParams(location.search).get('lang') ?? 'en-HK';
+  const params = new URLSearchParams(location.search);
+  const lang = params.get('lang') ?? 'en-HK';
+  const embedded = window.top !== window;
   document.documentElement.lang = lang;
 
   // --- traffic panel ---
   const lines = [];
   const trace = (...parts) => {
     lines.push(parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join(' '));
+    if (embedded) return console.log('[fake-hub]', lines.at(-1));
     const pre = document.getElementById('__traffic');
     if (pre) (pre.textContent = lines.join('\n')), (pre.scrollTop = pre.scrollHeight);
   };
   addEventListener('DOMContentLoaded', () => {
+    if (embedded) return console.log('[fake-hub] preload ready, traffic in console');
     document.body.insertAdjacentHTML('beforeend', `
       <details open style="position:fixed;inset:auto 0 0 0;background:#111;color:#9f9;font:12px monospace;max-height:35vh;z-index:9">
         <summary style="padding:4px 8px;color:#fff">FAKE HUB · Hub API traffic · lang=${lang} · <span id="__busy">not Busy</span></summary>
@@ -24,23 +29,16 @@
     trace(`preload: displayLanguage=${lang}, backend present (manifest backend.kind=python), no identity`);
   });
 
-  // --- tokens + native-element stylesheet (the real values come from the active Theme) ---
-  document.head.insertAdjacentHTML('afterbegin', `<style>
-    :root { --hub-space-1:4px; --hub-space-2:8px; --hub-space-3:12px; --hub-space-4:20px;
-      --hub-color-bg:#fafaf7; --hub-color-fg:#1b1d22; --hub-color-muted:#666; --hub-color-accent:#0b5cad;
-      --hub-color-line:#d6d6d0; --hub-color-success:#1d7a3a; --hub-color-danger:#b3261e; --hub-radius-2:6px;
-      --hub-font-body: system-ui, "Microsoft JhengHei", "PingFang HK", sans-serif; color-scheme: light dark; }
-    @media (prefers-color-scheme: dark) { :root { --hub-color-bg:#17181b; --hub-color-fg:#e8e8e3; --hub-color-muted:#9a9a95;
-      --hub-color-line:#34363b; --hub-color-accent:#7fb3ff; --hub-color-success:#6fd08f; --hub-color-danger:#ff8a80; } }
-    body { margin:0; background:var(--hub-color-bg); color:var(--hub-color-fg); font:14px/1.5 var(--hub-font-body); }
-    input, select, button { font:inherit; color:inherit; background:transparent; border:1px solid var(--hub-color-line);
-      border-radius:var(--hub-radius-2); padding:var(--hub-space-1) var(--hub-space-2); }
-    button { background:var(--hub-color-accent); color:var(--hub-color-bg); border-color:transparent; cursor:pointer; }
-    button:disabled { opacity:.5; cursor:default; }
-    input[type=checkbox] { accent-color:var(--hub-color-accent); }
-    pre { border:1px solid var(--hub-color-line); border-radius:var(--hub-radius-2); padding:var(--hub-space-2); margin:0; }
-    summary { cursor:pointer; } p { margin:0; color:var(--hub-color-muted); }
-  </style>`);
+  // --- tokens + native-element stylesheet: the Hawkeye Theme candidates from prototypes/hawkeye-theme ---
+  const HUB_CSS = '../../hawkeye-theme/hub.css';
+  const KIT_CSS = '../../hawkeye-theme/kit.css';
+  const applyLook = ({ theme, scheme }) => Object.assign(document.documentElement.dataset, { theme, scheme });
+  applyLook({
+    theme: params.get('theme') ?? 'A',
+    scheme: params.get('scheme') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+  });
+  addEventListener('message', (e) => e.data?.type === 'hub-look' && applyLook(e.data)); // live, no reload (ADR 0006)
+  document.head.insertAdjacentHTML('afterbegin', `<link rel="stylesheet" href="${HUB_CSS}">`);
 
   // --- Hub Kit v1 (proposed) ---
   customElements.define('hub-folder-field', class extends HTMLElement {
@@ -48,13 +46,8 @@
     constructor() {
       super();
       this.attachShadow({ mode: 'open' }).innerHTML = `
-        <style>:host{display:flex;flex-direction:column;gap:4px} div{display:flex;gap:8px}
-          output{flex:1;border:1px solid var(--hub-color-line);border-radius:var(--hub-radius-2);padding:4px 8px;
-            min-height:1.5em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-          output:empty::before{content:"—";color:var(--hub-color-muted)}
-          button{font:inherit;background:var(--hub-color-accent);color:var(--hub-color-bg);border:0;
-            border-radius:var(--hub-radius-2);padding:4px 12px;cursor:pointer}</style>
-        <span></span><div><output></output><button type="button">${lang === 'zh-HK' ? '瀏覽…' : 'Browse…'}</button></div>`;
+        <link rel="stylesheet" href="${KIT_CSS}">
+        <span class="label"></span><div class="row"><output></output><button type="button">${lang === 'zh-HK' ? '瀏覽…' : 'Browse…'}</button></div>`;
       this.shadowRoot.querySelector('button').onclick = async () => {
         const r = await window.hub.files.pickFolder(this.#label);
         if (r.kind === 'chosen') (this.value = r.path), this.dispatchEvent(new Event('change', { bubbles: true }));
@@ -69,9 +62,8 @@
     constructor() {
       super();
       this.attachShadow({ mode: 'open' }).innerHTML = `
-        <style>:host{display:block;overflow:auto;border:1px solid var(--hub-color-line);border-radius:var(--hub-radius-2);
-          font:12px/1.6 ui-monospace,monospace} ol{list-style:none;margin:0;padding:8px}
-          .success{color:var(--hub-color-success)} .danger{color:var(--hub-color-danger)}</style><ol role="log"></ol>`;
+        <link rel="stylesheet" href="${KIT_CSS}">
+        <ol role="log" data-empty="${lang === 'zh-HK' ? '結果會顯示在這裏' : 'Results appear here'}"></ol>`;
     }
     append({ tone, text }) {
       const li = Object.assign(document.createElement('li'), { className: tone, textContent: text });
@@ -146,20 +138,19 @@
       // in the main process: the OS folder picker, modal to the Hub window. This <dialog> only stands in for it.
       pickFolder: (title) => new Promise((resolve) => {
         const d = document.createElement('dialog');
-        d.style.cssText = 'border:1px solid var(--hub-color-line);border-radius:12px;padding:20px;min-width:28rem;' +
-          'background:var(--hub-color-bg);color:var(--hub-color-fg);box-shadow:0 12px 40px #0004';
+        d.style.minWidth = '28rem';
         d.innerHTML = `
           <form method="dialog" style="display:flex;flex-direction:column;gap:12px">
             <strong>${title}</strong>
-            <small style="color:var(--hub-color-muted)">PROTOTYPE stand-in for the OS folder picker the Hub opens</small>
+            <small>PROTOTYPE stand-in for the OS folder picker the Hub opens</small>
             <input name="path" value="C:\\Users\\staff\\Desktop\\papers" style="width:100%;box-sizing:border-box">
             <div style="display:flex;flex-wrap:wrap;gap:6px">
               ${['C:\\Users\\staff\\Desktop\\papers', 'C:\\Users\\staff\\Desktop\\papers-clean', 'S:\\Shared\\DSE\\2025']
-                .map((p) => `<button type="button" data-p="${p}" style="background:transparent;color:inherit;border:1px solid var(--hub-color-line)">${p}</button>`).join('')}
+                .map((p) => `<button type="button" data-p="${p}">${p}</button>`).join('')}
             </div>
             <div style="display:flex;justify-content:flex-end;gap:8px">
-              <button value="cancel" style="background:transparent;color:inherit;border:1px solid var(--hub-color-line)">Cancel</button>
-              <button value="ok">Select folder</button>
+              <button value="cancel">Cancel</button>
+              <button value="ok" data-variant="primary">Select folder</button>
             </div>
           </form>`;
         d.querySelectorAll('[data-p]').forEach((b) => (b.onclick = () => (d.querySelector('input').value = b.dataset.p)));
@@ -176,8 +167,16 @@
       async openFolder(path) { trace('-> files.openFolder', path, '(Explorer/Finder opens)'); },
     }),
     busy: Object.freeze({
-      async set(reason) { trace('-> busy.set', reason); document.getElementById('__busy').textContent = `Busy: ${reason}`; },
-      async clear() { trace('-> busy.clear'); document.getElementById('__busy').textContent = 'not Busy'; },
+      async set(reason) {
+        trace('-> busy.set', reason);
+        if (embedded) return parent.postMessage({ type: 'hub-busy', reason }, '*'); // the Hub Chrome shows Busy
+        document.getElementById('__busy').textContent = `Busy: ${reason}`;
+      },
+      async clear() {
+        trace('-> busy.clear');
+        if (embedded) return parent.postMessage({ type: 'hub-busy', reason: null }, '*');
+        document.getElementById('__busy').textContent = 'not Busy';
+      },
     }),
     // stores and ai exist in the real API; this plugin never calls them
   });

@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en-HK">
+<head>
+  <meta charset="utf-8">
+  <title>PROTOTYPE · Hawkeye Theme</title>
+  <!-- PROTOTYPE (wayfinder #19), never merge. Three Hawkeye Theme candidates for the --hub-* token interface
+       (ADR 0006), switchable via ?variant=A|B|C, on mock Hub Chrome around the real PDF Watermark Eraser Plugin UI.
+       The Plugin UI is an <iframe>, a separate document like its WebContentsView, so in-page glass cannot cross it.
+       Chrome layout is held fixed on purpose: a Theme changes token values, never layout. Open by double-click. -->
+  <link rel="stylesheet" href="hub.css">
+  <style>
+    html, body { height: 100%; }
+    body { background: none; overflow: hidden; }
+
+    /* the OS desktop the window sits on: sharp shapes so blur is visible */
+    .desktop { position: fixed; inset: 0; overflow: hidden;
+      background: radial-gradient(circle at 18% 28%, #ff8a7a 0 12%, transparent 12.2%),
+        radial-gradient(circle at 82% 18%, #4fb6f0 0 16%, transparent 16.2%),
+        radial-gradient(circle at 62% 88%, #8b7bff 0 18%, transparent 18.2%),
+        repeating-linear-gradient(115deg, rgb(255 255 255 / .25) 0 2px, transparent 2px 60px),
+        linear-gradient(135deg, #f6d365, #fda085 55%, #f0789a); }
+    [data-scheme="dark"] .desktop { filter: brightness(.45) saturate(1.2); }
+    .desktop span { position: absolute; font: 700 120px/1 system-ui; color: rgb(255 255 255 / .55); }
+
+    .window { position: absolute; inset: 20px 20px 76px; display: grid; overflow: hidden;
+      grid-template: "bar bar bar" 44px "side main panel" 1fr / 232px 1fr auto;
+      border: 1px solid var(--chrome-window-edge); border-radius: 10px; box-shadow: 0 24px 70px rgb(0 0 0 / .4); }
+    [data-material="os"] .window { background: var(--chrome-window);
+      backdrop-filter: blur(var(--chrome-blur)) saturate(1.6); }
+    [data-material="none"] .window { background: var(--chrome-window-solid); }
+
+    .bar { grid-area: bar; display: flex; align-items: center; gap: var(--hub-space-3); padding: 0 0 0 var(--hub-space-4);
+      background: var(--chrome-bar); color: var(--chrome-bar-fg); font-size: var(--hub-text-sm); }
+    .bar strong { font-size: var(--hub-text-md); }
+    .bar .grow { flex: 1; }
+    .avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+      background: var(--hub-color-accent); color: var(--hub-color-on-accent); font-size: 11px; font-weight: 600; }
+    .winctl { display: flex; align-self: stretch; }
+    .winctl span { display: grid; place-items: center; width: 46px; opacity: .8; }
+
+    .side { grid-area: side; display: flex; flex-direction: column; gap: 2px; padding: var(--hub-space-2) var(--hub-space-3);
+      background: var(--chrome-side); color: var(--chrome-side-fg); }
+    .side h2 { font-size: var(--hub-text-sm); opacity: .7; padding: var(--hub-space-3) var(--hub-space-3) var(--hub-space-1); }
+    .item { display: flex; align-items: center; gap: var(--hub-space-3); padding: var(--hub-space-2) var(--hub-space-3);
+      border-radius: var(--hub-radius-2); color: inherit; text-decoration: none; cursor: default; }
+    .item:hover { background: var(--chrome-item-hover); }
+    .item[aria-current] { background: var(--chrome-item-active); font-weight: var(--hub-weight-strong); }
+    .item svg { flex: none; width: 18px; height: 18px; }
+    .side .grow { flex: 1; }
+
+    .card { margin: var(--chrome-card-inset); background: var(--chrome-card); border-radius: var(--chrome-card-radius);
+      box-shadow: var(--chrome-card-shadow); overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+    .main { grid-area: main; }
+    .head { display: flex; align-items: center; gap: var(--hub-space-3); padding: var(--hub-space-3) var(--hub-space-5);
+      border-bottom: 1px solid var(--hub-color-line); }
+    .head svg { width: 22px; height: 22px; color: var(--hub-color-accent); }
+    .head .grow { flex: 1; }
+    .chip { font-size: var(--hub-text-sm); color: var(--hub-color-warning); border: 1px solid currentColor;
+      border-radius: 999px; padding: 0 var(--hub-space-3); }
+    iframe { flex: 1; width: 100%; border: 0; background: transparent; }
+
+    .panel { grid-area: panel; width: 320px; border-left: 1px solid var(--hub-color-line); }
+    .panel[hidden] { display: none; }
+    .thread { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: var(--hub-space-3); padding: var(--hub-space-4); }
+    .msg { max-width: 85%; padding: var(--hub-space-2) var(--hub-space-3); border-radius: var(--hub-radius-3); white-space: pre-wrap; }
+    .msg.me { align-self: end; background: var(--hub-color-accent); color: var(--hub-color-on-accent); }
+    .msg.bot { align-self: start; background: var(--hub-glass-fill); border: 1px solid var(--hub-glass-edge);
+      backdrop-filter: blur(var(--hub-glass-blur)); }
+    .msg code { padding: 0 3px; border-radius: var(--hub-radius-1); background: var(--hub-color-surface); }
+    .compose { display: flex; flex-direction: column; gap: var(--hub-space-2); padding: var(--hub-space-3) var(--hub-space-4);
+      border-top: 1px solid var(--hub-color-line); }
+    .compose textarea { resize: none; height: 64px; }
+    .compose .row { display: flex; gap: var(--hub-space-2); flex-wrap: wrap; }
+    .compose .row button:last-child { margin-left: auto; }
+    .compose .tpl { font-size: var(--hub-text-sm); min-height: 26px; padding: 0 var(--hub-space-3); border-radius: 999px; }
+
+    /* prototype controls: deliberately NOT themed */
+    .proto { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 10; display: flex; align-items: center;
+      gap: 6px; padding: 6px; border-radius: 999px; background: #111; color: #fff; font: 13px/1 system-ui, sans-serif;
+      box-shadow: 0 6px 24px rgb(0 0 0 / .45); color-scheme: dark; }
+    .proto button { all: unset; cursor: pointer; padding: 7px 12px; border-radius: 999px; background: #2a2a2a; white-space: nowrap; }
+    .proto button:hover { background: #3a3a3a; }
+    .proto .v { background: #fff; color: #111; font-weight: 600; min-width: 15rem; text-align: center; }
+    .proto .v:hover { background: #fff; }
+    .tokens { position: fixed; right: 28px; top: 28px; bottom: 84px; width: 380px; z-index: 10; overflow: auto;
+      background: #111; color: #ddd; font: 12px/1.5 ui-monospace, Consolas, monospace; border-radius: 10px; padding: 12px;
+      box-shadow: 0 6px 24px rgb(0 0 0 / .45); }
+    .tokens[hidden] { display: none; }
+    .tokens table { border-collapse: collapse; width: 100%; }
+    .tokens td { padding: 2px 4px; vertical-align: top; word-break: break-all; }
+    .tokens td:first-child { color: #9f9; white-space: nowrap; word-break: normal; }
+    .tokens i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px;
+      background-image: linear-gradient(45deg, #888 25%, transparent 25% 75%, #888 75%), linear-gradient(45deg, #888 25%, #555 25% 75%, #888 75%);
+      background-size: 6px 6px; background-position: 0 0, 3px 3px; position: relative; overflow: hidden; }
+    .tokens i b { position: absolute; inset: 0; }
+  </style>
+</head>
+<body>
+  <div class="desktop" aria-hidden="true"><span style="left:6%;top:56%">Aa 字</span><span style="left:58%;top:8%">▲ ●</span></div>
+
+  <div class="window">
+    <header class="bar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+      <strong>Hawkeye Hub</strong>
+      <span class="grow"></span>
+      <span data-c="signedIn"></span><span class="avatar">CT</span>
+      <span class="winctl"><span>─</span><span>☐</span><span>✕</span></span>
+    </header>
+
+    <nav class="side">
+      <h2 data-c="plugins"></h2>
+      <a class="item" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M8 17l8-8" stroke-dasharray="2 2"/></svg><span data-c="eraser"></span></a>
+      <a class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg><span data-c="finder"></span></a>
+      <a class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg><span data-c="receipts"></span></a>
+      <a class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15 14.5c3 0 6 1.8 6 5"/></svg><span data-c="scraper"></span></a>
+      <span class="grow"></span>
+      <a class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg><span data-c="store"></span></a>
+      <a class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span data-c="settings"></span></a>
+    </nav>
+
+    <main class="main card">
+      <div class="head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M8 17l8-8" stroke-dasharray="2 2"/></svg>
+        <h1 data-c="eraser"></h1>
+        <span class="chip" id="busy" hidden data-c="busy"></span>
+        <span class="grow"></span>
+        <button type="button" id="toggleAssistant" data-c="assistant"></button>
+      </div>
+      <iframe id="plugin" title="Plugin UI"></iframe>
+    </main>
+
+    <aside class="panel card" id="assistant">
+      <div class="head"><h2 data-c="assistant"></h2></div>
+      <div class="thread">
+        <div class="msg me" data-c="userMsg"></div>
+        <div class="msg bot" id="botMsg"></div>
+      </div>
+      <div class="compose">
+        <textarea data-c-placeholder="ask"></textarea>
+        <div class="row">
+          <button type="button" class="tpl" data-c="template"></button>
+          <button type="button" data-variant="primary" data-c="send"></button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="proto">
+    <button type="button" id="prev" title="Previous variant (←)">‹</button>
+    <button type="button" class="v" id="variant"></button>
+    <button type="button" id="next" title="Next variant (→)">›</button>
+    <button type="button" id="scheme"></button>
+    <button type="button" id="material"></button>
+    <button type="button" id="lang"></button>
+    <button type="button" id="showTokens">tokens</button>
+  </div>
+  <div class="tokens" id="tokens" hidden></div>
+
+  <script>
+    const VARIANTS = { A: 'Frosted', B: 'Glass chrome', C: 'Solid' };
+    const KEYS = Object.keys(VARIANTS);
+    const TOKENS = [
+      'color-canvas', 'color-surface', 'color-surface-raised', 'color-fg', 'color-fg-muted', 'color-line',
+      'color-accent', 'color-on-accent', 'color-focus', 'color-success', 'color-warning', 'color-danger',
+      'font-body', 'font-mono', 'text-sm', 'text-md', 'text-lg', 'text-xl', 'leading', 'weight-strong',
+      'space-1', 'space-2', 'space-3', 'space-4', 'space-5', 'space-6', 'radius-1', 'radius-2', 'radius-3',
+      'shadow-1', 'shadow-2', 'glass-fill', 'glass-blur', 'glass-edge',
+    ].map((t) => `--hub-${t}`);
+    const CHROME = {
+      'en-HK': {
+        plugins: 'Plugins', eraser: 'PDF Watermark Eraser', finder: 'Teacher Finder', receipts: 'PDF Receipt Extractor',
+        scraper: 'FB Group Scraper', store: 'Get Plugins', settings: 'Settings', signedIn: 'Chan Tai Man', busy: 'Busy',
+        assistant: 'Assistant', ask: 'Ask the Assistant…', send: 'Send', template: 'Draft a watermark regex',
+        userMsg: 'Draft a watermark regex\n\nProvided by dse.life\nProvided  by DSE.life',
+        bot: 'These differ only in spacing and case. Try <code>Provided\\s+by\\s+dse\\.life</code> with <b>Regex</b> and <b>Ignore case</b> both on.',
+      },
+      'zh-HK': {
+        plugins: '程式', eraser: 'PDF 水印清除', finder: '教師搜尋', receipts: 'PDF 收據擷取', scraper: 'FB 群組擷取',
+        store: '取得程式', settings: '設定', signedIn: '陳大文', busy: '處理中', assistant: '助手', ask: '向助手提問…',
+        send: '傳送', template: '草擬水印正規表示式',
+        userMsg: '草擬水印正規表示式\n\nProvided by dse.life\nProvided  by DSE.life',
+        bot: '兩行只差在空格和大小寫。試試 <code>Provided\\s+by\\s+dse\\.life</code>，並同時開啟「正規表示式」及「不分大小寫」。',
+      },
+    };
+
+    const params = new URLSearchParams(location.search);
+    const pick = (key, allowed) => (allowed.includes(params.get(key)) ? params.get(key) : allowed[0]);
+    const state = {
+      variant: pick('variant', KEYS),
+      scheme: pick('scheme', ['system', 'light', 'dark']),
+      material: pick('material', ['os', 'none']),
+      lang: pick('lang', ['en-HK', 'zh-HK']),
+    };
+    const dark = matchMedia('(prefers-color-scheme: dark)');
+    const scheme = () => (state.scheme === 'system' ? (dark.matches ? 'dark' : 'light') : state.scheme);
+    const $ = (id) => document.getElementById(id);
+    const frame = $('plugin');
+
+    function loadPlugin() {
+      frame.src = '../pdf-watermark-eraser/ui/index.html?' +
+        new URLSearchParams({ lang: state.lang, theme: state.variant, scheme: scheme() });
+    }
+
+    function apply() {
+      Object.assign(document.documentElement.dataset, { theme: state.variant, scheme: scheme(), material: state.material });
+      document.documentElement.lang = state.lang;
+      history.replaceState(null, '', '?' + new URLSearchParams(state));
+      frame.contentWindow?.postMessage({ type: 'hub-look', theme: state.variant, scheme: scheme() }, '*');
+
+      const s = CHROME[state.lang];
+      for (const el of document.querySelectorAll('[data-c]')) el.textContent = s[el.dataset.c];
+      for (const el of document.querySelectorAll('[data-c-placeholder]')) el.placeholder = s[el.dataset.cPlaceholder];
+      $('botMsg').innerHTML = s.bot;
+
+      $('variant').textContent = `${state.variant} · ${VARIANTS[state.variant]}`;
+      $('scheme').textContent = `scheme: ${state.scheme}`;
+      $('material').textContent = state.material === 'os' ? 'material: Win 11 / macOS' : 'material: none (Win 10)';
+      $('lang').textContent = state.lang === 'en-HK' ? 'EN → 中' : '中 → EN';
+      renderTokens();
+    }
+
+    function renderTokens() {
+      const cs = getComputedStyle(document.documentElement);
+      const row = (name) => {
+        const v = cs.getPropertyValue(name).trim();
+        const swatch = name.startsWith('--hub-color') || name.endsWith('fill') || name.endsWith('edge')
+          ? `<i><b style="background:${v}"></b></i>` : '';
+        return `<tr><td>${name}</td><td>${swatch}${v}</td></tr>`;
+      };
+      $('tokens').innerHTML = `<p style="color:#fff;margin:0 0 8px">Hub API tokens · ${state.variant} · ${scheme()}</p>
+        <table>${TOKENS.map(row).join('')}</table>`;
+    }
+
+    const step = (d) => {
+      state.variant = KEYS[(KEYS.indexOf(state.variant) + d + KEYS.length) % KEYS.length];
+      apply();
+    };
+    $('prev').onclick = () => step(-1);
+    $('next').onclick = () => step(1);
+    $('variant').onclick = () => step(1);
+    $('scheme').onclick = () => {
+      const order = ['system', 'light', 'dark'];
+      state.scheme = order[(order.indexOf(state.scheme) + 1) % order.length];
+      apply();
+    };
+    $('material').onclick = () => ((state.material = state.material === 'os' ? 'none' : 'os'), apply());
+    // Display Language is fixed until the Plugin is reopened (ADR 0007), so the Plugin UI reloads.
+    $('lang').onclick = () => ((state.lang = state.lang === 'en-HK' ? 'zh-HK' : 'en-HK'), apply(), loadPlugin());
+    $('showTokens').onclick = () => ($('tokens').hidden = !$('tokens').hidden);
+    $('toggleAssistant').onclick = () => ($('assistant').hidden = !$('assistant').hidden);
+    dark.addEventListener('change', apply);
+    addEventListener('keydown', (e) => {
+      if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+      if (e.key === 'ArrowLeft') step(-1);
+      if (e.key === 'ArrowRight') step(1);
+    });
+    addEventListener('message', (e) => {
+      if (e.data?.type !== 'hub-busy') return;
+      $('busy').hidden = !e.data.reason;
+      $('busy').title = e.data.reason ?? '';
+    });
+
+    apply();
+    loadPlugin();
+  </script>
+</body>
+</html>
