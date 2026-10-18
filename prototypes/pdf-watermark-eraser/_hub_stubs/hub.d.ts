@@ -1,6 +1,28 @@
 // PROTOTYPE of the types-only npm package (version = Hub API version), transcribed from ADR 0009.
 // Plus the two Hub Kit v1 elements this prototype proposes (ADR 0006).
 
+// --- The Manifest (ADR 0010); manifest.schema.json is the same contract for editors and packaging ---
+export type DisplayLanguage = 'en-HK' | 'zh-HK';
+export type DisplayText = string | ({ 'en-HK': string } & Partial<Record<DisplayLanguage, string>>);
+export type Platform = 'win32-x64' | 'darwin-arm64';
+export type Identity = { kind: 'none' } | { kind: 'required'; roles: string[] };
+export type BackendKind = { kind: 'none' } | { kind: 'python'; python: `3.${number}` };
+export type AssistantKind = { kind: 'none' } | { kind: 'enabled'; templates: { label: DisplayText; text: DisplayText }[] };
+
+export interface Manifest {
+  id: string;
+  version: string;
+  hubApi: string;
+  name: DisplayText;
+  description: DisplayText;
+  platforms: Platform[];
+  identity: Identity;
+  stores: string[];
+  backend: BackendKind;
+  assistant: AssistantKind;
+}
+
+// --- window.hub (ADR 0009) ---
 export type HubErrorCode =
   | 'store-not-declared'
   | 'provider-missing'

@@ -142,12 +142,37 @@
       },
     }),
     files: Object.freeze({
-      async pickFolder(title) {
-        const path = prompt(`[native folder dialog] ${title}`, 'C:\\Users\\staff\\Desktop\\papers');
-        const r = path ? { kind: 'chosen', path } : { kind: 'cancelled' };
-        trace('-> files.pickFolder', title, '=>', r);
-        return r;
-      },
+      // The real Hub calls Electron's dialog.showOpenDialog(hubWindow, {title, properties: ['openDirectory']})
+      // in the main process: the OS folder picker, modal to the Hub window. This <dialog> only stands in for it.
+      pickFolder: (title) => new Promise((resolve) => {
+        const d = document.createElement('dialog');
+        d.style.cssText = 'border:1px solid var(--hub-color-line);border-radius:12px;padding:20px;min-width:28rem;' +
+          'background:var(--hub-color-bg);color:var(--hub-color-fg);box-shadow:0 12px 40px #0004';
+        d.innerHTML = `
+          <form method="dialog" style="display:flex;flex-direction:column;gap:12px">
+            <strong>${title}</strong>
+            <small style="color:var(--hub-color-muted)">PROTOTYPE stand-in for the OS folder picker the Hub opens</small>
+            <input name="path" value="C:\\Users\\staff\\Desktop\\papers" style="width:100%;box-sizing:border-box">
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${['C:\\Users\\staff\\Desktop\\papers', 'C:\\Users\\staff\\Desktop\\papers-clean', 'S:\\Shared\\DSE\\2025']
+                .map((p) => `<button type="button" data-p="${p}" style="background:transparent;color:inherit;border:1px solid var(--hub-color-line)">${p}</button>`).join('')}
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px">
+              <button value="cancel" style="background:transparent;color:inherit;border:1px solid var(--hub-color-line)">Cancel</button>
+              <button value="ok">Select folder</button>
+            </div>
+          </form>`;
+        d.querySelectorAll('[data-p]').forEach((b) => (b.onclick = () => (d.querySelector('input').value = b.dataset.p)));
+        d.onclose = () => {
+          const path = d.querySelector('input').value.trim();
+          const r = d.returnValue === 'ok' && path ? { kind: 'chosen', path } : { kind: 'cancelled' };
+          trace('-> files.pickFolder', title, '=>', r);
+          d.remove();
+          resolve(r);
+        };
+        document.body.append(d);
+        d.showModal();
+      }),
       async openFolder(path) { trace('-> files.openFolder', path, '(Explorer/Finder opens)'); },
     }),
     busy: Object.freeze({

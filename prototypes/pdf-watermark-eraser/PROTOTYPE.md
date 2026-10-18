@@ -14,10 +14,11 @@ The fake Hub prints every Hub API call in a panel at the bottom of the page.
 ## Layout = the Plugin Package
 
 ```
-manifest.json            identity, hubApi, platforms, identity/backend/assistant kinds   ADR 0002, 0003, 0005
-icon.svg                 monochrome, currentColor, so the Theme colours it                (new, see Gaps)
-assistant.md             the Assistant's system prompt, named by the manifest             ADR 0004
-skills/<name>/SKILL.md   the Playbook: two Agent Skills, standard frontmatter, no scripts ADR 0004
+manifest.json            typed by _hub_stubs/manifest.schema.json (VS Code validates it)  ADR 0002, 0003, 0005, 0010
+icon.svg                 monochrome, currentColor, so the Theme colours it                ADR 0010
+agents/                  everything the AI layer reads, and nothing it doesn't            ADR 0004, 0010
+  assistant.md           the Assistant's system prompt
+  skills/<name>/SKILL.md the Playbook: two Agent Skills, standard frontmatter, no scripts
 ui/index.html            Plugin UI entry, plain DOM, no build                             ADR 0003, 0006
 ui/layout.css            layout-only CSS from --hub-* tokens                              ADR 0006
 ui/strings.js            the Plugin's own en-HK / zh-HK strings, English fallback         ADR 0007
@@ -25,8 +26,18 @@ ui/main.js               window.hub calls: files, backend, busy; Plugin Data in 
 backend/pyproject.toml   uv-built venv; depends on the hawkeye-hub SDK                    ADR 0003, 0005
 backend/main.py          JSON-RPC methods listPdfs, pageText, run; cancel + shutdown      ADR 0003, 0009
 backend/erase.py         the eraser, lifted unchanged from pdf_remove_water_mark/app.py
-_hub_stubs/              NOT part of the package: Python SDK stub, hub.d.ts, fake Hub, driver
+_hub_stubs/              NOT part of the package: Python SDK stub, hub.d.ts, manifest schema, fake Hub, driver
 ```
+
+## Decided with the user
+
+Gaps 1–5 below are settled ([#13](https://github.com/Hawkeye-Education/HawkeyeHub/issues/13), ADR 0010):
+
+1. `assistant.md` and `skills/` live under **`agents/`**. The Hub's AI layer (Vercel AI SDK) reads only that folder, so nothing outside `agents/` ever reaches a model. The path is fixed, so the Manifest's `assistant.prompt` field is gone.
+2. The Manifest is **typed**: `manifest.schema.json` (closed enums for every `kind` and for `platforms`, no extra keys) and a matching `Manifest` type in `hub.d.ts`. One schema serves editors and packaging.
+3. A single-colour `icon.svg` is required.
+4. Cancel is a Plugin-defined notification.
+5. Hub Kit v1 is `<hub-folder-field>` + `<hub-log>`. Browse opens a folder picker the Hub owns, Electron's `dialog.showOpenDialog`, modal to the Hub window. The fake now mimics it with a Hub-styled dialog instead of `prompt()`.
 
 ## The Plugin UI ↔ Backend protocol
 
@@ -55,6 +66,6 @@ Feeds other tickets, with no decision needed here:
 6. **Python SDK concurrency** (→ Monorepo structure and coding standards). Each request runs on its own thread, and notifications run inline on the reader thread. Without that, a `cancel` cannot arrive during a `run`. It also needs a stdout write lock and UTF-8, `\n`-only stdio on Windows.
 7. **Where `hawkeye-hub` (Python) is published** (→ Monorepo structure and coding standards): PyPI, or a git dependency pinned in `uv.lock`.
 8. **`backend.python` lives in the manifest and in `requires-python` in `pyproject.toml`.** Packaging must check that they agree.
-9. **There is no path from `<input type=file>` to a Backend.** Electron 32 removed `File.path`. A sample PDF is therefore picked by having the Backend list a picked folder. `hub.files.pickFiles` joins when a Plugin needs a single file (already anticipated in ADR 0009).
+9. **There is no path from `<input type=file>` to a Backend.** Electron 32 removed `File.path`. A sample PDF is therefore picked by having the Backend list a picked folder. `hub.files.pickFiles` joins when a Plugin needs a single file (already anticipated in ADR 0009). It would be the same `dialog.showOpenDialog` with `['openFile', 'multiSelections']`. A Plugin UI can't call `dialog` itself, because it is main-process only and the Plugin UI is a sandboxed renderer.
 10. **Regex flavour.** Validation happens in the Backend (Python `re`), never with the UI's JS `RegExp`, and the Playbook pins Python syntax.
 11. **Per-file exception text** (`{kind: 'error', detail}`) stays untranslated English. That is acceptable for a technical detail; the plugin standard should say so.

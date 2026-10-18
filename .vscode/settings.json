@@ -1,0 +1,9 @@
+{
+  // PROTOTYPE branch only: validate and autocomplete Plugin manifests against the typed schema.
+  "json.schemas": [
+    {
+      "fileMatch": ["prototypes/*/manifest.json"],
+      "url": "./prototypes/pdf-watermark-eraser/_hub_stubs/manifest.schema.json"
+    }
+  ]
+}

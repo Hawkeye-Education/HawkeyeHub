@@ -10,14 +10,12 @@
     "en-HK": "Remove a text watermark from every PDF in a folder, keeping the folder structure.",
     "zh-HK": "移除資料夾內所有 PDF 的文字水印，並保留資料夾結構。"
   },
-  "icon": "icon.svg",
   "platforms": ["win32-x64", "darwin-arm64"],
   "identity": { "kind": "none" },
   "stores": [],
   "backend": { "kind": "python", "python": "3.12" },
   "assistant": {
     "kind": "enabled",
-    "prompt": "assistant.md",
     "templates": [
       {
         "label": {
