@@ -161,9 +161,55 @@ const cases: [string, HubEvent, unknown][] = [
     hubLine("error", "Hub Chrome renderer gone: oom (exit code 137)"),
   ],
   [
-    "Plugin closed abnormally",
-    { kind: "plugin-closed-abnormally", plugin, cause: "stopped-responding" },
+    "Plugin stopped responding",
+    {
+      kind: "plugin-closed-abnormally",
+      plugin,
+      crash: { cause: "stopped-responding" },
+    },
     pluginLine("error", "Plugin closed abnormally: stopped responding"),
+  ],
+  [
+    "Plugin UI crashed",
+    {
+      kind: "plugin-closed-abnormally",
+      plugin,
+      crash: {
+        cause: "crashed",
+        exit: { kind: "plugin-ui-gone", reason: "oom", exitCode: 137 },
+      },
+    },
+    pluginLine(
+      "error",
+      "Plugin closed abnormally: crashed (Plugin UI gone: oom, exit code 137)",
+    ),
+  ],
+  [
+    "Backend crashed on a signal",
+    {
+      kind: "plugin-closed-abnormally",
+      plugin,
+      crash: {
+        cause: "crashed",
+        exit: {
+          kind: "backend-exited",
+          exit: { kind: "signal", signal: "SIGSEGV" },
+        },
+      },
+    },
+    pluginLine(
+      "error",
+      "Plugin closed abnormally: crashed (Backend exited on signal SIGSEGV)",
+    ),
+  ],
+  [
+    "Plugin failed to start with its Backend still running",
+    {
+      kind: "plugin-closed-abnormally",
+      plugin,
+      crash: { cause: "failed-to-start", exit: { kind: "no-exit" } },
+    },
+    pluginLine("error", "Plugin closed abnormally: failed to start"),
   ],
 ];
 
@@ -245,6 +291,176 @@ test("the Hub-event union cannot express a secret, prompt, reply, file contents 
     { kind: "message", message: "anything at all" },
   ];
   expect(events).toHaveLength(6);
+});
+
+const PLUGIN_LOG = "plugins/marking-assistant.log";
+
+function sessionLine(source: string, level: string, message: string) {
+  return { ...pluginLine(level, message), source };
+}
+
+test("Plugin UI console messages map their level and debug is dropped", () => {
+  const session = openDiagnostics(logsDir, () => NOW).startPluginSession(
+    plugin,
+  );
+
+  session.recordConsoleMessage("debug", "chatty");
+  session.recordConsoleMessage("info", "loaded");
+  session.recordConsoleMessage("warning", "slow");
+  session.recordConsoleMessage("error", "Uncaught TypeError: x is undefined");
+
+  expect(readLines(PLUGIN_LOG)).toEqual([
+    sessionLine("ui", "info", "loaded"),
+    sessionLine("ui", "warn", "slow"),
+    sessionLine("ui", "error", "Uncaught TypeError: x is undefined"),
+  ]);
+});
+
+const bytes = (text: string) => Buffer.from(text, "utf8");
+
+test("Backend stderr split across chunks is written as whole verbatim lines, and a partial last line is flushed when the session ends", () => {
+  const session = openDiagnostics(logsDir, () => NOW).startPluginSession(
+    plugin,
+  );
+  const euro = bytes("€"); // three bytes, split across chunks below
+
+  session.recordStderr(bytes("Traceback (most rec"));
+  session.recordStderr(bytes('ent call last):\r\n  File "x.py"\n\nprice '));
+  session.recordStderr(euro.subarray(0, 1));
+  session.recordStderr(Buffer.concat([euro.subarray(1), bytes("5\nno newl")]));
+  session.recordStderr(bytes("ine"));
+  session.end();
+
+  expect(readLines(PLUGIN_LOG)).toEqual([
+    sessionLine("backend", "stderr", "Traceback (most recent call last):"),
+    sessionLine("backend", "stderr", '  File "x.py"'),
+    sessionLine("backend", "stderr", ""),
+    sessionLine("backend", "stderr", "price €5"),
+    sessionLine("backend", "stderr", "no newline"),
+  ]);
+});
+
+test("invalid UTF-8 on stderr does not throw", () => {
+  const session = openDiagnostics(logsDir, () => NOW).startPluginSession(
+    plugin,
+  );
+
+  session.recordStderr(Buffer.from([0x62, 0x61, 0x64, 0xff, 0xfe, 0x0a]));
+  session.recordStderr(Buffer.from([0xc3]));
+  session.end();
+
+  expect(readLines(PLUGIN_LOG)).toEqual([
+    sessionLine("backend", "stderr", "bad��"),
+    sessionLine("backend", "stderr", "�"),
+  ]);
+});
+
+test("Plugin UI and Backend lines interleave in one file in the order they arrive", () => {
+  const session = openDiagnostics(logsDir, () => NOW).startPluginSession(
+    plugin,
+  );
+
+  session.recordConsoleMessage("info", "asking for marks");
+  session.recordStderr(bytes("marking essay 1\n"));
+  session.recordConsoleMessage("error", "request failed");
+
+  expect(readLines(PLUGIN_LOG)).toEqual([
+    sessionLine("ui", "info", "asking for marks"),
+    sessionLine("backend", "stderr", "marking essay 1"),
+    sessionLine("ui", "error", "request failed"),
+  ]);
+});
+
+test("a JSON-RPC error response is written as its method, data.reason and message only", () => {
+  const session = openDiagnostics(logsDir, () => NOW).startPluginSession(
+    plugin,
+  );
+  const response = {
+    method: "markEssays",
+    reason: "same-folder",
+    message: "Input and output are the same folder",
+    // What the relay also has to hand; none of it may reach the log.
+    params: { folder: "C:/Users/staff/essays" },
+    result: { marks: [7] },
+  };
+
+  session.recordRpcError(response);
+
+  expect(readLines(PLUGIN_LOG)).toEqual([
+    sessionLine(
+      "hub",
+      "error",
+      "markEssays failed: same-folder: Input and output are the same folder",
+    ),
+  ]);
+});
+
+test("a crash record carries its cause, exit details and the last 50 stderr lines; hub.log gets the summary without them", () => {
+  const diagnostics = openDiagnostics(logsDir, () => NOW);
+  const session = diagnostics.startPluginSession(plugin);
+  for (let i = 1; i <= 51; i++)
+    session.recordStderr(bytes(`line ${String(i)}\n`));
+  session.recordStderr(bytes("line 52")); // the dying Backend's unterminated last line
+
+  session.recordCrash({
+    cause: "failed-to-start",
+    exit: { kind: "backend-exited", exit: { kind: "code", code: 1 } },
+  });
+  session.end();
+
+  const summary =
+    "Plugin closed abnormally: failed to start (Backend exited with code 1)";
+  const lastFifty = Array.from(
+    { length: 50 },
+    (_, i) => `line ${String(i + 3)}`,
+  );
+  const pluginLog = readLines(PLUGIN_LOG);
+  expect(pluginLog).toHaveLength(53);
+  expect(pluginLog.at(-1)).toEqual(
+    sessionLine(
+      "hub",
+      "error",
+      [summary, "Last 50 stderr lines:", ...lastFifty].join("\n"),
+    ),
+  );
+  expect(readLines("hub.log")).toEqual([pluginLine("error", summary)]);
+});
+
+test("a crash with no stderr is written without a stderr section", () => {
+  const session = openDiagnostics(logsDir, () => NOW).startPluginSession(
+    plugin,
+  );
+
+  session.recordCrash({ cause: "stopped-responding" });
+
+  expect(readLines(PLUGIN_LOG)).toEqual([
+    sessionLine("hub", "error", "Plugin closed abnormally: stopped responding"),
+  ]);
+});
+
+test("a Plugin log rolls before it would pass the limit, like hub.log", () => {
+  const oneLineBytes = Buffer.byteLength(
+    JSON.stringify(sessionLine("ui", "info", "line 1")) + "\n",
+  );
+  const session = openDiagnostics(
+    logsDir,
+    () => NOW,
+    oneLineBytes * 2,
+  ).startPluginSession(plugin);
+  const messages = (relativePath: string) =>
+    readLines(relativePath).map(
+      (line) => (line as { message: string }).message,
+    );
+
+  for (let i = 1; i <= 5; i++)
+    session.recordConsoleMessage("info", `line ${String(i)}`);
+
+  expect(messages(`${PLUGIN_LOG}.1`)).toEqual(["line 3", "line 4"]);
+  expect(messages(PLUGIN_LOG)).toEqual(["line 5"]);
+  expect(readdirSync(join(logsDir, "plugins")).sort()).toEqual([
+    "marking-assistant.log",
+    "marking-assistant.log.1",
+  ]);
 });
 
 test("Plugin ids and versions are parsed, not taken as bare strings", () => {
