@@ -102,19 +102,109 @@ function hubChromeHeadings(hub: ElectronApplication): Promise<unknown[]> {
 
 const HUB_CHROME_GONE = /^Hub Chrome renderer gone: [a-z-]+, exit code -?\d+$/;
 
+// The main process's dialog stub: the options of each message box shown, and how to answer the
+// one on screen. A global, because each evaluate is serialized and shares no closure.
+interface MessageBoxStub {
+  shown: unknown[];
+  answer: (result: { response: number; checkboxChecked: boolean }) => void;
+}
+
+/** Replaces dialog.showMessageBox in the main process with a stub that waits to be answered. */
+function stubMessageBox(hub: ElectronApplication): Promise<void> {
+  return hub.evaluate(({ dialog }) => {
+    const stub: MessageBoxStub = { shown: [], answer: () => undefined };
+    (
+      globalThis as unknown as { messageBoxStub: MessageBoxStub }
+    ).messageBoxStub = stub;
+    dialog.showMessageBox = (...args: unknown[]) => {
+      // Called as (options) or (window, options).
+      stub.shown.push(args.at(-1));
+      return new Promise((resolve) => {
+        stub.answer = resolve;
+      });
+    };
+  });
+}
+
+function messageBoxesShown(hub: ElectronApplication): Promise<unknown[]> {
+  return hub.evaluate(
+    () =>
+      (globalThis as unknown as { messageBoxStub: MessageBoxStub })
+        .messageBoxStub.shown,
+  );
+}
+
+/** Presses the message box's first button. */
+function answerMessageBox(hub: ElectronApplication): Promise<void> {
+  return hub.evaluate(() => {
+    // In a timer, so evaluate returns before the answer can quit the Hub.
+    setTimeout(() => {
+      (
+        globalThis as unknown as { messageBoxStub: MessageBoxStub }
+      ).messageBoxStub.answer({ response: 0, checkboxChecked: false });
+    });
+  });
+}
+
+/** Crashes the Hub Chrome's renderer without waiting for a reload. */
+function crashHubChromeForGood(hub: ElectronApplication): Promise<void> {
+  return hub.evaluate(({ webContents }) => {
+    for (const contents of webContents.getAllWebContents()) {
+      contents.forcefullyCrashRenderer();
+    }
+  });
+}
+
 test("a crashed Hub Chrome renderer is logged and the Hub Chrome comes back", async ({
   hub,
   dataDir,
 }) => {
   const hubChrome = await hub.firstWindow();
   await expect(hubChrome.getByText("Hawkeye Hub")).toBeVisible();
+  await stubMessageBox(hub);
 
   await crashHubChrome(hub);
 
   await expect.poll(() => hubChromeHeadings(hub)).toEqual(["Hawkeye Hub"]);
+  expect(await messageBoxesShown(hub)).toEqual([]);
   expect(hubLogLines(dataDir)).toEqual([
     lifecycleLine("Hub opened"),
     errorLine(HUB_CHROME_GONE),
+  ]);
+});
+
+test("a Hub Chrome that crashes 3 times within 60 s is not reloaded, and the Hub quits", async ({
+  hub,
+  dataDir,
+}) => {
+  const hubChrome = await hub.firstWindow();
+  await expect(hubChrome.getByText("Hawkeye Hub")).toBeVisible();
+  await stubMessageBox(hub);
+  await crashHubChrome(hub);
+  await crashHubChrome(hub);
+  const exitCode = exitCodeOf(hub);
+
+  await crashHubChromeForGood(hub);
+
+  await expect
+    .poll(() => messageBoxesShown(hub))
+    .toEqual([
+      {
+        type: "error",
+        message: "Hawkeye Hub stopped unexpectedly",
+        detail: "Its window kept crashing.",
+        buttons: ["Quit"],
+      },
+    ]);
+  await answerMessageBox(hub);
+  expect(await exitCode).toBe(0);
+  expect(hubLogLines(dataDir)).toEqual([
+    lifecycleLine("Hub opened"),
+    errorLine(HUB_CHROME_GONE),
+    errorLine(HUB_CHROME_GONE),
+    errorLine(HUB_CHROME_GONE),
+    errorLine(/^Hub Chrome kept crashing: 3 times in 60 s, giving up$/),
+    lifecycleLine("Hub closing"),
   ]);
 });
 

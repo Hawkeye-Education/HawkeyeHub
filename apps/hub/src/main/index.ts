@@ -32,9 +32,10 @@ if (app.requestSingleInstanceLock()) {
 
 function runHub(): void {
   // 3. Diagnostics on the logs path, which step 1 may have moved.
+  const now = (): Date => new Date();
   const diagnostics = openDiagnostics(
     parseAbsolutePath(app.getPath("logs")),
-    () => new Date(),
+    now,
   );
   diagnostics.recordHubEvent({ kind: "hub-opened" });
   // A crash is logged synchronously, then the Hub exits at once: after an uncaught error its
@@ -73,7 +74,7 @@ function runHub(): void {
         ? Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }])
         : null,
     );
-    return openHubWindow(diagnostics);
+    return openHubWindow(diagnostics, now);
   });
 
   // Registered now, not once the window is open, so a launch during startup is not missed: it

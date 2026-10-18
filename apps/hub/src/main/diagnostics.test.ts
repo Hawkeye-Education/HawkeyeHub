@@ -194,6 +194,11 @@ const cases: [string, HubEvent, unknown][] = [
     },
     hubLine("error", "Hub Chrome renderer gone: oom, exit code 137"),
   ],
+  [
+    "Hub Chrome kept crashing",
+    { kind: "hub-chrome-kept-crashing", crashes: 3, withinSeconds: 60 },
+    hubLine("error", "Hub Chrome kept crashing: 3 times in 60 s, giving up"),
+  ],
 ];
 
 test.each(cases)(
