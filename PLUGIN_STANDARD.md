@@ -152,9 +152,9 @@ The Plugin UI cannot open windows (`window.open` is refused), add to the Hub Chr
 
 The Hub owns every visual, so the Plugin looks right in every Theme and Colour Scheme with no work from you (ADR 0006).
 
-- Compose the screen from **native elements**, which the Hub stylesheet already styles, and the **Hub Kit**.
+- Compose the screen from **native elements**, which the Hub stylesheet already styles, and the **Hub Kit**. Mark the screen's one main action with `<button data-variant="primary">`; every other button stays plain.
 - Write **layout CSS**: `display`, flex and grid, `gap`, `margin`, `padding`, sizes, `overflow`, `position`. Take spacing from `--hub-space-*`.
-- When you must build a widget that neither offers, take every visual value (colour, background, border, font, radius, shadow, glass) from a `--hub-*` token, written as `var(--hub-…)`. Plugin CSS never contains a literal colour, font family, radius or shadow. When a second Plugin needs the same widget, propose it for the Hub Kit instead.
+- When you must build a widget that neither offers, take every visual value (colour, background, border, font, radius, shadow, glass, transition timing) from a `--hub-*` token, written as `var(--hub-…)`; ADR 0006 lists them. Plugin CSS never contains a literal colour, font family, radius or shadow. When a second Plugin needs the same widget, propose it for the Hub Kit instead.
 
 Hub Kit v1 (ADR 0010):
 
