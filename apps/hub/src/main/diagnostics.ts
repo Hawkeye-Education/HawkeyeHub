@@ -122,7 +122,13 @@ export type HubEvent =
       // value is reduced to its type.
       error: unknown;
     }
-  | { kind: "hub-chrome-renderer-gone"; exit: RenderProcessExit };
+  | { kind: "hub-chrome-renderer-gone"; exit: RenderProcessExit }
+  // The Hub stopped reloading a Hub Chrome that crashed this many times this quickly.
+  | {
+      kind: "hub-chrome-kept-crashing";
+      crashes: number;
+      withinSeconds: number;
+    };
 
 // Written to hub.log only by `PluginSession.recordCrash`, so it is deliberately not a HubEvent.
 interface PluginClosedAbnormally {
@@ -183,6 +189,9 @@ export interface Diagnostics {
   exportBundle(destination: AbsolutePath, system: SystemDescription): void;
 }
 
+/** The languages the Hub draws in (ADR 0007): adding one is a Hub release. */
+export type DisplayLanguage = "en-HK" | "zh-HK";
+
 /** The Themes built into the Hub (ADR 0006): adding one is a Hub release. */
 export type ThemeName = "hawkeye";
 
@@ -193,7 +202,7 @@ export type ThemeName = "hawkeye";
 export interface SystemDescription {
   hubVersion: HubVersion;
   os: { name: string; version: string; arch: string };
-  displayLanguage: "en-HK" | "zh-HK";
+  displayLanguage: DisplayLanguage;
   theme: ThemeName;
   colourScheme: "system" | "light" | "dark";
   plugins: PluginRef[];
@@ -475,6 +484,12 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
       return {
         level: "error",
         message: `Hub Chrome renderer gone: ${describeRenderProcessExit(event.exit)}`,
+        subject: NO_PLUGIN,
+      };
+    case "hub-chrome-kept-crashing":
+      return {
+        level: "error",
+        message: `Hub Chrome kept crashing: ${String(event.crashes)} times in ${String(event.withinSeconds)} s, giving up`,
         subject: NO_PLUGIN,
       };
     case "plugin-closed-abnormally":

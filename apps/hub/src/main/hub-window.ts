@@ -2,8 +2,13 @@
 // overlays for Hub Chrome dialogs join the same stack later (ADRs 0003, 0006).
 
 import { join } from "node:path";
-import { BaseWindow, WebContentsView } from "electron";
-import type { Diagnostics } from "./diagnostics";
+import { app, BaseWindow, dialog, WebContentsView } from "electron";
+import type { Diagnostics, DisplayLanguage } from "./diagnostics";
+import {
+  countHubChromeCrashes,
+  HUB_CHROME_CRASH_WINDOW_SECONDS,
+  HUB_CHROME_MAX_CRASHES,
+} from "./hub-chrome-crashes";
 
 const WINDOW_WIDTH = 1280;
 const WINDOW_HEIGHT = 800;
@@ -14,6 +19,20 @@ const WINDOW_MIN_HEIGHT = 600;
 // the Hub Chrome crashing mid-load (it then reloads), rather than failing.
 const CUT_SHORT_LOAD_CODES = new Set(["ERR_ABORTED", "ERR_FAILED"]);
 
+// The box shown when the Hub gives up on a Hub Chrome that keeps crashing (ADR 0012).
+const STOPPED_UNEXPECTEDLY = {
+  "en-HK": {
+    message: "Hawkeye Hub stopped unexpectedly",
+    detail: "Its window kept crashing.",
+    quit: "Quit",
+  },
+  "zh-HK": {
+    message: "Hawkeye Hub 意外停止運作",
+    detail: "其視窗不斷當機。",
+    quit: "結束",
+  },
+} satisfies Record<DisplayLanguage, unknown>;
+
 function isCutShort(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -23,7 +42,10 @@ function isCutShort(error: unknown): boolean {
   );
 }
 
-export function openHubWindow(diagnostics: Diagnostics): BaseWindow {
+export function openHubWindow(
+  diagnostics: Diagnostics,
+  now: () => Date,
+): BaseWindow {
   // Native frame and title bar until the Theme brings the Hub Chrome's own (ADR 0006).
   // Size and position are not remembered.
   const window = new BaseWindow({
@@ -46,7 +68,9 @@ export function openHubWindow(diagnostics: Diagnostics): BaseWindow {
     },
   });
   window.contentView.addChildView(hubChrome);
-  // ADR 0012: a crashed Hub Chrome is logged and reloaded in place; the Hub keeps running.
+  // ADR 0012: a crashed Hub Chrome is logged and reloaded in place, until it keeps crashing.
+  // Then the Hub gives up, says so in a native box (the Hub Chrome cannot draw one) and quits.
+  const recordCrash = countHubChromeCrashes(now);
   hubChrome.webContents.on(
     "render-process-gone",
     (_event, { reason, exitCode }) => {
@@ -54,7 +78,28 @@ export function openHubWindow(diagnostics: Diagnostics): BaseWindow {
         kind: "hub-chrome-renderer-gone",
         exit: { reason, exitCode },
       });
-      hubChrome.webContents.reload();
+      if (recordCrash() === "reload") {
+        hubChrome.webContents.reload();
+        return;
+      }
+      diagnostics.recordHubEvent({
+        kind: "hub-chrome-kept-crashing",
+        crashes: HUB_CHROME_MAX_CRASHES,
+        withinSeconds: HUB_CHROME_CRASH_WINDOW_SECONDS,
+      });
+      // en-HK until the Display Language setting exists; its ticket wires this box up.
+      const text = STOPPED_UNEXPECTEDLY["en-HK"];
+      // The main process is healthy, so a normal quit, which logs "Hub closing".
+      void dialog
+        .showMessageBox(window, {
+          type: "error",
+          message: text.message,
+          detail: text.detail,
+          buttons: [text.quit],
+        })
+        .then(() => {
+          app.quit();
+        });
     },
   );
 
