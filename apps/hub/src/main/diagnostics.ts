@@ -31,8 +31,31 @@ export type RenderProcessGoneReason =
   | "integrity-failure"
   | "memory-eviction";
 
-export type PluginCrashCause =
-  "crashed" | "failed-to-start" | "stopped-responding";
+/** How many of a Backend's last stderr lines a crash record carries. */
+export const CRASH_STDERR_TAIL_LINES = 50;
+
+interface PluginUiGone {
+  kind: "plugin-ui-gone";
+  reason: RenderProcessGoneReason;
+  exitCode: number;
+}
+interface BackendExited {
+  kind: "backend-exited";
+  exit: BackendExit;
+}
+// The Backend never spawned, or was still running when `initialize` failed or timed out.
+interface NoExit {
+  kind: "no-exit";
+}
+
+/** A Plugin closing abnormally (ADR 0012), with what each cause can report about the exit. */
+export type PluginCrash =
+  | { cause: "crashed"; exit: PluginUiGone | BackendExited }
+  | { cause: "failed-to-start"; exit: BackendExited | NoExit }
+  // The Plugin UI is hung, not gone, and the Backend has done nothing wrong.
+  | { cause: "stopped-responding" };
+
+export type PluginCrashCause = PluginCrash["cause"];
 
 /**
  * Everything the Hub may write to hub.log. ADR 0012's privacy rule lives here: no variant has a
@@ -80,7 +103,7 @@ export type HubEvent =
   | {
       kind: "plugin-closed-abnormally";
       plugin: PluginRef;
-      cause: PluginCrashCause;
+      crash: PluginCrash;
     };
 
 export type HubLevel = "info" | "warn" | "error";
@@ -90,15 +113,45 @@ type LineSubject =
   | { pluginId: PluginId; pluginVersion: PluginVersion }
   | { pluginId: null; pluginVersion: null };
 
-export type HubLogLine = {
+// The Hub does not parse what it did not write, so Backend lines get their own level.
+export type LogLine = {
   time: string;
-  source: "hub";
-  level: HubLevel;
   message: string;
-} & LineSubject;
+} & (
+  | { source: "hub" | "ui"; level: HubLevel }
+  | { source: "backend"; level: "stderr" }
+) &
+  LineSubject;
+
+/** Electron's `console-message` event `level`. */
+export type ConsoleMessageLevel = "debug" | "info" | "warning" | "error";
+
+/** A JSON-RPC error response, reduced to what may be logged: never its params or result. */
+export interface RpcError {
+  method: string;
+  /** `error.data.reason`, the kebab-case code every SDK Backend sends. */
+  reason: string;
+  message: string;
+}
+
+/** One open Plugin's capture into its own `plugins/<id>.log`. */
+export interface PluginSession {
+  recordConsoleMessage(level: ConsoleMessageLevel, message: string): void;
+  /** Raw Backend stderr bytes, written line by line. */
+  recordStderr(chunk: Uint8Array): void;
+  recordRpcError(error: RpcError): void;
+  /**
+   * Writes the full crash record, with the Backend's last stderr lines, to the Plugin's log and
+   * a summary without them to hub.log. Callers do not also record `plugin-closed-abnormally`.
+   */
+  recordCrash(crash: PluginCrash): void;
+  /** Writes any held partial stderr line. Call once, when the Plugin closes. */
+  end(): void;
+}
 
 export interface Diagnostics {
   recordHubEvent(event: HubEvent): void;
+  startPluginSession(plugin: PluginRef): PluginSession;
 }
 
 export function openDiagnostics(
@@ -108,7 +161,7 @@ export function openDiagnostics(
 ): Diagnostics {
   mkdirSync(logsDir, { recursive: true });
 
-  function append(relativePath: string, line: HubLogLine): void {
+  function append(relativePath: string, line: LogLine): void {
     const path = join(logsDir, relativePath);
     const text = JSON.stringify(line) + "\n";
     const size = statSync(path, { throwIfNoEntry: false })?.size ?? 0;
@@ -118,16 +171,108 @@ export function openDiagnostics(
     appendFileSync(path, text);
   }
 
+  function recordHubEvent(event: HubEvent): void {
+    const { level, message, subject } = describe(event);
+    append("hub.log", {
+      time: now().toISOString(),
+      source: "hub",
+      level,
+      message,
+      ...subject,
+    });
+  }
+
   return {
-    recordHubEvent(event) {
-      const { level, message, subject } = describe(event);
-      append("hub.log", {
-        time: now().toISOString(),
-        source: "hub",
-        level,
-        message,
-        ...subject,
-      });
+    recordHubEvent,
+
+    startPluginSession(plugin) {
+      mkdirSync(join(logsDir, "plugins"), { recursive: true });
+      const logPath = `plugins/${plugin.id}.log`;
+      const subject = about(plugin);
+      // Not fatal: invalid bytes become U+FFFD rather than throwing. Streaming keeps a
+      // character split across chunks whole.
+      const decoder = new TextDecoder("utf-8");
+      let partialLine = "";
+      const stderrTail: string[] = [];
+
+      function writeStderrLine(message: string): void {
+        stderrTail.push(message);
+        if (stderrTail.length > CRASH_STDERR_TAIL_LINES) stderrTail.shift();
+        append(logPath, {
+          time: now().toISOString(),
+          source: "backend",
+          level: "stderr",
+          message,
+          ...subject,
+        });
+      }
+
+      function flushPartialLine(): void {
+        const rest = partialLine + decoder.decode();
+        partialLine = "";
+        if (rest !== "") writeStderrLine(rest);
+      }
+
+      return {
+        recordConsoleMessage(level, message) {
+          if (level === "debug") return;
+          append(logPath, {
+            time: now().toISOString(),
+            source: "ui",
+            level: level === "warning" ? "warn" : level,
+            message,
+            ...subject,
+          });
+        },
+
+        recordStderr(chunk) {
+          // A Windows Python writes CRLF; the CR is line ending, not content.
+          const lines = (
+            partialLine + decoder.decode(chunk, { stream: true })
+          ).split(/\r?\n/);
+          // split always yields at least one element: the (possibly empty) partial last line.
+          partialLine = lines.pop() ?? "";
+          lines.forEach(writeStderrLine);
+        },
+
+        recordRpcError({ method, reason, message }) {
+          append(logPath, {
+            time: now().toISOString(),
+            source: "hub",
+            level: "error",
+            message: `${method} failed: ${reason}: ${message}`,
+            ...subject,
+          });
+        },
+
+        recordCrash(crash) {
+          // A dying Backend's last line often has no newline, and it belongs in the tail.
+          flushPartialLine();
+          const event: HubEvent = {
+            kind: "plugin-closed-abnormally",
+            plugin,
+            crash,
+          };
+          const { message } = describe(event);
+          append(logPath, {
+            time: now().toISOString(),
+            source: "hub",
+            level: "error",
+            message:
+              stderrTail.length === 0
+                ? message
+                : [
+                    message,
+                    `Last ${String(stderrTail.length)} stderr lines:`,
+                    ...stderrTail,
+                  ].join("\n"),
+            ...subject,
+          });
+          recordHubEvent(event);
+        },
+
+        end: flushPartialLine,
+      };
     },
   };
 }
@@ -184,10 +329,7 @@ function describe(event: HubEvent): {
       return {
         level:
           event.exit.kind === "code" && event.exit.code === 0 ? "info" : "warn",
-        message:
-          event.exit.kind === "code"
-            ? `Backend exited with code ${String(event.exit.code)}`
-            : `Backend exited on signal ${event.exit.signal}`,
+        message: describeBackendExit(event.exit),
         subject: about(event.plugin),
       };
     case "initialize-failed":
@@ -226,11 +368,32 @@ function describe(event: HubEvent): {
     case "plugin-closed-abnormally":
       return {
         level: "error",
-        message: `Plugin closed abnormally: ${words(event.cause)}`,
+        message: `Plugin closed abnormally: ${describeCrash(event.crash)}`,
         subject: about(event.plugin),
       };
     default:
       return event satisfies never;
+  }
+}
+
+function describeBackendExit(exit: BackendExit): string {
+  return exit.kind === "code"
+    ? `Backend exited with code ${String(exit.code)}`
+    : `Backend exited on signal ${exit.signal}`;
+}
+
+function describeCrash(crash: PluginCrash): string {
+  const cause = words(crash.cause);
+  if (crash.cause === "stopped-responding") return cause;
+  switch (crash.exit.kind) {
+    case "plugin-ui-gone":
+      return `${cause} (Plugin UI gone: ${crash.exit.reason}, exit code ${String(crash.exit.exitCode)})`;
+    case "backend-exited":
+      return `${cause} (${describeBackendExit(crash.exit.exit)})`;
+    case "no-exit":
+      return cause;
+    default:
+      return crash.exit satisfies never;
   }
 }
 
