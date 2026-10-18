@@ -10,6 +10,19 @@ const WINDOW_HEIGHT = 800;
 const WINDOW_MIN_WIDTH = 960;
 const WINDOW_MIN_HEIGHT = 600;
 
+// The error codes Electron rejects a load with when it is cut short, by the window closing or by
+// the Hub Chrome crashing mid-load (it then reloads), rather than failing.
+const CUT_SHORT_LOAD_CODES = new Set(["ERR_ABORTED", "ERR_FAILED"]);
+
+function isCutShort(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    CUT_SHORT_LOAD_CODES.has(error.code)
+  );
+}
+
 export function openHubWindow(diagnostics: Diagnostics): BaseWindow {
   // Native frame and title bar until the Theme brings the Hub Chrome's own (ADR 0006).
   // Size and position are not remembered.
@@ -65,10 +78,10 @@ export function openHubWindow(diagnostics: Diagnostics): BaseWindow {
           join(import.meta.dirname, "../renderer/index.html"),
         )
       : hubChrome.webContents.loadURL(devServerUrl);
-  // Swallowed, not a Hub crash: Electron rejects any load that does not finish, including one cut
-  // short by the window closing or by the Hub Chrome crashing mid-load (it then reloads, above),
-  // with the same error as a real failure. A Hub Chrome that cannot load at all is a broken build,
-  // which the smoke suite catches.
-  load.catch(() => undefined);
+  load.catch((error: unknown) => {
+    // A load cut short is not a Hub crash, so it is swallowed. Rethrowing anything else, such as a
+    // broken install's ERR_FILE_NOT_FOUND, makes it an unhandled rejection that crashes the Hub.
+    if (!isCutShort(error)) throw error;
+  });
   return window;
 }

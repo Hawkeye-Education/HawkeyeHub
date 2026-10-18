@@ -42,6 +42,13 @@ export const test = base.extend<{ dataDir: string; hub: ElectronApplication }>({
   },
 });
 
+/** Resolves with the Hub's exit code once it quits, or null if a signal ended it. */
+export function exitCodeOf(hub: ElectronApplication): Promise<number | null> {
+  return new Promise((resolve) => {
+    hub.process().once("exit", resolve);
+  });
+}
+
 export function hubLogLines(dataDir: string): unknown[] {
   return readFileSync(join(dataDir, "logs", "hub.log"), "utf8")
     .trimEnd()

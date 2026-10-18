@@ -39,20 +39,18 @@ function runHub(): void {
   diagnostics.recordHubEvent({ kind: "hub-opened" });
   // A crash is logged synchronously, then the Hub exits at once: after an uncaught error its
   // state is unknown, so it does not run will-quit and log "Hub closing". There is no clean-exit
-  // marker and no prompt about the crash on the next start (ADR 0012). A rejection gets its own
-  // listener, so Node does not also raise it as an uncaught exception.
-  const crash = (
-    origin: NodeJS.UncaughtExceptionOrigin,
+  // marker and no prompt about the crash on the next start (ADR 0012). Electron's main process only
+  // warns about an unhandled rejection, so it needs its own listener.
+  const logCrashAndExit = (
     error: unknown,
+    origin: NodeJS.UncaughtExceptionOrigin,
   ): void => {
     diagnostics.recordHubEvent({ kind: "uncaught-exception", origin, error });
     app.exit(1);
   };
-  process.on("uncaughtException", (error, origin) => {
-    crash(origin, error);
-  });
+  process.on("uncaughtException", logCrashAndExit);
   process.on("unhandledRejection", (reason) => {
-    crash("unhandledRejection", reason);
+    logCrashAndExit(reason, "unhandledRejection");
   });
   // will-quit fires once all windows have closed, however the quit began; `once` keeps it to one line.
   app.once("will-quit", () => {

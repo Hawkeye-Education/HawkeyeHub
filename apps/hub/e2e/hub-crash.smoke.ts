@@ -1,11 +1,12 @@
 import type { ElectronApplication } from "@playwright/test";
-import { expect, hubLogLines, launchHub, lifecycleLine, test } from "./hub";
-
-function exitCodeOf(hub: ElectronApplication): Promise<number | null> {
-  return new Promise((resolve) => {
-    hub.process().once("exit", resolve);
-  });
-}
+import {
+  exitCodeOf,
+  expect,
+  hubLogLines,
+  launchHub,
+  lifecycleLine,
+  test,
+} from "./hub";
 
 function errorLine(message: RegExp): unknown {
   return {
