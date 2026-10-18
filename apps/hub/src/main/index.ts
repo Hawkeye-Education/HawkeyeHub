@@ -37,6 +37,23 @@ function runHub(): void {
     () => new Date(),
   );
   diagnostics.recordHubEvent({ kind: "hub-opened" });
+  // A crash is logged synchronously, then the Hub exits at once: after an uncaught error its
+  // state is unknown, so it does not run will-quit and log "Hub closing". There is no clean-exit
+  // marker and no prompt about the crash on the next start (ADR 0012). A rejection gets its own
+  // listener, so Node does not also raise it as an uncaught exception.
+  const crash = (
+    origin: NodeJS.UncaughtExceptionOrigin,
+    error: unknown,
+  ): void => {
+    diagnostics.recordHubEvent({ kind: "uncaught-exception", origin, error });
+    app.exit(1);
+  };
+  process.on("uncaughtException", (error, origin) => {
+    crash(origin, error);
+  });
+  process.on("unhandledRejection", (reason) => {
+    crash("unhandledRejection", reason);
+  });
   // will-quit fires once all windows have closed, however the quit began; `once` keeps it to one line.
   app.once("will-quit", () => {
     diagnostics.recordHubEvent({ kind: "hub-closing" });
@@ -49,7 +66,7 @@ function runHub(): void {
 
   // Not a top-level await: Electron holds `ready` back until an ESM main module has finished
   // evaluating, so awaiting it here would never resolve. A rejection is an unhandled one, which
-  // #27 turns into a crash report.
+  // the listener above logs before the Hub exits.
   const hubWindow = app.whenReady().then(() => {
     // Windows: no menu bar. macOS: only the app and Edit menus, for Cmd+Q and the clipboard
     // shortcuts. Either way the default menu, and its Toggle Developer Tools item, is gone.
@@ -58,7 +75,7 @@ function runHub(): void {
         ? Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }])
         : null,
     );
-    return openHubWindow();
+    return openHubWindow(diagnostics);
   });
 
   // Registered now, not once the window is open, so a launch during startup is not missed: it
