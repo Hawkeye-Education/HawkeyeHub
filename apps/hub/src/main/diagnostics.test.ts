@@ -1,8 +1,13 @@
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, expect, test } from "vitest";
-import { openDiagnostics, type HubEvent } from "./diagnostics";
+import {
+  openDiagnostics,
+  type HubEvent,
+  type SystemDescription,
+} from "./diagnostics";
 import { parseAiProviderLabel, parsePluginId, parsePluginVersion } from "./ids";
 
 const NOW = new Date("2026-03-04T05:06:07.890Z");
@@ -461,6 +466,171 @@ test("a Plugin log rolls before it would pass the limit, like hub.log", () => {
     "marking-assistant.log",
     "marking-assistant.log.1",
   ]);
+});
+
+const otherPlugin = {
+  id: parsePluginId("pdf-watermark-eraser"),
+  version: parsePluginVersion("0.4.0"),
+};
+
+/** Fills hub.log, both Plugins' logs and their rolled .1 files. */
+function writeEveryKindOfLog() {
+  const oneLineBytes = Buffer.byteLength(
+    JSON.stringify(sessionLine("ui", "info", "line 1")) + "\n",
+  );
+  const diagnostics = openDiagnostics(logsDir, () => NOW, oneLineBytes * 2);
+  for (const p of [plugin, otherPlugin]) {
+    const session = diagnostics.startPluginSession(p);
+    for (let i = 1; i <= 3; i++)
+      session.recordConsoleMessage("info", `line ${String(i)}`);
+  }
+  for (let i = 0; i < 3; i++)
+    diagnostics.recordHubEvent({ kind: "hub-opened" });
+  return diagnostics;
+}
+
+test("deleting a Plugin's logs removes its log and .1, leaving other Plugins' logs and hub.log alone", () => {
+  const diagnostics = writeEveryKindOfLog();
+
+  diagnostics.deletePluginLogs(plugin.id);
+
+  expect(readdirSync(logsDir).sort()).toEqual([
+    "hub.log",
+    "hub.log.1",
+    "plugins",
+  ]);
+  expect(readdirSync(join(logsDir, "plugins")).sort()).toEqual([
+    "pdf-watermark-eraser.log",
+    "pdf-watermark-eraser.log.1",
+  ]);
+});
+
+test("deleting the logs of a Plugin that never logged does nothing", () => {
+  const diagnostics = openDiagnostics(logsDir, () => NOW);
+
+  diagnostics.deletePluginLogs(plugin.id);
+
+  expect(readdirSync(logsDir)).toEqual([]);
+});
+
+const system: SystemDescription = {
+  hubVersion: "0.3.0",
+  os: { name: "Windows", version: "10.0.19045", arch: "x64" },
+  displayLanguage: "zh-HK",
+  theme: "hawkeye",
+  colourScheme: "system",
+  plugins: [plugin, otherPlugin],
+  pythonVersions: ["3.12.7"],
+  aiProviders: [
+    { label: parseAiProviderLabel("School Azure"), kind: "azure-openai" },
+  ],
+  authProviderKind: "oidc",
+  signedIn: true,
+};
+
+/** The exported zip, read back with fflate: entry path to its text. */
+function readBundle(path: string): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(unzipSync(readFileSync(path))).map(([name, data]) => [
+      name,
+      strFromU8(data),
+    ]),
+  );
+}
+
+function entry(bundle: Record<string, string>, name: string): string {
+  const text = bundle[name];
+  if (text === undefined) throw new Error(`The bundle has no ${name}`);
+  return text;
+}
+
+test("an exported bundle holds every log at its path relative to the logs folder plus system.json, and nothing else", () => {
+  const diagnostics = writeEveryKindOfLog();
+  const destination = join(mkdtempSync(join(tmpdir(), "hub-export-")), "b.zip");
+
+  diagnostics.exportBundle(destination, system);
+
+  const bundle = readBundle(destination);
+  const logs = [
+    "hub.log",
+    "hub.log.1",
+    "plugins/marking-assistant.log",
+    "plugins/marking-assistant.log.1",
+    "plugins/pdf-watermark-eraser.log",
+    "plugins/pdf-watermark-eraser.log.1",
+  ];
+  expect(Object.keys(bundle).sort()).toEqual([...logs, "system.json"]);
+  for (const log of logs)
+    expect(bundle[log]).toBe(readFileSync(join(logsDir, log), "utf8"));
+  expect(JSON.parse(entry(bundle, "system.json"))).toEqual({
+    hubVersion: "0.3.0",
+    os: { name: "Windows", version: "10.0.19045", arch: "x64" },
+    displayLanguage: "zh-HK",
+    theme: "hawkeye",
+    colourScheme: "system",
+    plugins: [
+      { id: "marking-assistant", version: "1.2.3" },
+      { id: "pdf-watermark-eraser", version: "0.4.0" },
+    ],
+    pythonVersions: ["3.12.7"],
+    aiProviders: [{ label: "School Azure", kind: "azure-openai" }],
+    authProviderKind: "oidc",
+    signedIn: true,
+  });
+});
+
+test("a bundle exported before any Plugin has logged holds hub.log and system.json", () => {
+  const diagnostics = openDiagnostics(logsDir, () => NOW);
+  diagnostics.recordHubEvent({ kind: "hub-opened" });
+  const destination = join(mkdtempSync(join(tmpdir(), "hub-export-")), "b.zip");
+
+  diagnostics.exportBundle(destination, system);
+
+  expect(Object.keys(readBundle(destination)).sort()).toEqual([
+    "hub.log",
+    "system.json",
+  ]);
+});
+
+test("system.json holds only the described fields, even when handed an object with more", () => {
+  const diagnostics = openDiagnostics(logsDir, () => NOW);
+  const destination = join(mkdtempSync(join(tmpdir(), "hub-export-")), "b.zip");
+  const settings = {
+    ...system,
+    aiProviders: [{ ...system.aiProviders[0], apiKey: "sk-secret" }],
+    staffIdentity: { email: "a@b.c" },
+  };
+
+  diagnostics.exportBundle(destination, settings as SystemDescription);
+
+  expect(entry(readBundle(destination), "system.json")).not.toMatch(
+    /sk-secret|a@b\.c|apiKey|staffIdentity/,
+  );
+});
+
+test("a failed export leaves no file at the destination and nothing beside it", () => {
+  const diagnostics = writeEveryKindOfLog();
+  mkdirSync(join(logsDir, "plugins", "unreadable.log")); // a log that cannot be read
+  const folder = mkdtempSync(join(tmpdir(), "hub-export-"));
+
+  expect(() => {
+    diagnostics.exportBundle(join(folder, "b.zip"), system);
+  }).toThrow();
+
+  expect(readdirSync(folder)).toEqual([]);
+});
+
+test("an export that fails while moving the zip into place leaves no temp file behind", () => {
+  const diagnostics = writeEveryKindOfLog();
+  const folder = mkdtempSync(join(tmpdir(), "hub-export-"));
+  const destination = join(folder, "b.zip");
+  mkdirSync(join(destination, "occupied"), { recursive: true }); // a zip cannot replace a folder
+
+  expect(() => {
+    diagnostics.exportBundle(destination, system);
+  }).toThrow();
+
+  expect(readdirSync(folder)).toEqual(["b.zip"]);
 });
 
 test("Plugin ids and versions are parsed, not taken as bare strings", () => {
