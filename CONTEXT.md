@@ -19,7 +19,7 @@ The screen a Plugin shows staff while it is open; every Plugin has exactly one.
 _Avoid_: Frontend, view, window
 
 **Backend**:
-The optional part of a Plugin that does work its Plugin UI cannot, written in Node or Python; a Plugin has at most one.
+The optional part of a Plugin that runs as its own process to do work its Plugin UI cannot; a Plugin has at most one.
 _Avoid_: Sidecar, server, worker, service
 
 **Busy**:
