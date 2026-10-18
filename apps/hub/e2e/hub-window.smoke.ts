@@ -1,7 +1,7 @@
 ﻿import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { expect, launchHub, test } from "./hub";
+import { exitCodeOf, expect, launchHub, test } from "./hub";
 
 test("the Hub shows one window whose Hub Chrome says Hawkeye Hub", async ({
   hub,
@@ -28,9 +28,7 @@ test("the Hub Chrome has no Node access", async ({ hub }) => {
 
 test("closing the window quits the Hub", async ({ hub }) => {
   await hub.firstWindow();
-  const exitCode = new Promise<number | null>((resolve) => {
-    hub.process().once("exit", resolve);
-  });
+  const exitCode = exitCodeOf(hub);
 
   await hub.evaluate(({ BaseWindow }) => {
     for (const window of BaseWindow.getAllWindows()) window.close();
