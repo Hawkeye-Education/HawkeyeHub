@@ -46,6 +46,10 @@ _Avoid_: SDK version, Hub version
 The `manifest.json` at the root of every Plugin, stating who the Plugin is and which parts it has; every field is required, and a part the Plugin lacks is stated, never omitted.
 _Avoid_: Plugin config, package.json, descriptor
 
+**Diagnostics Bundle**:
+The zip of the Hub's and every Plugin's logs, plus a description of the installation, that staff export themselves and send to whoever maintains the Hub; nothing else ever takes diagnostics off the machine.
+_Avoid_: Crash report, log dump, support bundle, telemetry
+
 ### Look and feel
 
 **Hub Chrome**:

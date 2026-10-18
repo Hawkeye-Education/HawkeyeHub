@@ -9,7 +9,7 @@ We chose this over a shared extension host (VS Code, Raycast), where closing a p
 - Lifecycle is Closed → Open (foreground) ↔ Open (background). Nothing starts until the user opens a Plugin. Background Plugins keep running, and only the user closes one. There is no auto-unload and no resource limits.
 - Close sends a `shutdown` notification, waits a fixed grace period (~5 s), then kills the Backend's whole process tree (`taskkill /T /F` on Windows, process group on macOS), so children such as a Playwright browser die too. The Plugin UI is destroyed with `webContents.close()`, because detaching a view leaks it.
 - A Plugin can mark itself **Busy**; the Hub asks before closing it or quitting.
-- If any part dies, the whole Plugin closes and the user is told. Nothing restarts automatically, so no Plugin has to handle a half-alive state.
+- If any part dies, the whole Plugin closes and the user is told, with an offer to export diagnostics (ADR 0012). Nothing restarts automatically, so no Plugin has to handle a half-alive state.
 - The Hub's Python SDK moves `sys.stdout` to stderr, so stray `print()`s can't corrupt the protocol; stderr is the Backend's log.
 - Hidden Plugin UIs are throttled by Chromium. Long-running work belongs in the Backend or a Web Worker.
 - A Node Backend, if a plugin ever needs Node-only code, is one `utilityProcess` per open Plugin on the same JSON-RPC bridge, so Plugin UIs can't tell the two kinds apart.

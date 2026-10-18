@@ -18,6 +18,8 @@ Start UI-only. Add a Backend when the Plugin needs work its Plugin UI cannot do:
 
 Lifecycle: nothing runs until staff open the Plugin. An open Plugin keeps running in the background when staff switch away, and only staff close it. Closing destroys the Plugin UI at once and sends the Backend `shutdown`, then kills its process tree about 5 s later. If any part crashes, the whole Plugin closes, and nothing restarts. So a Plugin never has to handle a half-alive state, and anything that must survive a close is written to disk as it happens.
 
+Logging: there is no logging API. The Hub writes a Plugin UI's `console.log`, `info`, `warn` and `error` and a Backend's stderr into one log per Plugin, which staff export in a Diagnostics Bundle (ADR 0012). `console.debug` is dropped. Never log secrets, file contents or Staff Identity. File and folder paths are fine.
+
 ## 2. Folder layout and ids
 
 Every Plugin lives in the monorepo at `plugins/<id>/` (ADR 0011). Paths are fixed by convention, not declared (ADR 0010):
@@ -128,6 +130,7 @@ Before your code runs, the Hub preload has set `<html lang>`, loaded the `--hub-
 | Open a web page | `<a href="https://…" target="_blank">` (opens in the system browser) |
 | Notice the Plugin going to the background or closing | `visibilitychange`, `pagehide` |
 | Long CPU work | a Web Worker; hidden Plugin UIs are throttled |
+| Log for diagnostics | `console.log`/`info`/`warn`/`error`; the Hub writes them to the Plugin's log (§1) |
 | A folder the Backend should read or write | `hub.files.pickFolder(title)` |
 | Reveal a folder in Explorer or Finder | `hub.files.openFolder(path)` |
 | Talk to your Backend | `hub.backend` |
@@ -507,7 +510,7 @@ Reject a request with `RpcError(reason, message)`. The `reason` is a kebab-case 
 
 - `ctx.data_dir` is the Backend's private Plugin Data folder. `ctx.stores` maps each declared Shared Store to its folder. `ctx.hub_api` is the Hub API version the Hub implements.
 - Read and write staff's files only under folders the Plugin UI picked with `hub.files.pickFolder` and passed in a request.
-- stdout is the protocol. The SDK moves `sys.stdout` to stderr, so a stray `print()` is harmless, and stderr is the Backend's log. Log with `logging` to stderr.
+- stdout is the protocol. The SDK moves `sys.stdout` to stderr, so a stray `print()` is harmless, and stderr is the Backend's log. Log with `logging` to stderr. The Hub keeps it verbatim in the Plugin's log (§1).
 - Reach other programs as child processes. The Backend never listens on a port: no local HTTP servers, no sockets (ADR 0003).
 - Never rely on the process locale. The Backend gets no `LANG`, and the SDK sets UTF-8 stdio itself.
 
@@ -703,6 +706,7 @@ Updates reach staff silently, installed side by side and swapped in while the Pl
 - Long work sets and clears Busy in a `finally`.
 - Handlers take a frozen `Model`. Every raised reason is in `protocol.ts`. Regexes and other input are validated in Python.
 - Long requests check `cancel`. `shutdown` stops work cleanly. Output files and store writes are atomic replaces.
+- No log line, `console` or stderr, carries a secret, file contents or Staff Identity.
 - A Playwright Backend uses `channel=` with a profile under `ctx.data_dir`, never `playwright install`, and reports `browser-not-found`.
 - Shared Store changes are additive and documented in `stores/<name>.md`.
 - Skills use only the allowed frontmatter and contain no `scripts/`. Nothing the Assistant needs lives outside `agents/`.
