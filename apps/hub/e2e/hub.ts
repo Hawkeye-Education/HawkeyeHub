@@ -13,12 +13,15 @@ import {
 // The package directory, so Electron reads package.json's `main` and `productName`.
 export const HUB_DIR = join(import.meta.dirname, "..");
 
+/** The environment a Hub runs in: this one plus its data folder. */
+// Inferred: _electron.launch's env type is narrower than NodeJS.ProcessEnv but accepts the spread.
+export function hubEnv(dataDir: string) {
+  return { ...process.env, HAWKEYE_HUB_DATA_DIR: dataDir };
+}
+
 export function launchHub(dataDir: string): Promise<ElectronApplication> {
-  return _electron.launch({
-    args: [HUB_DIR],
-    // `env` replaces the environment rather than adding to it.
-    env: { ...process.env, HAWKEYE_HUB_DATA_DIR: dataDir },
-  });
+  // `env` replaces the environment rather than adding to it.
+  return _electron.launch({ args: [HUB_DIR], env: hubEnv(dataDir) });
 }
 
 export const test = base.extend<{ dataDir: string; hub: ElectronApplication }>({

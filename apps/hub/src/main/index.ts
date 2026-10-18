@@ -50,7 +50,7 @@ function runHub(): void {
   // Not a top-level await: Electron holds `ready` back until an ESM main module has finished
   // evaluating, so awaiting it here would never resolve. A rejection is an unhandled one, which
   // #27 turns into a crash report.
-  void app.whenReady().then(async () => {
+  const hubWindow = app.whenReady().then(() => {
     // Windows: no menu bar. macOS: only the app and Edit menus, for Cmd+Q and the clipboard
     // shortcuts. Either way the default menu, and its Toggle Developer Tools item, is gone.
     Menu.setApplicationMenu(
@@ -58,9 +58,13 @@ function runHub(): void {
         ? Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }])
         : null,
     );
-    const window = await openHubWindow();
-    // A launch that arrives before the window exists still exits; there is just nothing to focus.
-    app.on("second-instance", () => {
+    return openHubWindow();
+  });
+
+  // Registered now, not once the window is open, so a launch during startup is not missed: it
+  // brings the window forward as soon as there is one.
+  app.on("second-instance", () => {
+    void hubWindow.then((window) => {
       if (window.isMinimized()) window.restore();
       window.focus();
     });
