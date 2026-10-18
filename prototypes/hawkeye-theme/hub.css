@@ -1,10 +1,13 @@
 /* PROTOTYPE (wayfinder #19). What the Hub would serve into every Plugin UI and its own Chrome (ADR 0006):
-   1. the --hub-* token interface (the proposed Hub API names), with three candidate Hawkeye value sets,
-   2. the native-element stylesheet built only from those tokens.
+   1. the --hub-* token interface (the proposed Hub API names), with four candidate Hawkeye value sets,
+   2. the native-element stylesheet built only from those tokens, identical for every Theme.
    --chrome-* are Hub-internal values for Hub Chrome only, never Hub API.
    In the real Hub the active Theme x Colour Scheme x window material arrive as plain values; the
-   data-theme / data-scheme / data-material attributes are only how this prototype switches them. */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Noto+Sans+TC:wght@400;600&display=swap");
+   data-theme / data-scheme / data-material attributes are only how this prototype switches them.
+   Brand: logo orange #FF6B35 fails AA under white text (2.84:1), so accents are deeper (light) or lighter (dark) kin. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Nunito:wght@400;700&family=Noto+Sans+TC:wght@400;600;800&display=swap");
+
+:root { --chrome-brand: #ff6b35; --chrome-item-active-shadow: none; }
 
 /* ---------- A · Frosted: OS material behind everything, translucent surfaces, system fonts ---------- */
 [data-theme="A"] {
@@ -15,7 +18,8 @@
   --hub-leading: 1.5; --hub-weight-strong: 600;
   --hub-space-1: 4px; --hub-space-2: 8px; --hub-space-3: 12px; --hub-space-4: 16px; --hub-space-5: 24px; --hub-space-6: 32px;
   --hub-radius-1: 6px; --hub-radius-2: 10px; --hub-radius-3: 16px;
-  --hub-glass-blur: 24px;
+  --hub-glass-blur: 24px; --hub-shadow-inset: none;
+  --hub-motion-fast: 120ms; --hub-motion-slow: 240ms; --hub-motion-ease: cubic-bezier(.2, 0, 0, 1); --hub-motion-distance: 4px;
   --chrome-blur: 48px;
   --chrome-card-inset: 0; --chrome-card-radius: 0; --chrome-card-shadow: none;
 }
@@ -23,13 +27,13 @@
   --hub-color-canvas: transparent;
   --hub-color-surface: rgb(255 255 255 / .62);
   --hub-color-surface-raised: rgb(255 255 255 / .86);
-  --hub-color-fg: #14171c; --hub-color-fg-muted: #535a68; --hub-color-line: rgb(20 23 28 / .13);
-  --hub-color-accent: #0b6bcb; --hub-color-on-accent: #fff; --hub-color-focus: #0b6bcb;
+  --hub-color-fg: #1c1714; --hub-color-fg-muted: #5e5650; --hub-color-line: rgb(28 23 20 / .13);
+  --hub-color-accent: #c2410c; --hub-color-on-accent: #fff; --hub-color-focus: #c2410c;
   --hub-color-success: #17784a; --hub-color-warning: #8f5e00; --hub-color-danger: #c4314b;
   --hub-shadow-1: 0 1px 2px rgb(0 0 0 / .06), 0 2px 8px rgb(0 0 0 / .05);
   --hub-shadow-2: 0 16px 48px rgb(0 0 0 / .18);
   --hub-glass-fill: rgb(255 255 255 / .55); --hub-glass-edge: rgb(255 255 255 / .6);
-  --chrome-window: rgb(238 242 248 / .5); --chrome-window-solid: linear-gradient(160deg, #eef2f8, #e1e7f0);
+  --chrome-window: rgb(250 245 240 / .5); --chrome-window-solid: linear-gradient(160deg, #f8f3ee, #ede5dd);
   --chrome-window-edge: rgb(255 255 255 / .55);
   --chrome-bar: transparent; --chrome-bar-fg: var(--hub-color-fg);
   --chrome-side: transparent; --chrome-side-fg: var(--hub-color-fg);
@@ -38,15 +42,15 @@
 }
 [data-theme="A"][data-scheme="dark"] {
   --hub-color-canvas: transparent;
-  --hub-color-surface: rgb(44 48 56 / .55);
-  --hub-color-surface-raised: rgb(36 39 46 / .9);
-  --hub-color-fg: #eef0f4; --hub-color-fg-muted: #a5acb9; --hub-color-line: rgb(255 255 255 / .12);
-  --hub-color-accent: #4da3ff; --hub-color-on-accent: #061423; --hub-color-focus: #4da3ff;
+  --hub-color-surface: rgb(52 46 42 / .55);
+  --hub-color-surface-raised: rgb(40 36 33 / .9);
+  --hub-color-fg: #f3eee9; --hub-color-fg-muted: #b1a8a0; --hub-color-line: rgb(255 255 255 / .12);
+  --hub-color-accent: #ff8a5c; --hub-color-on-accent: #1a0a03; --hub-color-focus: #ff8a5c;
   --hub-color-success: #4cc38a; --hub-color-warning: #e3b341; --hub-color-danger: #ff7b8a;
   --hub-shadow-1: 0 1px 2px rgb(0 0 0 / .3);
   --hub-shadow-2: 0 16px 48px rgb(0 0 0 / .5);
-  --hub-glass-fill: rgb(40 44 52 / .5); --hub-glass-edge: rgb(255 255 255 / .09);
-  --chrome-window: rgb(22 24 29 / .55); --chrome-window-solid: linear-gradient(160deg, #1f232a, #171a1f);
+  --hub-glass-fill: rgb(48 43 40 / .5); --hub-glass-edge: rgb(255 255 255 / .09);
+  --chrome-window: rgb(28 24 22 / .55); --chrome-window-solid: linear-gradient(160deg, #26211e, #1b1816);
   --chrome-window-edge: rgb(255 255 255 / .08);
   --chrome-bar: transparent; --chrome-bar-fg: var(--hub-color-fg);
   --chrome-side: transparent; --chrome-side-fg: var(--hub-color-fg);
@@ -62,39 +66,40 @@
   --hub-leading: 1.55; --hub-weight-strong: 600;
   --hub-space-1: 4px; --hub-space-2: 8px; --hub-space-3: 12px; --hub-space-4: 16px; --hub-space-5: 24px; --hub-space-6: 32px;
   --hub-radius-1: 4px; --hub-radius-2: 6px; --hub-radius-3: 10px;
-  --hub-glass-blur: 0px;
+  --hub-glass-blur: 0px; --hub-shadow-inset: none;
+  --hub-motion-fast: 120ms; --hub-motion-slow: 200ms; --hub-motion-ease: cubic-bezier(.2, 0, 0, 1); --hub-motion-distance: 2px;
   --chrome-blur: 32px;
   --chrome-card-inset: 0 8px 8px 0; --chrome-card-radius: 10px;
 }
 [data-theme="B"][data-scheme="light"] {
   --hub-color-canvas: #fff;
-  --hub-color-surface: #f6f7f9;
+  --hub-color-surface: #f8f6f4;
   --hub-color-surface-raised: #fff;
-  --hub-color-fg: #1a1d23; --hub-color-fg-muted: #5d6472; --hub-color-line: #e1e4e9;
-  --hub-color-accent: #2453b3; --hub-color-on-accent: #fff; --hub-color-focus: #2453b3;
+  --hub-color-fg: #1d1a17; --hub-color-fg-muted: #625b55; --hub-color-line: #e6e1dc;
+  --hub-color-accent: #c2410c; --hub-color-on-accent: #fff; --hub-color-focus: #c2410c;
   --hub-color-success: #18794e; --hub-color-warning: #946200; --hub-color-danger: #c22d3c;
   --hub-shadow-1: none;
-  --hub-shadow-2: 0 12px 40px rgb(16 24 40 / .18);
-  --hub-glass-fill: #fff; --hub-glass-edge: #e1e4e9;
-  --chrome-window: rgb(234 236 241 / .62); --chrome-window-solid: #e9ebef;
+  --hub-shadow-2: 0 12px 40px rgb(40 20 10 / .18);
+  --hub-glass-fill: #fff; --hub-glass-edge: #e6e1dc;
+  --chrome-window: rgb(240 236 232 / .62); --chrome-window-solid: #efebe7;
   --chrome-window-edge: rgb(255 255 255 / .5);
   --chrome-bar: transparent; --chrome-bar-fg: var(--hub-color-fg);
   --chrome-side: transparent; --chrome-side-fg: var(--hub-color-fg);
   --chrome-item-hover: rgb(127 127 127 / .12); --chrome-item-active: rgb(127 127 127 / .18);
   --chrome-card: var(--hub-color-canvas);
-  --chrome-card-shadow: 0 0 0 1px rgb(16 24 40 / .06), 0 2px 8px rgb(16 24 40 / .06);
+  --chrome-card-shadow: 0 0 0 1px rgb(40 20 10 / .06), 0 2px 8px rgb(40 20 10 / .06);
 }
 [data-theme="B"][data-scheme="dark"] {
-  --hub-color-canvas: #1b1d21;
-  --hub-color-surface: #24272c;
-  --hub-color-surface-raised: #2a2d33;
-  --hub-color-fg: #e7e9ec; --hub-color-fg-muted: #9ca3ae; --hub-color-line: #34383f;
-  --hub-color-accent: #7ea4ff; --hub-color-on-accent: #0d1530; --hub-color-focus: #7ea4ff;
+  --hub-color-canvas: #1e1c1a;
+  --hub-color-surface: #282522;
+  --hub-color-surface-raised: #2e2b28;
+  --hub-color-fg: #ece8e4; --hub-color-fg-muted: #a59d96; --hub-color-line: #3a3632;
+  --hub-color-accent: #ff8a5c; --hub-color-on-accent: #1a0a03; --hub-color-focus: #ff8a5c;
   --hub-color-success: #5cc98f; --hub-color-warning: #e6b545; --hub-color-danger: #ff8090;
   --hub-shadow-1: none;
   --hub-shadow-2: 0 12px 40px rgb(0 0 0 / .5);
-  --hub-glass-fill: #2a2d33; --hub-glass-edge: #34383f;
-  --chrome-window: rgb(26 28 32 / .62); --chrome-window-solid: #141619;
+  --hub-glass-fill: #2e2b28; --hub-glass-edge: #3a3632;
+  --chrome-window: rgb(30 27 25 / .62); --chrome-window-solid: #171513;
   --chrome-window-edge: rgb(255 255 255 / .07);
   --chrome-bar: transparent; --chrome-bar-fg: var(--hub-color-fg);
   --chrome-side: transparent; --chrome-side-fg: var(--hub-color-fg);
@@ -103,73 +108,122 @@
   --chrome-card-shadow: 0 0 0 1px rgb(255 255 255 / .05);
 }
 
-/* ---------- C · Solid: no glass anywhere, navy brand chrome, amber accent, compact, system fonts ---------- */
+/* ---------- C · Neumorphic: one soft base colour, everything extruded from or pressed into it ---------- */
 [data-theme="C"] {
-  --hub-font-body: "Segoe UI", -apple-system, BlinkMacSystemFont, "Microsoft JhengHei UI", "Microsoft JhengHei",
-    "PingFang HK", "PingFang TC", sans-serif;
-  --hub-font-mono: Consolas, "SF Mono", ui-monospace, "Microsoft JhengHei UI", "PingFang HK", monospace;
-  --hub-text-sm: 12px; --hub-text-md: 13px; --hub-text-lg: 15px; --hub-text-xl: 18px;
-  --hub-leading: 1.45; --hub-weight-strong: 600;
-  --hub-space-1: 2px; --hub-space-2: 4px; --hub-space-3: 8px; --hub-space-4: 12px; --hub-space-5: 16px; --hub-space-6: 24px;
-  --hub-radius-1: 2px; --hub-radius-2: 3px; --hub-radius-3: 4px;
+  --hub-font-body: "Nunito", "Noto Sans TC", sans-serif;
+  --hub-font-mono: "Cascadia Mono", "SF Mono", Consolas, ui-monospace, "Noto Sans TC", monospace;
+  --hub-text-sm: 12px; --hub-text-md: 14px; --hub-text-lg: 16px; --hub-text-xl: 20px;
+  --hub-leading: 1.55; --hub-weight-strong: 700;
+  --hub-space-1: 4px; --hub-space-2: 8px; --hub-space-3: 12px; --hub-space-4: 18px; --hub-space-5: 26px; --hub-space-6: 36px;
+  --hub-radius-1: 8px; --hub-radius-2: 14px; --hub-radius-3: 22px;
   --hub-glass-blur: 0px;
+  --hub-motion-fast: 160ms; --hub-motion-slow: 280ms; --hub-motion-ease: cubic-bezier(.3, 0, .2, 1); --hub-motion-distance: 3px;
+  --chrome-blur: 0px;
+  --chrome-card-inset: 4px 18px 18px 6px; --chrome-card-radius: 26px;
+}
+[data-theme="C"][data-scheme="light"] {
+  --hub-color-canvas: #e6e9ef; --hub-color-surface: #e6e9ef; --hub-color-surface-raised: #e6e9ef;
+  --hub-color-fg: #2b303b; --hub-color-fg-muted: #5c6474; --hub-color-line: transparent;
+  --hub-color-accent: #c2410c; --hub-color-on-accent: #fff; --hub-color-focus: #c2410c;
+  --hub-color-success: #15803d; --hub-color-warning: #8f5e00; --hub-color-danger: #b91c1c;
+  --hub-shadow-1: 5px 5px 10px #c3c7ce, -5px -5px 10px #ffffff;
+  --hub-shadow-2: 14px 14px 32px #babec5, -14px -14px 32px #ffffff;
+  --hub-shadow-inset: inset 3px 3px 6px #c3c7ce, inset -3px -3px 6px #ffffff;
+  --hub-glass-fill: #e6e9ef; --hub-glass-edge: transparent;
+  --chrome-window: #e6e9ef; --chrome-window-solid: #e6e9ef; --chrome-window-edge: transparent;
+  --chrome-bar: transparent; --chrome-bar-fg: var(--hub-color-fg);
+  --chrome-side: transparent; --chrome-side-fg: var(--hub-color-fg);
+  --chrome-item-hover: transparent; --chrome-item-active: #e6e9ef;
+  --chrome-item-active-shadow: var(--hub-shadow-inset);
+  --chrome-card: #e6e9ef; --chrome-card-shadow: 10px 10px 24px #c3c7ce, -10px -10px 24px #ffffff;
+}
+[data-theme="C"][data-scheme="dark"] {
+  --hub-color-canvas: #272b32; --hub-color-surface: #272b32; --hub-color-surface-raised: #272b32;
+  --hub-color-fg: #e4e7ec; --hub-color-fg-muted: #a3aab7; --hub-color-line: transparent;
+  --hub-color-accent: #ff8a5c; --hub-color-on-accent: #1a0a03; --hub-color-focus: #ff8a5c;
+  --hub-color-success: #4ade80; --hub-color-warning: #facc15; --hub-color-danger: #f87171;
+  --hub-shadow-1: 5px 5px 10px #1c1f24, -5px -5px 10px #323740;
+  --hub-shadow-2: 14px 14px 32px #17191d, -14px -14px 32px #353a44;
+  --hub-shadow-inset: inset 3px 3px 6px #1c1f24, inset -3px -3px 6px #323740;
+  --hub-glass-fill: #272b32; --hub-glass-edge: transparent;
+  --chrome-window: #272b32; --chrome-window-solid: #272b32; --chrome-window-edge: transparent;
+  --chrome-bar: transparent; --chrome-bar-fg: var(--hub-color-fg);
+  --chrome-side: transparent; --chrome-side-fg: var(--hub-color-fg);
+  --chrome-item-hover: transparent; --chrome-item-active: #272b32;
+  --chrome-item-active-shadow: var(--hub-shadow-inset);
+  --chrome-card: #272b32; --chrome-card-shadow: 10px 10px 24px #1a1d21, -10px -10px 24px #343944;
+}
+
+/* ---------- D · Kinetic: solid and bold, motion carries the hierarchy (springy, travelling, staggered) ---------- */
+[data-theme="D"] {
+  --hub-font-body: "Inter", "Noto Sans TC", sans-serif;
+  --hub-font-mono: "Cascadia Mono", "SF Mono", Consolas, ui-monospace, "Noto Sans TC", monospace;
+  --hub-text-sm: 12px; --hub-text-md: 14px; --hub-text-lg: 17px; --hub-text-xl: 26px;
+  --hub-leading: 1.5; --hub-weight-strong: 800;
+  --hub-space-1: 4px; --hub-space-2: 8px; --hub-space-3: 12px; --hub-space-4: 16px; --hub-space-5: 24px; --hub-space-6: 36px;
+  --hub-radius-1: 6px; --hub-radius-2: 12px; --hub-radius-3: 18px;
+  --hub-glass-blur: 0px; --hub-shadow-inset: none;
+  --hub-motion-fast: 220ms; --hub-motion-slow: 560ms; --hub-motion-ease: cubic-bezier(.34, 1.56, .64, 1); --hub-motion-distance: 16px;
   --chrome-blur: 0px;
   --chrome-card-inset: 0; --chrome-card-radius: 0; --chrome-card-shadow: none;
 }
-[data-theme="C"][data-scheme="light"] {
-  --hub-color-canvas: #fff;
-  --hub-color-surface: #fff;
-  --hub-color-surface-raised: #fff;
-  --hub-color-fg: #111827; --hub-color-fg-muted: #5b6472; --hub-color-line: #cfd4dc;
-  --hub-color-accent: #b45309; --hub-color-on-accent: #fff; --hub-color-focus: #2563eb;
-  --hub-color-success: #15803d; --hub-color-warning: #a16207; --hub-color-danger: #b91c1c;
-  --hub-shadow-1: 0 1px 2px rgb(0 0 0 / .12);
-  --hub-shadow-2: 0 10px 30px rgb(0 0 0 / .28);
-  --hub-glass-fill: #fff; --hub-glass-edge: #cfd4dc;
-  --chrome-window: #f3f4f6; --chrome-window-solid: #f3f4f6;
-  --chrome-window-edge: transparent;
-  --chrome-bar: #0f1b33; --chrome-bar-fg: #fff;
-  --chrome-side: #14213d; --chrome-side-fg: #dfe5f1;
-  --chrome-item-hover: rgb(255 255 255 / .08); --chrome-item-active: rgb(245 158 11 / .22);
+[data-theme="D"][data-scheme="light"] {
+  --hub-color-canvas: #fbfaf7; --hub-color-surface: #fff; --hub-color-surface-raised: #fff;
+  --hub-color-fg: #16130f; --hub-color-fg-muted: #5c564e; --hub-color-line: #e7e2da;
+  --hub-color-accent: #c2410c; --hub-color-on-accent: #fff; --hub-color-focus: #c2410c;
+  --hub-color-success: #15803d; --hub-color-warning: #8f5e00; --hub-color-danger: #b91c1c;
+  --hub-shadow-1: 0 1px 0 #e7e2da, 0 4px 14px rgb(60 30 10 / .06);
+  --hub-shadow-2: 0 24px 60px rgb(60 30 10 / .22);
+  --hub-glass-fill: #fff; --hub-glass-edge: #e7e2da;
+  --chrome-window: #fbfaf7; --chrome-window-solid: #fbfaf7; --chrome-window-edge: transparent;
+  --chrome-bar: #fbfaf7; --chrome-bar-fg: var(--hub-color-fg);
+  --chrome-side: #f3f0eb; --chrome-side-fg: var(--hub-color-fg);
+  --chrome-item-hover: rgb(194 65 12 / .07); --chrome-item-active: #c2410c;
   --chrome-card: var(--hub-color-canvas);
 }
-[data-theme="C"][data-scheme="dark"] {
-  --hub-color-canvas: #111418;
-  --hub-color-surface: #181c22;
-  --hub-color-surface-raised: #1f242b;
-  --hub-color-fg: #e5e7eb; --hub-color-fg-muted: #9ca3af; --hub-color-line: #2f353e;
-  --hub-color-accent: #f59e0b; --hub-color-on-accent: #1a1205; --hub-color-focus: #60a5fa;
+[data-theme="D"][data-scheme="dark"] {
+  --hub-color-canvas: #121110; --hub-color-surface: #1c1a18; --hub-color-surface-raised: #24211e;
+  --hub-color-fg: #f3efe9; --hub-color-fg-muted: #a8a097; --hub-color-line: #2e2a26;
+  --hub-color-accent: #ff8a5c; --hub-color-on-accent: #1a0a03; --hub-color-focus: #ff8a5c;
   --hub-color-success: #4ade80; --hub-color-warning: #facc15; --hub-color-danger: #f87171;
-  --hub-shadow-1: 0 1px 2px rgb(0 0 0 / .4);
-  --hub-shadow-2: 0 10px 30px rgb(0 0 0 / .6);
-  --hub-glass-fill: #1f242b; --hub-glass-edge: #2f353e;
-  --chrome-window: #0d1014; --chrome-window-solid: #0d1014;
-  --chrome-window-edge: transparent;
-  --chrome-bar: #0a0f1c; --chrome-bar-fg: #fff;
-  --chrome-side: #0e1626; --chrome-side-fg: #cfd6e4;
-  --chrome-item-hover: rgb(255 255 255 / .06); --chrome-item-active: rgb(245 158 11 / .2);
+  --hub-shadow-1: 0 1px 0 #2e2a26;
+  --hub-shadow-2: 0 24px 60px rgb(0 0 0 / .6);
+  --hub-glass-fill: #24211e; --hub-glass-edge: #2e2a26;
+  --chrome-window: #121110; --chrome-window-solid: #121110; --chrome-window-edge: transparent;
+  --chrome-bar: #121110; --chrome-bar-fg: var(--hub-color-fg);
+  --chrome-side: #181614; --chrome-side-fg: var(--hub-color-fg);
+  --chrome-item-hover: rgb(255 138 92 / .08); --chrome-item-active: #ff8a5c;
   --chrome-card: var(--hub-color-canvas);
 }
 
-/* ---------- native-element stylesheet (tokens only) ---------- */
+/* the Hub honours the OS reduced-motion setting for every Theme */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme] { --hub-motion-fast: 0ms; --hub-motion-slow: 0ms; --hub-motion-distance: 0px; }
+}
+
+/* ---------- native-element stylesheet (tokens only, the same for every Theme) ---------- */
 [data-scheme="light"] { color-scheme: light; }
 [data-scheme="dark"] { color-scheme: dark; }
+@keyframes hub-enter { from { opacity: 0; transform: translateY(var(--hub-motion-distance)); } }
 body {
   margin: 0; background: var(--hub-color-canvas); color: var(--hub-color-fg);
   font: var(--hub-text-md)/var(--hub-leading) var(--hub-font-body);
 }
-h1 { margin: 0; font-size: var(--hub-text-xl); font-weight: var(--hub-weight-strong); }
+h1 { margin: 0; font-size: var(--hub-text-xl); font-weight: var(--hub-weight-strong); letter-spacing: -.01em; }
 h2 { margin: 0; font-size: var(--hub-text-lg); font-weight: var(--hub-weight-strong); }
 p { margin: 0; color: var(--hub-color-fg-muted); }
 small { font-size: var(--hub-text-sm); color: var(--hub-color-fg-muted); }
 a { color: var(--hub-color-accent); }
-:focus-visible { outline: 2px solid var(--hub-color-focus); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--hub-color-focus); outline-offset: 2px; transition: outline-offset var(--hub-motion-fast) var(--hub-motion-ease); }
 ::selection { background: color-mix(in srgb, var(--hub-color-accent) 30%, transparent); }
 input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea {
   box-sizing: border-box; min-height: 32px; font: inherit; color: inherit;
   background: var(--hub-color-surface); border: 1px solid var(--hub-color-line);
   border-radius: var(--hub-radius-2); padding: var(--hub-space-1) var(--hub-space-3);
+  box-shadow: var(--hub-shadow-inset);
+  transition: border-color var(--hub-motion-fast), box-shadow var(--hub-motion-fast);
 }
+input:not([type="checkbox"], [type="radio"], [type="range"]):focus, select:focus, textarea:focus { border-color: var(--hub-color-accent); }
 select option { background: var(--hub-color-surface-raised); }
 input::placeholder, textarea::placeholder { color: var(--hub-color-fg-muted); }
 input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: var(--hub-color-accent); }
@@ -178,26 +232,31 @@ button {
   color: var(--hub-color-fg); background: var(--hub-color-surface);
   border: 1px solid var(--hub-color-line); border-radius: var(--hub-radius-2);
   padding: var(--hub-space-1) var(--hub-space-4); box-shadow: var(--hub-shadow-1);
+  transition: transform var(--hub-motion-fast) var(--hub-motion-ease), box-shadow var(--hub-motion-fast), background-color var(--hub-motion-fast);
 }
-button:hover:not(:disabled) { background-image: linear-gradient(rgb(127 127 127 / .12), rgb(127 127 127 / .12)); }
+button:hover:not(:disabled) { background-image: linear-gradient(rgb(127 127 127 / .1), rgb(127 127 127 / .1));
+  transform: translateY(calc(var(--hub-motion-distance) / -8)); }
+button:active:not(:disabled) { transform: scale(.96); box-shadow: var(--hub-shadow-inset); }
 button[data-variant="primary"] { color: var(--hub-color-on-accent); background-color: var(--hub-color-accent); border-color: transparent; }
 button:disabled { opacity: .5; cursor: default; }
 progress {
-  appearance: none; height: 6px; border: 0; border-radius: 999px; overflow: hidden;
-  background: var(--hub-color-line);
+  appearance: none; height: 8px; border: 0; border-radius: 999px; overflow: hidden;
+  background: var(--hub-color-line); box-shadow: var(--hub-shadow-inset);
 }
-progress::-webkit-progress-bar { background: var(--hub-color-line); }
-progress::-webkit-progress-value { background: var(--hub-color-accent); border-radius: 999px; transition: width .3s; }
+progress::-webkit-progress-bar { background: transparent; }
+progress::-webkit-progress-value { background: var(--hub-color-accent); border-radius: 999px;
+  transition: width var(--hub-motion-slow) var(--hub-motion-ease); }
 details {
-  background: var(--hub-color-surface); border: 1px solid var(--hub-color-line);
+  background: var(--hub-color-surface); border: 1px solid var(--hub-color-line); box-shadow: var(--hub-shadow-1);
   border-radius: var(--hub-radius-3); padding: var(--hub-space-3) var(--hub-space-4);
 }
 summary { cursor: pointer; font-weight: var(--hub-weight-strong); }
 details[open] > summary { margin-bottom: var(--hub-space-3); }
+details[open] > :not(summary) { animation: hub-enter var(--hub-motion-slow) var(--hub-motion-ease); }
 pre, code, kbd { font-family: var(--hub-font-mono); font-size: var(--hub-text-sm); }
 pre {
   margin: 0; padding: var(--hub-space-3); background: var(--hub-color-canvas);
-  border: 1px solid var(--hub-color-line); border-radius: var(--hub-radius-2);
+  border: 1px solid var(--hub-color-line); border-radius: var(--hub-radius-2); box-shadow: var(--hub-shadow-inset);
 }
 hr { border: 0; border-top: 1px solid var(--hub-color-line); }
 dialog {
@@ -206,4 +265,5 @@ dialog {
   box-shadow: var(--hub-shadow-2); backdrop-filter: blur(var(--hub-glass-blur));
   padding: var(--hub-space-5);
 }
+dialog[open] { animation: hub-enter var(--hub-motion-slow) var(--hub-motion-ease); }
 dialog::backdrop { background: rgb(0 0 0 / .3); }

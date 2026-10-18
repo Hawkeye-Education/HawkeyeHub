@@ -3,14 +3,18 @@
 <head>
   <meta charset="utf-8">
   <title>PROTOTYPE · Hawkeye Theme</title>
-  <!-- PROTOTYPE (wayfinder #19), never merge. Three Hawkeye Theme candidates for the --hub-* token interface
-       (ADR 0006), switchable via ?variant=A|B|C, on mock Hub Chrome around the real PDF Watermark Eraser Plugin UI.
+  <link rel="icon" href="logo-tile.png">
+  <!-- PROTOTYPE (wayfinder #19), never merge. Four Hawkeye Theme candidates for the --hub-* token interface
+       (ADR 0006), switchable via ?variant=A|B|C|D, on mock Hub Chrome around the real PDF Watermark Eraser Plugin UI.
        The Plugin UI is an <iframe>, a separate document like its WebContentsView, so in-page glass cannot cross it.
-       Chrome layout is held fixed on purpose: a Theme changes token values, never layout. Open by double-click. -->
+       Chrome layout is held fixed on purpose: a Theme changes token values, never layout.
+       Run: python -m http.server 8137 --directory prototypes, then open /hawkeye-theme/index.html. -->
   <link rel="stylesheet" href="hub.css">
   <style>
     html, body { height: 100%; }
     body { background: none; overflow: hidden; }
+    :root { --chrome-stagger: 0ms; --chrome-item-active-fg: inherit; }
+    [data-theme="D"] { --chrome-stagger: 22ms; --chrome-item-active-fg: var(--hub-color-on-accent); }
 
     /* the OS desktop the window sits on: sharp shapes so blur is visible */
     .desktop { position: fixed; inset: 0; overflow: hidden;
@@ -31,20 +35,32 @@
 
     .bar { grid-area: bar; display: flex; align-items: center; gap: var(--hub-space-3); padding: 0 0 0 var(--hub-space-4);
       background: var(--chrome-bar); color: var(--chrome-bar-fg); font-size: var(--hub-text-sm); }
-    .bar strong { font-size: var(--hub-text-md); }
+    .bar strong { font-size: var(--hub-text-md); font-weight: var(--hub-weight-strong); }
     .bar .grow { flex: 1; }
+    .logo { position: relative; flex: none; width: 24px; height: 24px; border-radius: 7px; background: var(--chrome-brand);
+      box-shadow: var(--hub-shadow-1); }
+    .logo i { position: absolute; inset: 0; background: #fff;
+      -webkit-mask: url(logo-mark.png) center / 100% no-repeat; mask: url(logo-mark.png) center / 100% no-repeat;
+      animation: logo-in var(--hub-motion-slow) var(--hub-motion-ease) backwards; }
+    @keyframes logo-in { from { transform: scale(.4) rotate(-20deg); opacity: 0; } }
+    .busy .logo i { animation: logo-flap calc(var(--hub-motion-slow) * 1.6) ease-in-out infinite alternate; }
+    @keyframes logo-flap { to { transform: translateY(-2px) rotate(-6deg) scale(1.08); } }
     .avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
       background: var(--hub-color-accent); color: var(--hub-color-on-accent); font-size: 11px; font-weight: 600; }
     .winctl { display: flex; align-self: stretch; }
     .winctl span { display: grid; place-items: center; width: 46px; opacity: .8; }
 
-    .side { grid-area: side; display: flex; flex-direction: column; gap: 2px; padding: var(--hub-space-2) var(--hub-space-3);
-      background: var(--chrome-side); color: var(--chrome-side-fg); }
+    .side { grid-area: side; position: relative; display: flex; flex-direction: column; gap: 4px;
+      padding: var(--hub-space-2) var(--hub-space-3); background: var(--chrome-side); color: var(--chrome-side-fg); }
     .side h2 { font-size: var(--hub-text-sm); opacity: .7; padding: var(--hub-space-3) var(--hub-space-3) var(--hub-space-1); }
-    .item { display: flex; align-items: center; gap: var(--hub-space-3); padding: var(--hub-space-2) var(--hub-space-3);
-      border-radius: var(--hub-radius-2); color: inherit; text-decoration: none; cursor: default; }
-    .item:hover { background: var(--chrome-item-hover); }
-    .item[aria-current] { background: var(--chrome-item-active); font-weight: var(--hub-weight-strong); }
+    .indicator { position: absolute; left: var(--hub-space-3); right: var(--hub-space-3); border-radius: var(--hub-radius-2);
+      background: var(--chrome-item-active); box-shadow: var(--chrome-item-active-shadow);
+      transition: top var(--hub-motion-slow) var(--hub-motion-ease), height var(--hub-motion-slow) var(--hub-motion-ease); }
+    .item { position: relative; display: flex; align-items: center; gap: var(--hub-space-3); padding: var(--hub-space-2) var(--hub-space-3);
+      border-radius: var(--hub-radius-2); color: inherit; text-decoration: none; cursor: pointer;
+      transition: color var(--hub-motion-fast), background-color var(--hub-motion-fast); }
+    .item:hover:not([aria-current]) { background: var(--chrome-item-hover); }
+    .item[aria-current] { font-weight: var(--hub-weight-strong); color: var(--chrome-item-active-fg); }
     .item svg { flex: none; width: 18px; height: 18px; }
     .side .grow { flex: 1; }
 
@@ -53,20 +69,26 @@
     .main { grid-area: main; }
     .head { display: flex; align-items: center; gap: var(--hub-space-3); padding: var(--hub-space-3) var(--hub-space-5);
       border-bottom: 1px solid var(--hub-color-line); }
-    .head svg { width: 22px; height: 22px; color: var(--hub-color-accent); }
+    .head > svg { flex: none; width: 22px; height: 22px; color: var(--hub-color-accent); }
     .head .grow { flex: 1; }
+    .head h1 span { display: inline-block; white-space: pre;
+      animation: hub-enter var(--hub-motion-slow) var(--hub-motion-ease) backwards; animation-delay: calc(var(--i) * var(--chrome-stagger)); }
     .chip { font-size: var(--hub-text-sm); color: var(--hub-color-warning); border: 1px solid currentColor;
-      border-radius: 999px; padding: 0 var(--hub-space-3); }
+      border-radius: 999px; padding: 0 var(--hub-space-3); animation: hub-enter var(--hub-motion-slow) var(--hub-motion-ease); }
+    .view { flex: 1; display: flex; min-height: 0; animation: hub-enter var(--hub-motion-slow) var(--hub-motion-ease); }
     iframe { flex: 1; width: 100%; border: 0; background: transparent; }
+    .empty { flex: 1; display: grid; place-content: center; justify-items: center; gap: var(--hub-space-3); color: var(--hub-color-fg-muted); }
+    .empty svg { width: 64px; height: 64px; color: var(--hub-color-accent); opacity: .6; }
 
     .panel { grid-area: panel; width: 320px; border-left: 1px solid var(--hub-color-line); }
     .panel[hidden] { display: none; }
     .thread { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: var(--hub-space-3); padding: var(--hub-space-4); }
-    .msg { max-width: 85%; padding: var(--hub-space-2) var(--hub-space-3); border-radius: var(--hub-radius-3); white-space: pre-wrap; }
+    .msg { max-width: 85%; padding: var(--hub-space-2) var(--hub-space-3); border-radius: var(--hub-radius-3); white-space: pre-wrap;
+      animation: hub-enter var(--hub-motion-slow) var(--hub-motion-ease) backwards; }
     .msg.me { align-self: end; background: var(--hub-color-accent); color: var(--hub-color-on-accent); }
     .msg.bot { align-self: start; background: var(--hub-glass-fill); border: 1px solid var(--hub-glass-edge);
-      backdrop-filter: blur(var(--hub-glass-blur)); }
-    .msg code { padding: 0 3px; border-radius: var(--hub-radius-1); background: var(--hub-color-surface); }
+      box-shadow: var(--hub-shadow-1); backdrop-filter: blur(var(--hub-glass-blur)); animation-delay: calc(var(--hub-motion-slow) / 2); }
+    .msg code { padding: 0 3px; border-radius: var(--hub-radius-1); background: var(--hub-color-surface); box-shadow: var(--hub-shadow-inset); }
     .compose { display: flex; flex-direction: column; gap: var(--hub-space-2); padding: var(--hub-space-3) var(--hub-space-4);
       border-top: 1px solid var(--hub-color-line); }
     .compose textarea { resize: none; height: 64px; }
@@ -80,9 +102,9 @@
       box-shadow: 0 6px 24px rgb(0 0 0 / .45); color-scheme: dark; }
     .proto button { all: unset; cursor: pointer; padding: 7px 12px; border-radius: 999px; background: #2a2a2a; white-space: nowrap; }
     .proto button:hover { background: #3a3a3a; }
-    .proto .v { background: #fff; color: #111; font-weight: 600; min-width: 15rem; text-align: center; }
+    .proto .v { background: #fff; color: #111; font-weight: 600; min-width: 13rem; text-align: center; }
     .proto .v:hover { background: #fff; }
-    .tokens { position: fixed; right: 28px; top: 28px; bottom: 84px; width: 380px; z-index: 10; overflow: auto;
+    .tokens { position: fixed; right: 28px; top: 28px; bottom: 84px; width: 400px; z-index: 10; overflow: auto;
       background: #111; color: #ddd; font: 12px/1.5 ui-monospace, Consolas, monospace; border-radius: 10px; padding: 12px;
       box-shadow: 0 6px 24px rgb(0 0 0 / .45); }
     .tokens[hidden] { display: none; }
@@ -98,21 +120,22 @@
 <body>
   <div class="desktop" aria-hidden="true"><span style="left:6%;top:56%">Aa 字</span><span style="left:58%;top:8%">▲ ●</span></div>
 
-  <div class="window">
+  <div class="window" id="window">
     <header class="bar">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span class="logo" aria-hidden="true"><i></i></span>
       <strong>Hawkeye Hub</strong>
       <span class="grow"></span>
       <span data-c="signedIn"></span><span class="avatar">CT</span>
       <span class="winctl"><span>─</span><span>☐</span><span>✕</span></span>
     </header>
 
-    <nav class="side">
+    <nav class="side" id="side">
+      <span class="indicator" id="indicator"></span>
       <h2 data-c="plugins"></h2>
-      <a class="item" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M8 17l8-8" stroke-dasharray="2 2"/></svg><span data-c="eraser"></span></a>
-      <a class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg><span data-c="finder"></span></a>
-      <a class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg><span data-c="receipts"></span></a>
-      <a class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15 14.5c3 0 6 1.8 6 5"/></svg><span data-c="scraper"></span></a>
+      <a class="item" data-plugin="eraser" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M8 17l8-8" stroke-dasharray="2 2"/></svg><span data-c="eraser"></span></a>
+      <a class="item" data-plugin="finder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg><span data-c="finder"></span></a>
+      <a class="item" data-plugin="receipts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg><span data-c="receipts"></span></a>
+      <a class="item" data-plugin="scraper"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15 14.5c3 0 6 1.8 6 5"/></svg><span data-c="scraper"></span></a>
       <span class="grow"></span>
       <a class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg><span data-c="store"></span></a>
       <a class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span data-c="settings"></span></a>
@@ -120,13 +143,13 @@
 
     <main class="main card">
       <div class="head">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M8 17l8-8" stroke-dasharray="2 2"/></svg>
-        <h1 data-c="eraser"></h1>
+        <svg id="headIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"></svg>
+        <h1 id="title"></h1>
         <span class="chip" id="busy" hidden data-c="busy"></span>
         <span class="grow"></span>
         <button type="button" id="toggleAssistant" data-c="assistant"></button>
       </div>
-      <iframe id="plugin" title="Plugin UI"></iframe>
+      <div class="view" id="view"><iframe id="plugin" title="Plugin UI"></iframe></div>
     </main>
 
     <aside class="panel card" id="assistant">
@@ -157,27 +180,29 @@
   <div class="tokens" id="tokens" hidden></div>
 
   <script>
-    const VARIANTS = { A: 'Frosted', B: 'Glass chrome', C: 'Solid' };
+    const VARIANTS = { A: 'Frosted', B: 'Glass chrome', C: 'Neumorphic', D: 'Kinetic' };
     const KEYS = Object.keys(VARIANTS);
     const TOKENS = [
       'color-canvas', 'color-surface', 'color-surface-raised', 'color-fg', 'color-fg-muted', 'color-line',
       'color-accent', 'color-on-accent', 'color-focus', 'color-success', 'color-warning', 'color-danger',
       'font-body', 'font-mono', 'text-sm', 'text-md', 'text-lg', 'text-xl', 'leading', 'weight-strong',
       'space-1', 'space-2', 'space-3', 'space-4', 'space-5', 'space-6', 'radius-1', 'radius-2', 'radius-3',
-      'shadow-1', 'shadow-2', 'glass-fill', 'glass-blur', 'glass-edge',
+      'shadow-1', 'shadow-2', 'shadow-inset', 'glass-fill', 'glass-blur', 'glass-edge',
+      'motion-fast', 'motion-slow', 'motion-ease', 'motion-distance',
     ].map((t) => `--hub-${t}`);
     const CHROME = {
       'en-HK': {
         plugins: 'Plugins', eraser: 'PDF Watermark Eraser', finder: 'Teacher Finder', receipts: 'PDF Receipt Extractor',
         scraper: 'FB Group Scraper', store: 'Get Plugins', settings: 'Settings', signedIn: 'Chan Tai Man', busy: 'Busy',
         assistant: 'Assistant', ask: 'Ask the Assistant…', send: 'Send', template: 'Draft a watermark regex',
+        notHere: 'Only the eraser is real in this prototype',
         userMsg: 'Draft a watermark regex\n\nProvided by dse.life\nProvided  by DSE.life',
         bot: 'These differ only in spacing and case. Try <code>Provided\\s+by\\s+dse\\.life</code> with <b>Regex</b> and <b>Ignore case</b> both on.',
       },
       'zh-HK': {
         plugins: '程式', eraser: 'PDF 水印清除', finder: '教師搜尋', receipts: 'PDF 收據擷取', scraper: 'FB 群組擷取',
         store: '取得程式', settings: '設定', signedIn: '陳大文', busy: '處理中', assistant: '助手', ask: '向助手提問…',
-        send: '傳送', template: '草擬水印正規表示式',
+        send: '傳送', template: '草擬水印正規表示式', notHere: '此原型只有水印清除是真的',
         userMsg: '草擬水印正規表示式\n\nProvided by dse.life\nProvided  by DSE.life',
         bot: '兩行只差在空格和大小寫。試試 <code>Provided\\s+by\\s+dse\\.life</code>，並同時開啟「正規表示式」及「不分大小寫」。',
       },
@@ -191,14 +216,46 @@
       material: pick('material', ['os', 'none']),
       lang: pick('lang', ['en-HK', 'zh-HK']),
     };
+    let plugin = 'eraser';
     const dark = matchMedia('(prefers-color-scheme: dark)');
     const scheme = () => (state.scheme === 'system' ? (dark.matches ? 'dark' : 'light') : state.scheme);
     const $ = (id) => document.getElementById(id);
     const frame = $('plugin');
+    const restart = (el) => { el.style.animation = 'none'; el.offsetWidth; el.style.animation = ''; };
 
     function loadPlugin() {
       frame.src = '../pdf-watermark-eraser/ui/index.html?' +
         new URLSearchParams({ lang: state.lang, theme: state.variant, scheme: scheme() });
+    }
+
+    function moveIndicator() {
+      const item = document.querySelector('.item[aria-current]');
+      Object.assign($('indicator').style, { top: `${item.offsetTop}px`, height: `${item.offsetHeight}px` });
+    }
+
+    // Kinetic headings: one span per character (CJK included), staggered by --chrome-stagger
+    function renderTitle() {
+      const text = CHROME[state.lang][plugin];
+      $('title').replaceChildren(...[...text].map((ch, i) => {
+        const s = document.createElement('span');
+        s.textContent = ch;
+        s.style.setProperty('--i', i);
+        return s;
+      }));
+      $('headIcon').innerHTML = document.querySelector(`[data-plugin="${plugin}"] svg`).innerHTML;
+    }
+
+    function showPlugin(id) {
+      plugin = id;
+      for (const a of document.querySelectorAll('[data-plugin]')) a.toggleAttribute('aria-current', a.dataset.plugin === id);
+      moveIndicator();
+      renderTitle();
+      const view = $('view');
+      if (id === 'eraser') {
+        if (!frame.isConnected) view.replaceChildren(frame), loadPlugin(); // reopening reloads, with the current look
+      } else view.innerHTML = `<div class="empty">${document.querySelector(`[data-plugin="${id}"] svg`).outerHTML}
+        <span>${CHROME[state.lang].notHere}</span></div>`;
+      restart(view);
     }
 
     function apply() {
@@ -211,6 +268,9 @@
       for (const el of document.querySelectorAll('[data-c]')) el.textContent = s[el.dataset.c];
       for (const el of document.querySelectorAll('[data-c-placeholder]')) el.placeholder = s[el.dataset.cPlaceholder];
       $('botMsg').innerHTML = s.bot;
+      renderTitle();
+      document.querySelectorAll('.msg, .logo i').forEach(restart);
+      requestAnimationFrame(moveIndicator);
 
       $('variant').textContent = `${state.variant} · ${VARIANTS[state.variant]}`;
       $('scheme').textContent = `scheme: ${state.scheme}`;
@@ -248,7 +308,9 @@
     $('lang').onclick = () => ((state.lang = state.lang === 'en-HK' ? 'zh-HK' : 'en-HK'), apply(), loadPlugin());
     $('showTokens').onclick = () => ($('tokens').hidden = !$('tokens').hidden);
     $('toggleAssistant').onclick = () => ($('assistant').hidden = !$('assistant').hidden);
+    for (const a of document.querySelectorAll('[data-plugin]')) a.onclick = () => showPlugin(a.dataset.plugin);
     dark.addEventListener('change', apply);
+    addEventListener('resize', moveIndicator);
     addEventListener('keydown', (e) => {
       if (e.target.closest('input, textarea, select, [contenteditable]')) return;
       if (e.key === 'ArrowLeft') step(-1);
@@ -258,6 +320,7 @@
       if (e.data?.type !== 'hub-busy') return;
       $('busy').hidden = !e.data.reason;
       $('busy').title = e.data.reason ?? '';
+      $('window').classList.toggle('busy', !!e.data.reason);
     });
 
     apply();
