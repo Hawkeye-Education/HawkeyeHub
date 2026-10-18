@@ -1,7 +1,18 @@
 // Diagnostics (ADR 0012): the only code that writes or reads the Hub's log files.
 
-import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
+import { strToU8, zipSync } from "fflate";
 import type { AiProviderLabel, PluginId, PluginVersion } from "./ids";
 
 export const MAX_LOG_FILE_BYTES = 5 * 1024 * 1024;
@@ -152,6 +163,55 @@ export interface PluginSession {
 export interface Diagnostics {
   recordHubEvent(event: HubEvent): void;
   startPluginSession(plugin: PluginRef): PluginSession;
+  /** Removes the Plugin's log and its `.1`, for uninstall with "also delete my data". */
+  deletePluginLogs(id: PluginId): void;
+  /**
+   * Writes the Diagnostics Bundle zip: every `hub.log*` and `plugins/*.log*` plus `system.json`.
+   * The zip only ever appears at `destination` whole.
+   */
+  exportBundle(destination: string, system: SystemDescription): void;
+}
+
+/**
+ * The installation as `system.json` describes it (ADR 0012). It has no field for a key, endpoint,
+ * Plugin Data, Shared Store contents or Staff Identity.
+ */
+export interface SystemDescription {
+  hubVersion: string;
+  os: { name: string; version: string; arch: string };
+  displayLanguage: "en-HK" | "zh-HK";
+  /** A built-in Theme's name, such as `hawkeye`. */
+  theme: string;
+  colourScheme: "system" | "light" | "dark";
+  plugins: PluginRef[];
+  pythonVersions: string[];
+  aiProviders: { label: AiProviderLabel; kind: string }[];
+  authProviderKind: "ldap" | "oidc" | "none";
+  signedIn: boolean;
+}
+
+// Every file Diagnostics writes: a log or its one rolled `.1`.
+const HUB_LOG_FILE = /^hub\.log(\.1)?$/;
+const PLUGIN_LOG_FILE = /\.log(\.1)?$/;
+
+/** Copies exactly the described fields, so nothing else a caller's object holds is written. */
+function describeSystem(system: SystemDescription): SystemDescription {
+  return {
+    hubVersion: system.hubVersion,
+    os: {
+      name: system.os.name,
+      version: system.os.version,
+      arch: system.os.arch,
+    },
+    displayLanguage: system.displayLanguage,
+    theme: system.theme,
+    colourScheme: system.colourScheme,
+    plugins: system.plugins.map(({ id, version }) => ({ id, version })),
+    pythonVersions: system.pythonVersions,
+    aiProviders: system.aiProviders.map(({ label, kind }) => ({ label, kind })),
+    authProviderKind: system.authProviderKind,
+    signedIn: system.signedIn,
+  };
 }
 
 export function openDiagnostics(
@@ -185,9 +245,42 @@ export function openDiagnostics(
   return {
     recordHubEvent,
 
+    deletePluginLogs(id) {
+      const path = join(logsDir, pluginLogPath(id));
+      // force: a Plugin that never logged, or never rolled, has nothing to delete.
+      rmSync(path, { force: true });
+      rmSync(`${path}.1`, { force: true });
+    },
+
+    exportBundle(destination, system) {
+      const pluginsDir = join(logsDir, "plugins");
+      // Zip paths always use "/", whatever the OS.
+      const logs = [
+        ...readdirSync(logsDir).filter((name) => HUB_LOG_FILE.test(name)),
+        // No plugins/ folder until the first Plugin opens.
+        ...(existsSync(pluginsDir) ? readdirSync(pluginsDir) : [])
+          .filter((name) => PLUGIN_LOG_FILE.test(name))
+          .map((name) => `plugins/${name}`),
+      ];
+      const zip = zipSync({
+        ...Object.fromEntries(
+          logs.map((log) => [log, readFileSync(join(logsDir, log))]),
+        ),
+        "system.json": strToU8(JSON.stringify(describeSystem(system), null, 2)),
+      });
+      const temp = `${destination}.partial`;
+      try {
+        writeFileSync(temp, zip);
+        renameSync(temp, destination);
+      } catch (error) {
+        rmSync(temp, { force: true });
+        throw error;
+      }
+    },
+
     startPluginSession(plugin) {
       mkdirSync(join(logsDir, "plugins"), { recursive: true });
-      const logPath = `plugins/${plugin.id}.log`;
+      const logPath = pluginLogPath(plugin.id);
       const subject = about(plugin);
       // Not fatal: invalid bytes become U+FFFD rather than throwing. Streaming keeps a
       // character split across chunks whole.
@@ -275,6 +368,10 @@ export function openDiagnostics(
       };
     },
   };
+}
+
+function pluginLogPath(id: PluginId): string {
+  return `plugins/${id}.log`;
 }
 
 const NO_PLUGIN: LineSubject = { pluginId: null, pluginVersion: null };
