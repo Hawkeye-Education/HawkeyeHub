@@ -1,6 +1,6 @@
 // The smoke harness: every test gets a fresh HAWKEYE_HUB_DATA_DIR and the built Hub running in it.
 
-import { mkdtempSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -26,9 +26,16 @@ export function launchHub(dataDir: string): Promise<ElectronApplication> {
 
 export const test = base.extend<{ dataDir: string; hub: ElectronApplication }>({
   // eslint-disable-next-line no-empty-pattern -- Playwright requires the fixtures argument to be destructured.
-  dataDir: async ({}, use) => {
+  dataDir: async ({}, use, testInfo) => {
     // Canonical, because the Hub resolves symlinks in its logs path: macOS's /var is /private/var.
-    await use(realpathSync(mkdtempSync(join(tmpdir(), "hawkeye-hub-"))));
+    const dataDir = realpathSync(mkdtempSync(join(tmpdir(), "hawkeye-hub-")));
+    await use(dataDir);
+    // The data folder goes with the CI runner, and hub.log is what explains a failure. A Hub that
+    // never got as far as opening Diagnostics has none.
+    const hubLog = join(dataDir, "logs", "hub.log");
+    if (testInfo.status !== testInfo.expectedStatus && existsSync(hubLog)) {
+      await testInfo.attach("hub.log", { path: hubLog });
+    }
   },
   hub: async ({ dataDir }, use) => {
     const hub = await launchHub(dataDir);

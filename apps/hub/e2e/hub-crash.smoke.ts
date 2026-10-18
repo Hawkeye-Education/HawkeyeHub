@@ -72,9 +72,13 @@ function crashHubChrome(hub: ElectronApplication): Promise<boolean[]> {
     Promise.all(
       webContents.getAllWebContents().map(async (contents) => {
         const wasLoading = contents.isLoading();
+        // The did-finish-load after the crash: a first load can still finish while the crash is
+        // on its way, and executeJavaScript on the dead renderer would then never answer.
         const reloaded = new Promise<void>((resolve) => {
-          contents.once("did-finish-load", () => {
-            resolve();
+          contents.once("render-process-gone", () => {
+            contents.once("did-finish-load", () => {
+              resolve();
+            });
           });
         });
         contents.forcefullyCrashRenderer();
