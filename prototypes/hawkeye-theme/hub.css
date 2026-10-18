@@ -9,11 +9,10 @@
 
 :root { --chrome-brand: #ff6b35; --chrome-item-active-shadow: none; }
 
-/* ---------- A · Frosted: OS material behind everything, translucent surfaces, system fonts ---------- */
+/* ---------- A · Frosted (CHOSEN as the Hawkeye Theme, #19): OS material behind everything, translucent surfaces, system fonts ---------- */
 [data-theme="A"] {
-  --hub-font-body: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont,
-    "Microsoft JhengHei UI", "Microsoft JhengHei", "PingFang HK", "PingFang TC", sans-serif;
-  --hub-font-mono: "Cascadia Mono", "SF Mono", Consolas, ui-monospace, "Microsoft JhengHei UI", "PingFang HK", monospace;
+  --hub-font-body: "Inter", "Noto Sans TC", sans-serif; /* CHOSEN (#19): bundled with the Hub */
+  --hub-font-mono: "Cascadia Mono", "SF Mono", Consolas, ui-monospace, "Noto Sans TC", monospace;
   --hub-text-sm: 12px; --hub-text-md: 14px; --hub-text-lg: 16px; --hub-text-xl: 20px;
   --hub-leading: 1.5; --hub-weight-strong: 600;
   --hub-space-1: 4px; --hub-space-2: 8px; --hub-space-3: 12px; --hub-space-4: 16px; --hub-space-5: 24px; --hub-space-6: 32px;
