@@ -32,10 +32,11 @@
   // --- tokens + native-element stylesheet: the Hawkeye Theme candidates from prototypes/hawkeye-theme ---
   const HUB_CSS = '../../hawkeye-theme/hub.css';
   const KIT_CSS = '../../hawkeye-theme/kit.css';
-  const applyLook = ({ theme, scheme }) => Object.assign(document.documentElement.dataset, { theme, scheme });
+  const applyLook = ({ theme, scheme, font }) => Object.assign(document.documentElement.dataset, { theme, scheme, font });
   applyLook({
     theme: params.get('theme') ?? 'A',
     scheme: params.get('scheme') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+    font: params.get('font') ?? 'theme',
   });
   addEventListener('message', (e) => e.data?.type === 'hub-look' && applyLook(e.data)); // live, no reload (ADR 0006)
   document.head.insertAdjacentHTML('afterbegin', `<link rel="stylesheet" href="${HUB_CSS}">`);

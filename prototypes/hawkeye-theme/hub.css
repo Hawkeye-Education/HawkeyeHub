@@ -196,6 +196,10 @@
   --chrome-card: var(--hub-color-canvas);
 }
 
+/* font candidates for the chosen Theme A (prototype-only switch; the real Theme picks one) */
+[data-font="inter-noto"] { --hub-font-body: "Inter", "Noto Sans TC", sans-serif; }
+[data-font="noto"] { --hub-font-body: "Noto Sans TC", sans-serif; }
+
 /* the Hub honours the OS reduced-motion setting for every Theme */
 @media (prefers-reduced-motion: reduce) {
   :root[data-theme] { --hub-motion-fast: 0ms; --hub-motion-slow: 0ms; --hub-motion-distance: 0px; }
