@@ -1,13 +1,23 @@
 {
   "name": "@hawkeye-hub/hub",
+  "productName": "Hawkeye Hub",
   "private": true,
   "type": "module",
+  "main": "./out/main/index.js",
   "scripts": {
-    "typecheck": "tsc",
+    "dev": "electron-vite dev --watch",
+    "build": "electron-vite build",
+    "smoke": "playwright test",
+    "typecheck": "tsc && tsc -p src/renderer",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/node": "22.17.2",
+    "electron": "44.5.1",
+    "electron-vite": "5.0.0",
+    "lit": "3.3.3",
+    "vite": "7.3.6",
     "vitest": "5.0.5"
   },
   "dependencies": {

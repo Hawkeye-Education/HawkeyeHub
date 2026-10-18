@@ -3,5 +3,7 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src", "e2e", "*.config.ts"],
+  // The Hub Chrome runs in a browser: it has its own tsconfig, with DOM and without Node.
+  "exclude": ["src/renderer"]
 }
