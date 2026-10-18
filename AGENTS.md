@@ -15,3 +15,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 ### Coding standards
 
 Read `CODING_STANDARDS.md` before writing or reviewing code. No optional fields or default values unless absence is a real domain state; validate at the boundary.
+
+### Plugin standard
+
+Read `PLUGIN_STANDARD.md` before writing or reviewing anything under `plugins/` or `stores/`: layout, Manifest, Plugin UI, Backend, Assistant, tests and publishing.

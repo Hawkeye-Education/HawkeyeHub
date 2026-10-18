@@ -1,6 +1,6 @@
 # Coding Standards
 
-These rules apply to the Hub, its packages, the Python SDK and every Plugin. Repo layout, versioning and CI are in ADR 0011. `/code-review` checks every diff against this file.
+These rules apply to the Hub, its packages, the Python SDK and every Plugin. Repo layout, versioning and CI are in ADR 0011. Plugin-specific rules are in `PLUGIN_STANDARD.md`. `/code-review` checks every diff against this file.
 
 ## Core principle: no leniency
 
