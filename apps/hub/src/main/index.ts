@@ -3,6 +3,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { app, Menu } from "electron";
+import { openDiagnostics } from "./diagnostics";
 import { openHubWindow } from "./hub-window";
 import { parseAbsolutePath } from "./ids";
 
@@ -20,7 +21,19 @@ if (dataDirRaw !== undefined) {
   app.setAppLogsPath(join(dataDir, "logs"));
 }
 
-// 2. The single-instance lock (#38), then Diagnostics on the logs path (#37), go here.
+// 2. The single-instance lock (#38) goes here: a launch that fails to take it must exit before
+// Diagnostics opens, so it logs nothing.
+
+// 3. Diagnostics on the logs path, which step 1 may have moved.
+const diagnostics = openDiagnostics(
+  parseAbsolutePath(app.getPath("logs")),
+  () => new Date(),
+);
+diagnostics.recordHubEvent({ kind: "hub-opened" });
+// will-quit fires once all windows have closed, however the quit began; `once` keeps it to one line.
+app.once("will-quit", () => {
+  diagnostics.recordHubEvent({ kind: "hub-closing" });
+});
 
 // Closing the window quits the Hub on every platform, macOS included: there is no Dock-only state.
 app.on("window-all-closed", () => {
