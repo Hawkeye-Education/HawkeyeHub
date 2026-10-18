@@ -69,9 +69,10 @@ Rules:
 
 ## Git
 
-- Trunk-based on `main`. Short-lived branches merge by squashed PR, and CI must be green.
+- Each spec builds on its own `spec/<area>` branch, not `main`. Work each ticket on an `impl/<slug>` branch cut from that spec branch, and open its PR against the spec branch. PRs merge with a merge commit, and CI must be green.
+- A PR into a spec branch closes no issues: close them by hand after the merge (`docs/agents/issue-tracker.md`).
 - Commit subjects are plain imperative sentences ("Add …", "Fix …"), not Conventional Commits. Releases come from tags (`hub@`, `plugin/<id>@`, `sdk-py@`), not from commit messages.
 
 ## Review
 
-Anything that adds an optional field, a default value, a cast, or a swallowed error needs a one-line justification in the code or the PR. No justification, no merge.
+Anything that adds an optional field, a default value, a cast, or a swallowed error needs a one-line justification in the code or the PR. No justification, no merge. A justification that rests on how a library or the runtime behaves names how that was checked: a test, a probe run, or a docs link.
