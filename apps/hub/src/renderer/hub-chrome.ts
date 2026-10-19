@@ -1,5 +1,7 @@
 // The Hub Chrome's root element: the Plugin Switcher down the side and the content area beside it.
 // It draws the latest snapshot of the lifecycle state held in main. No Theme yet (ADR 0006).
+// Loaded with #dialog it is the dialog overlay instead, above every Plugin UI, and draws only the
+// pending dialog.
 
 import { LitElement, css, html, nothing, unsafeCSS } from "lit";
 import {
@@ -7,8 +9,11 @@ import {
   type HubChromeApi,
   type HubChromeSnapshot,
 } from "../shared/hub-chrome-ipc";
+import "./hub-dialog";
 import "./plugin-switcher";
 import { STRINGS } from "./strings";
+
+const IS_OVERLAY = location.hash === "#dialog";
 
 export class HubChrome extends LitElement {
   static override styles = css`
@@ -55,6 +60,16 @@ export class HubChrome extends LitElement {
   override render() {
     if (this.snapshot === null) return nothing;
     const strings = STRINGS[this.snapshot.displayLanguage];
+    if (IS_OVERLAY) {
+      // Main takes the overlay away once the dialog is answered or gone.
+      return this.snapshot.dialog === null
+        ? nothing
+        : html`<hub-dialog
+            .dialog=${this.snapshot.dialog}
+            .strings=${strings}
+            .hub=${window.hubChrome}
+          ></hub-dialog>`;
+    }
     return html`<aside>
         <h1>Hawkeye Hub</h1>
         <plugin-switcher

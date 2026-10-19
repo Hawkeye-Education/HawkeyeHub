@@ -3,6 +3,7 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 import {
+  ANSWER_DIALOG,
   CLOSE_PLUGIN,
   GET_SNAPSHOT,
   OPEN_PLUGIN,
@@ -30,6 +31,9 @@ const api: HubChromeApi = {
   },
   close(id) {
     void ipcRenderer.invoke(CLOSE_PLUGIN, id);
+  },
+  answer(answer) {
+    void ipcRenderer.invoke(ANSWER_DIALOG, answer);
   },
 };
 

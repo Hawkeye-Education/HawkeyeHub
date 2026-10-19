@@ -1,5 +1,6 @@
 // The Hub's one window: a BaseWindow whose view stack holds the Hub Chrome, with the open Plugin
-// UIs above it. The overlay for Hub Chrome dialogs joins the same stack later (ADRs 0003, 0006).
+// UIs above it, and, only while a Hub Chrome dialog is showing, the dialog overlay above them all:
+// a second Hub Chrome view (ADRs 0003, 0006).
 
 import { join } from "node:path";
 import {
@@ -11,11 +12,14 @@ import {
   type WebContents,
 } from "electron";
 import {
+  ANSWER_DIALOG,
   CLOSE_PLUGIN,
   GET_SNAPSHOT,
   OPEN_PLUGIN,
   SNAPSHOT_CHANGED,
+  type DialogAnswer,
   type DisplayLanguage,
+  type HubChromeDialog,
 } from "../shared/hub-chrome-ipc";
 import type { Diagnostics } from "./diagnostics";
 import type { AbsolutePath } from "./ids";
@@ -51,6 +55,16 @@ const STOPPED_UNEXPECTEDLY = {
   },
 } satisfies Record<DisplayLanguage, unknown>;
 
+const DIALOG_ANSWERS = new Set<unknown>([
+  "keep-open",
+  "close-anyway",
+  "quit-anyway",
+] satisfies DialogAnswer[]);
+
+function isDialogAnswer(answer: unknown): answer is DialogAnswer {
+  return DIALOG_ANSWERS.has(answer);
+}
+
 function isCutShort(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -58,6 +72,37 @@ function isCutShort(error: unknown): boolean {
     typeof error.code === "string" &&
     CUT_SHORT_LOAD_CODES.has(error.code)
   );
+}
+
+// These are Electron's defaults; they are spelled out because no Hub Chrome view may ever have
+// Node access. Its preload is its only way to the main process.
+function hubChromeView(): WebContentsView {
+  return new WebContentsView({
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: join(import.meta.dirname, "../preload/hub-chrome.cjs"),
+    },
+  });
+}
+
+/** Loads the Hub Chrome page: the Hub Chrome itself, or with `#dialog` the dialog overlay. */
+function loadHubChrome(contents: WebContents, hash: "dialog" | null): void {
+  // Set only by `electron-vite dev`; absent in the built Hub.
+  const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
+  const page = join(import.meta.dirname, "../renderer/index.html");
+  const load =
+    devServerUrl === undefined
+      ? contents.loadFile(page, hash === null ? {} : { hash })
+      : contents.loadURL(
+          hash === null ? devServerUrl : `${devServerUrl}#${hash}`,
+        );
+  load.catch((error: unknown) => {
+    // A load cut short is not a Hub crash, so it is swallowed. Rethrowing anything else, such as a
+    // broken install's ERR_FILE_NOT_FOUND, makes it an unhandled rejection that crashes the Hub.
+    if (!isCutShort(error)) throw error;
+  });
 }
 
 export function openHubWindow(
@@ -79,17 +124,13 @@ export function openHubWindow(
     // A BaseWindow does not take its title from the page.
     title: "Hawkeye Hub",
   });
+  const fullContentArea = () => {
+    // getContentBounds() is in screen coordinates; only its size applies to a child view.
+    const { width, height } = window.getContentBounds();
+    return { x: 0, y: 0, width, height };
+  };
 
-  // These are Electron's defaults; they are spelled out because the Hub Chrome must never have
-  // Node access. Its preload is its only way to the main process.
-  const hubChrome = new WebContentsView({
-    webPreferences: {
-      sandbox: true,
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload: join(import.meta.dirname, "../preload/hub-chrome.cjs"),
-    },
-  });
+  const hubChrome = hubChromeView();
   window.contentView.addChildView(hubChrome);
   // Above the Hub Chrome in the view stack, beside the Plugin Switcher.
   const pluginViews = createPluginViews(
@@ -98,18 +139,38 @@ export function openHubWindow(
     installed,
     displayLanguage,
     hubDataDir,
-    (id) => {
-      lifecycle.close(id);
-    },
-    (id) => {
-      lifecycle.closed(id);
-    },
+    lifecycle,
   );
-  // The Hub Chrome draws snapshots of the lifecycle state held here: it fetches one on every load,
-  // reloads included, and is sent a new one on every change. Its requests are invoked, so a bad
-  // one rejects back to it rather than throwing in the main process.
+  // The dialog overlay, while a dialog is showing: the whole window, so nothing beneath takes a
+  // click, and transparent but for the dialog it draws. Null while no dialog is showing.
+  let overlay: WebContentsView | null = null;
+  const followDialog = (pending: HubChromeDialog | null): void => {
+    if (pending !== null && overlay === null) {
+      const view = hubChromeView();
+      view.setBackgroundColor("#00000000");
+      view.setBounds(fullContentArea());
+      // Added last, so above every Plugin UI.
+      window.contentView.addChildView(view);
+      // ponytail: a crashed overlay reloads without counting towards giving up; count it with
+      // the Hub Chrome's crashes if it ever crashes often.
+      view.webContents.on("render-process-gone", () => {
+        view.webContents.reload();
+      });
+      loadHubChrome(view.webContents, "dialog");
+      // Keys go to the dialog: Enter and Esc answer it.
+      view.webContents.focus();
+      overlay = view;
+    } else if (pending === null && overlay !== null) {
+      window.contentView.removeChildView(overlay);
+      overlay.webContents.close();
+      overlay = null;
+    }
+  };
+  // Both Hub Chrome views draw snapshots of the lifecycle state held here: each fetches one on
+  // every load, reloads included, and is sent a new one on every change. Their requests are
+  // invoked, so a bad one rejects back to its view rather than throwing in the main process.
   const fromHubChrome = (channel: string, sender: WebContents): void => {
-    if (sender !== hubChrome.webContents) {
+    if (sender !== hubChrome.webContents && sender !== overlay?.webContents) {
       throw new Error(`${channel} is only for the Hub Chrome`);
     }
   };
@@ -125,16 +186,28 @@ export function openHubWindow(
   ipcMain.handle(CLOSE_PLUGIN, (event, id: unknown) => {
     fromHubChrome(CLOSE_PLUGIN, event.sender);
     if (typeof id !== "string") throw new Error(`${CLOSE_PLUGIN} takes an id`);
-    lifecycle.close(id);
+    lifecycle.requestClose(id);
+  });
+  ipcMain.handle(ANSWER_DIALOG, (event, answer: unknown) => {
+    fromHubChrome(ANSWER_DIALOG, event.sender);
+    if (!isDialogAnswer(answer)) {
+      throw new Error(`${ANSWER_DIALOG} takes a dialog answer`);
+    }
+    lifecycle.answer(answer);
   });
   lifecycle.onChange(() => {
     const snapshot = lifecycle.snapshot();
     pluginViews.follow(snapshot);
+    followDialog(snapshot.dialog);
     hubChrome.webContents.send(SNAPSHOT_CHANGED, snapshot);
+    overlay?.webContents.send(SNAPSHOT_CHANGED, snapshot);
   });
   // ADR 0012: a crashed Hub Chrome is logged and reloaded in place, until it keeps crashing.
   // Then the Hub gives up, says so in a native box (the Hub Chrome cannot draw one) and quits.
   const recordCrash = countHubChromeCrashes(now);
+  // Set once the Hub has given up on the Hub Chrome: its quit skips the Busy confirmation, since
+  // there is no Hub Chrome to draw it.
+  let gaveUp = false;
   hubChrome.webContents.on(
     "render-process-gone",
     (_event, { reason, exitCode }) => {
@@ -151,6 +224,7 @@ export function openHubWindow(
         crashes: HUB_CHROME_MAX_CRASHES,
         withinSeconds: HUB_CHROME_CRASH_WINDOW_SECONDS,
       });
+      gaveUp = true;
       const text = STOPPED_UNEXPECTEDLY[displayLanguage];
       // The main process is healthy, so a normal quit, which logs "Hub closing".
       void dialog
@@ -167,43 +241,36 @@ export function openHubWindow(
   );
 
   const fillContentArea = (): void => {
-    // getContentBounds() is in screen coordinates; only its size applies to a child view.
-    const { width, height } = window.getContentBounds();
-    hubChrome.setBounds({ x: 0, y: 0, width, height });
+    hubChrome.setBounds(fullContentArea());
+    overlay?.setBounds(fullContentArea());
     pluginViews.layout();
   };
   fillContentArea();
   window.on("resize", fillContentArea);
-  // Quitting closes every open Plugin first, in parallel. Their pages unload and their Backends
-  // exit asynchronously, and the Hub exits as soon as the window has closed, so the window waits
-  // for them all, including Plugins already closing.
+  // Quitting (a window close, or app.quit as Cmd+Q does, which closes the window) asks first if any
+  // Plugin is Busy, and **Keep open** cancels it. Then every open Plugin closes, in parallel. Their
+  // pages unload and their Backends exit asynchronously, and the Hub exits as soon as the window
+  // has closed, so the window waits for them all, including Plugins already closing.
   let pluginsClosed = false;
-  window.on("close", (event) => {
-    if (pluginsClosed) return;
-    event.preventDefault();
+  const closePluginsThenWindow = (): void => {
     for (const id of lifecycle.snapshot().open) lifecycle.close(id);
     void pluginViews.allClosed().then(() => {
       pluginsClosed = true;
       window.close();
     });
+  };
+  window.on("close", (event) => {
+    if (pluginsClosed) return;
+    event.preventDefault();
+    if (gaveUp) closePluginsThenWindow();
+    else lifecycle.requestQuit(closePluginsThenWindow);
   });
   // A BaseWindow does not destroy its views' webContents.
   window.on("closed", () => {
     hubChrome.webContents.close();
+    overlay?.webContents.close();
   });
 
-  // Set only by `electron-vite dev`; absent in the built Hub.
-  const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
-  const load =
-    devServerUrl === undefined
-      ? hubChrome.webContents.loadFile(
-          join(import.meta.dirname, "../renderer/index.html"),
-        )
-      : hubChrome.webContents.loadURL(devServerUrl);
-  load.catch((error: unknown) => {
-    // A load cut short is not a Hub crash, so it is swallowed. Rethrowing anything else, such as a
-    // broken install's ERR_FILE_NOT_FOUND, makes it an unhandled rejection that crashes the Hub.
-    if (!isCutShort(error)) throw error;
-  });
+  loadHubChrome(hubChrome.webContents, null);
   return window;
 }

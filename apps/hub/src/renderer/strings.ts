@@ -8,11 +8,25 @@ export const STRINGS = {
     noPluginOpen: "No Plugin is open",
     close: (name: string) => `Close ${name}`,
     closing: "Closing…",
+    closeQuestion: (name: string) => `Close ${name}?`,
+    quitQuestion: "Quit Hawkeye Hub?",
+    busyPlugins: "These Plugins are in the middle of work:",
+    keepOpen: "Keep open",
+    closeAnyway: "Close anyway",
+    quitAnyway: "Quit anyway",
   },
   "zh-HK": {
     plugins: "外掛程式",
     noPluginOpen: "未有開啟任何外掛程式",
     close: (name: string) => `關閉 ${name}`,
     closing: "正在關閉…",
+    closeQuestion: (name: string) => `關閉 ${name}？`,
+    quitQuestion: "結束 Hawkeye Hub？",
+    busyPlugins: "以下外掛程式正在工作中：",
+    keepOpen: "保持開啟",
+    closeAnyway: "仍然關閉",
+    quitAnyway: "仍然結束",
   },
 } satisfies Record<DisplayLanguage, unknown>;
+
+export type Strings = (typeof STRINGS)[DisplayLanguage];
