@@ -3,6 +3,7 @@
 // browser, downloads through the native save dialog, and no permission but the clipboard.
 
 import { join } from "node:path";
+import type { PluginId } from "@hawkeye-hub/plugin-format";
 import {
   app,
   dialog,
@@ -15,7 +16,7 @@ import {
 import { PLUGIN_SCHEME } from "./plugin-scheme";
 
 /** Whether `url` is on Plugin `id`'s own origin, `hawkeye-plugin://<id>/`. */
-export function staysInPlugin(id: string, url: string): boolean {
+export function staysInPlugin(id: PluginId, url: string): boolean {
   const parsed = URL.parse(url);
   return parsed?.protocol === `${PLUGIN_SCHEME}:` && parsed.host === id;
 }
@@ -33,7 +34,7 @@ const GRANTED_PERMISSIONS: readonly string[] = [
 
 /** Whether Plugin `id`'s page at `requestingUrl` gets `permission`. Everything else is denied. */
 export function grantsPermission(
-  id: string,
+  id: PluginId,
   permission: string,
   requestingUrl: string,
 ): boolean {
@@ -46,7 +47,7 @@ export function grantsPermission(
 export function lockDown(
   view: WebContentsView,
   window: BaseWindow,
-  id: string,
+  id: PluginId,
 ): void {
   const { webContents } = view;
   const { session } = webContents;

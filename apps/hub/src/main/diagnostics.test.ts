@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
 import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, expect, test } from "vitest";
 import {
@@ -14,8 +15,6 @@ import {
   parseAiProviderKind,
   parseAiProviderLabel,
   parseHubVersion,
-  parsePluginId,
-  parsePluginVersion,
   parsePythonVersion,
   parseRpcErrorReason,
   type AbsolutePath,
@@ -23,8 +22,8 @@ import {
 
 const NOW = new Date("2026-03-04T05:06:07.890Z");
 const plugin = {
-  id: parsePluginId("marking-assistant"),
-  version: parsePluginVersion("1.2.3"),
+  id: PluginId.parse("marking-assistant"),
+  version: PluginVersion.parse("1.2.3"),
 };
 let logsDir: AbsolutePath;
 
@@ -80,7 +79,7 @@ const cases: [string, HubEvent, unknown][] = [
     {
       kind: "plugin-updated",
       plugin,
-      previousVersion: parsePluginVersion("1.1.0"),
+      previousVersion: PluginVersion.parse("1.1.0"),
     },
     pluginLine("info", "Plugin updated from 1.1.0"),
   ],
@@ -593,8 +592,8 @@ test("a Plugin log rolls before it would pass the limit, like hub.log", () => {
 });
 
 const otherPlugin = {
-  id: parsePluginId("pdf-watermark-eraser"),
-  version: parsePluginVersion("0.4.0"),
+  id: PluginId.parse("pdf-watermark-eraser"),
+  version: PluginVersion.parse("0.4.0"),
 };
 
 /** Fills hub.log, both Plugins' logs and their rolled .1 files. */
@@ -775,8 +774,8 @@ test("an export that fails while moving the zip into place leaves no temp file b
 });
 
 test("constrained strings are parsed, not taken as bare strings", () => {
-  expect(() => parsePluginId("Marking_Assistant")).toThrow();
-  expect(() => parsePluginVersion("1.2")).toThrow();
+  expect(() => PluginId.parse("Marking_Assistant")).toThrow();
+  expect(() => PluginVersion.parse("1.2")).toThrow();
   expect(() => parseHubVersion("v0.3")).toThrow();
   expect(() => parsePythonVersion("3.12")).toThrow();
   expect(parsePythonVersion("3.14.0rc1")).toBe("3.14.0rc1");

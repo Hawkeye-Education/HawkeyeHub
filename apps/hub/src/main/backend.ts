@@ -17,13 +17,8 @@ import type {
   ProtocolViolation,
 } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
-import {
-  KEBAB_CASE,
-  parsePluginId,
-  parsePluginVersion,
-  parseRpcErrorReason,
-  type AbsolutePath,
-} from "./ids";
+import { KEBAB_CASE } from "@hawkeye-hub/plugin-format";
+import { parseRpcErrorReason, type AbsolutePath } from "./ids";
 import type { InstalledPlugin } from "./installed-plugins";
 
 export interface Backend {
@@ -161,10 +156,7 @@ export function startBackend(
   /** Closes the whole Plugin, while it is still open: the Backend broke or failed to start. */
   closePlugin: (crash: PluginCrash) => void,
 ): Backend {
-  const plugin = {
-    id: parsePluginId(manifest.id),
-    version: parsePluginVersion(manifest.version),
-  };
+  const plugin = { id: manifest.id, version: manifest.version };
   // Keyed by id, never version, so they survive updates (ADR 0008).
   const dataDir = join(hubDataDir, "plugin-data", manifest.id);
   const stores = Object.fromEntries(
