@@ -13,6 +13,7 @@ import { DISPLAY_LANGUAGE_ARG } from "../shared/plugin-preload";
 import type { Diagnostics } from "./diagnostics";
 import { parsePluginId, parsePluginVersion } from "./ids";
 import type { InstalledPlugin } from "./installed-plugins";
+import { lockDown } from "./plugin-lockdown";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
 
 export interface PluginViews {
@@ -55,11 +56,14 @@ export function createPluginViews(
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        // Dev mode (#31) turns them back on.
+        devTools: false,
         partition,
         preload: join(import.meta.dirname, "../preload/plugin.cjs"),
         additionalArguments: [`${DISPLAY_LANGUAGE_ARG}${displayLanguage}`],
       },
     });
+    lockDown(view, window, id);
     const pluginSession = diagnostics.startPluginSession({
       id: parsePluginId(id),
       version: parsePluginVersion(manifest.version),
