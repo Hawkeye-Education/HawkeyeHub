@@ -118,6 +118,20 @@ function connectBackend(): HubBackend {
   };
 }
 
+// window.open is refused (spec #44). Main denies every new window, but cannot tell window.open from
+// an `<a target=_blank>`, which opens https in the system browser, so window.open stops here and
+// opens nothing. Plugins are trusted (ADR 0009): a page that calls a subframe's open still reaches
+// main's rule, which only ever opens https in the system browser.
+contextBridge.executeInMainWorld({
+  func: () => {
+    Object.defineProperty(window, "open", {
+      value: () => null,
+      writable: false,
+      configurable: false,
+    });
+  },
+});
+
 // The preload runs before the parser has made `<html>` (documentElement is null then; the smoke
 // suite proves it), so the lang is set as the element is inserted. Mutation observers run at the
 // microtask checkpoint before the parser runs any script, so Plugin code already sees it, and it
