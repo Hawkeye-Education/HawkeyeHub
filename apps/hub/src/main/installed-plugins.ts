@@ -1,0 +1,102 @@
+// The record of installed Plugins: `installed-plugins.json` in the Hub's data folder, a JSON array of
+// `{id, version}` naming each Plugin's active version, beside one `<id>@<version>` folder per
+// installed version. Install and update write it later; this spec only reads it.
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { parseManifest, type Manifest } from "@hawkeye-hub/plugin-format";
+import { z } from "zod";
+import type { PluginLeftOutReason, PluginRef } from "./diagnostics";
+import {
+  parseAbsolutePath,
+  parsePluginId,
+  parsePluginVersion,
+  type AbsolutePath,
+} from "./ids";
+
+export const RECORD_FILE = "installed-plugins.json";
+
+const InstalledRecord = z.array(
+  z.strictObject({ id: z.string(), version: z.string() }),
+);
+
+export interface InstalledPlugin {
+  /** The `<id>@<version>` folder holding the unpacked Plugin Package. */
+  folder: AbsolutePath;
+  manifest: Manifest;
+}
+
+export interface LeftOutPlugin {
+  plugin: PluginRef;
+  reason: PluginLeftOutReason;
+}
+
+/**
+ * Reads the record and each entry's Manifest. An absent record means a fresh Hub and is written as
+ * `[]`. A record that does not parse, or names an id twice, throws: the Hub must never forget what
+ * is installed. An entry that cannot be loaded is left out, with why.
+ */
+export function loadInstalledPlugins(dataDir: AbsolutePath): {
+  loaded: InstalledPlugin[];
+  leftOut: LeftOutPlugin[];
+} {
+  const recordPath = join(dataDir, RECORD_FILE);
+  if (!existsSync(recordPath)) {
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(recordPath, "[]\n");
+  }
+  const entries = InstalledRecord.parse(
+    JSON.parse(readFileSync(recordPath, "utf8")),
+  ).map((entry): PluginRef => ({
+    id: parsePluginId(entry.id),
+    version: parsePluginVersion(entry.version),
+  }));
+  const ids = new Set(entries.map((entry) => entry.id));
+  if (ids.size !== entries.length) {
+    throw new Error(`${RECORD_FILE} names a Plugin id twice`);
+  }
+
+  const loaded: InstalledPlugin[] = [];
+  const leftOut: LeftOutPlugin[] = [];
+  for (const plugin of entries) {
+    const result = loadEntry(dataDir, plugin);
+    if (result.kind === "loaded") loaded.push(result.plugin);
+    else leftOut.push({ plugin, reason: result.reason });
+  }
+  return { loaded, leftOut };
+}
+
+function loadEntry(
+  dataDir: AbsolutePath,
+  { id, version }: PluginRef,
+):
+  | { kind: "loaded"; plugin: InstalledPlugin }
+  | { kind: "left-out"; reason: PluginLeftOutReason } {
+  const folder = parseAbsolutePath(join(dataDir, `${id}@${version}`));
+  if (!existsSync(folder))
+    return { kind: "left-out", reason: "folder-missing" };
+  const manifestPath = join(folder, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    return { kind: "left-out", reason: "manifest-invalid" };
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch (error) {
+    // Not swallowed: unparseable JSON is one way a Manifest is invalid, and the caller logs it.
+    if (error instanceof SyntaxError) {
+      return { kind: "left-out", reason: "manifest-invalid" };
+    }
+    throw error;
+  }
+  const parsed = parseManifest(json);
+  if (parsed.kind === "invalid") {
+    return { kind: "left-out", reason: "manifest-invalid" };
+  }
+  // Widened to string: the Manifest's zod brands and the Hub's brands are distinct types.
+  const said: { id: string; version: string } = parsed.manifest;
+  if (said.id !== id || said.version !== version) {
+    return { kind: "left-out", reason: "manifest-disagrees" };
+  }
+  return { kind: "loaded", plugin: { folder, manifest: parsed.manifest } };
+}
