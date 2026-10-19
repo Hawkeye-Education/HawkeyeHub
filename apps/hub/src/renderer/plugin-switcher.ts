@@ -1,6 +1,6 @@
 // The Plugin Switcher: every installed Plugin, down the side of the Hub window, in the order main
 // sorted them. Clicking one opens it or brings it forward; the one in front is marked, and each open
-// one has a close control. No Theme yet (ADR 0006). Blocked reasons arrive in a later ticket.
+// one has a close control. A closing one says so and cannot be clicked until it is gone. No Theme yet (ADR 0006). Blocked reasons arrive in a later ticket.
 
 import { LitElement, css, html, nothing } from "lit";
 import type { HubChromeApi, SwitcherPlugin } from "../shared/hub-chrome-ipc";
@@ -40,6 +40,10 @@ export class PluginSwitcher extends LitElement {
     .name {
       flex: 1;
     }
+    .closing {
+      padding-inline-end: 8px;
+      color: #666;
+    }
     [aria-current="page"] {
       font-weight: bold;
     }
@@ -61,8 +65,10 @@ export class PluginSwitcher extends LitElement {
   static override properties = {
     label: { attribute: false },
     closeLabel: { attribute: false },
+    closingLabel: { attribute: false },
     plugins: { attribute: false },
     open: { attribute: false },
+    closing: { attribute: false },
     foreground: { attribute: false },
     hub: { attribute: false },
   };
@@ -72,8 +78,11 @@ export class PluginSwitcher extends LitElement {
   declare label: string;
   /** The close control's accessible name for a Plugin, in the Display Language. */
   declare closeLabel: (name: string) => string;
+  /** What a closing Plugin is marked with, in the Display Language. */
+  declare closingLabel: string;
   declare plugins: SwitcherPlugin[];
   declare open: string[];
+  declare closing: string[];
   /** Null when no Plugin is in front. */
   declare foreground: string | null;
   declare hub: HubChromeApi;
@@ -87,6 +96,7 @@ export class PluginSwitcher extends LitElement {
               <button
                 class="name"
                 aria-current=${plugin.id === this.foreground ? "page" : nothing}
+                ?disabled=${this.closing.includes(plugin.id)}
                 @click=${() => {
                   this.hub.open(plugin.id);
                 }}
@@ -103,6 +113,11 @@ export class PluginSwitcher extends LitElement {
                     >
                       ×
                     </button>`
+                  : nothing
+              }
+              ${
+                this.closing.includes(plugin.id)
+                  ? html`<span class="closing">${this.closingLabel}</span>`
                   : nothing
               }
             </li>`,

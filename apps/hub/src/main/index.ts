@@ -3,6 +3,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { app, Menu, protocol, session } from "electron";
+import { killBackendsNow } from "./backend";
 import { openDiagnostics } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
 import { openHubWindow } from "./hub-window";
@@ -70,7 +71,13 @@ function runHub(): void {
     origin: NodeJS.UncaughtExceptionOrigin,
   ): void => {
     diagnostics.recordHubEvent({ kind: "uncaught-exception", origin, error });
-    app.exit(1);
+    // No Backend, or child it launched, outlives the Hub (ADR 0003). The Hub exits even if a kill
+    // throws; the stdin rule covers what the kill missed.
+    try {
+      killBackendsNow();
+    } finally {
+      app.exit(1);
+    }
   };
   process.on("uncaughtException", logCrashAndExit);
   process.on("unhandledRejection", (reason) => {

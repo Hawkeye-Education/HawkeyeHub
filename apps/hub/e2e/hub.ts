@@ -277,6 +277,16 @@ export function pluginLogMessages(dataDir: string, id: string): string[] {
     .map((line) => (JSON.parse(line) as { message: string }).message);
 }
 
+export function isRunning(pid: number): boolean {
+  try {
+    // Signal 0 only checks that the process exists.
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function lifecycleLine(message: string): unknown {
   return {
     time: expect.any(String),

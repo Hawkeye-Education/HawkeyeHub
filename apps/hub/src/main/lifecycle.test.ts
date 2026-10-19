@@ -51,6 +51,7 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
       },
     ],
     open: [],
+    closing: [],
     foreground: null,
   });
 });
@@ -126,6 +127,38 @@ test("every change is announced", () => {
   lifecycle.close("attendance");
 
   expect(seen).toEqual(["class-timer", "attendance", "class-timer"]);
+});
+
+test("a closed Plugin is closing until its close finishes, cannot be reopened until then, and then reopens", () => {
+  const lifecycle = createLifecycle("en-HK", plugins);
+  lifecycle.open("class-timer");
+  lifecycle.open("attendance");
+
+  lifecycle.close("attendance");
+  expect(lifecycle.snapshot()).toMatchObject({
+    open: ["class-timer"],
+    closing: ["attendance"],
+    foreground: "class-timer",
+  });
+  expect(() => {
+    lifecycle.open("attendance");
+  }).toThrow();
+
+  lifecycle.closed("attendance");
+  expect(lifecycle.snapshot()).toMatchObject({
+    open: ["class-timer"],
+    closing: [],
+  });
+  lifecycle.open("attendance");
+  expect(lifecycle.snapshot().foreground).toBe("attendance");
+});
+
+test("finishing the close of a Plugin that is not closing throws", () => {
+  const lifecycle = createLifecycle("en-HK", plugins);
+  lifecycle.open("attendance");
+  expect(() => {
+    lifecycle.closed("attendance");
+  }).toThrow();
 });
 
 test("opening a Plugin that is not installed, or closing one that is not open, throws", () => {
