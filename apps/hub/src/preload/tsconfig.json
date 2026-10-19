@@ -1,0 +1,9 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  // A preload runs in the page's renderer, sandboxed: DOM, plus Electron's process typings.
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": ["."]
+}

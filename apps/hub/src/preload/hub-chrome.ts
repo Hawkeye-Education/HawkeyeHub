@@ -3,7 +3,9 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 import {
+  CLOSE_PLUGIN,
   GET_SNAPSHOT,
+  OPEN_PLUGIN,
   SNAPSHOT_CHANGED,
   type HubChromeApi,
   type HubChromeSnapshot,
@@ -20,6 +22,14 @@ const api: HubChromeApi = {
       .then((snapshot: HubChromeSnapshot) => {
         listener(snapshot);
       });
+  },
+  // A rejection means the Hub Chrome asked for something impossible: left unhandled, it is logged
+  // in the Hub Chrome's console as the bug it is.
+  open(id) {
+    void ipcRenderer.invoke(OPEN_PLUGIN, id);
+  },
+  close(id) {
+    void ipcRenderer.invoke(CLOSE_PLUGIN, id);
   },
 };
 

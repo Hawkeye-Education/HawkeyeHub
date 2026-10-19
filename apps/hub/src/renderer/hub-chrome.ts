@@ -1,8 +1,12 @@
 // The Hub Chrome's root element: the Plugin Switcher down the side and the content area beside it.
 // It draws the latest snapshot of the lifecycle state held in main. No Theme yet (ADR 0006).
 
-import { LitElement, css, html, nothing } from "lit";
-import type { HubChromeApi, HubChromeSnapshot } from "../shared/hub-chrome-ipc";
+import { LitElement, css, html, nothing, unsafeCSS } from "lit";
+import {
+  SWITCHER_WIDTH_PX,
+  type HubChromeApi,
+  type HubChromeSnapshot,
+} from "../shared/hub-chrome-ipc";
 import "./plugin-switcher";
 import { STRINGS } from "./strings";
 
@@ -10,7 +14,7 @@ export class HubChrome extends LitElement {
   static override styles = css`
     :host {
       display: grid;
-      grid-template-columns: 240px 1fr;
+      grid-template-columns: ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr;
       height: 100vh;
       font-family: system-ui, sans-serif;
     }
@@ -55,10 +59,20 @@ export class HubChrome extends LitElement {
         <h1>Hawkeye Hub</h1>
         <plugin-switcher
           .label=${strings.plugins}
+          .closeLabel=${strings.close}
           .plugins=${this.snapshot.plugins}
+          .open=${this.snapshot.open}
+          .foreground=${this.snapshot.foreground}
+          .hub=${window.hubChrome}
         ></plugin-switcher>
       </aside>
-      <main><p>${strings.noPluginOpen}</p></main>`;
+      <main>
+        ${
+          this.snapshot.foreground === null
+            ? html`<p>${strings.noPluginOpen}</p>`
+            : nothing
+        }
+      </main>`;
   }
 }
 

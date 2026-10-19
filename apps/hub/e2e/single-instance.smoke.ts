@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import {
+  electronBinary,
   expect,
   HUB_DIR,
   hubEnv,
@@ -8,14 +8,6 @@ import {
   lifecycleLine,
   test,
 } from "./hub";
-
-// The electron package's runtime export is the binary's path, but its types describe the
-// Electron API, so it is read as unknown and narrowed.
-const electronExport: unknown = createRequire(import.meta.url)("electron");
-if (typeof electronExport !== "string") {
-  throw new Error("electron did not resolve to its binary path");
-}
-const electronBinary: string = electronExport;
 
 // Not through _electron.launch: it throws for a process that quits before ready, which would
 // look the same as a Hub that failed to start.

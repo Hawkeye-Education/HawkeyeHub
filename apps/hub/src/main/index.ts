@@ -9,6 +9,7 @@ import { openHubWindow } from "./hub-window";
 import { parseAbsolutePath } from "./ids";
 import { loadInstalledPlugins } from "./installed-plugins";
 import { createLifecycle } from "./lifecycle";
+import { registerPluginScheme } from "./plugin-scheme";
 
 // 1. On-disk location, before anything reads or writes a path. The single-instance lock lives
 // in userData, and getPath("logs") creates the default folder, so both must move first.
@@ -37,6 +38,9 @@ if (app.requestSingleInstanceLock()) {
 }
 
 function runHub(): void {
+  // Privileged schemes can only be registered before `ready`.
+  registerPluginScheme();
+
   // 3. Diagnostics on the logs path, which step 1 may have moved.
   const now = (): Date => new Date();
   const diagnostics = openDiagnostics(
@@ -90,7 +94,7 @@ function runHub(): void {
       displayLanguageFor(app.getPreferredSystemLanguages()),
       installed.loaded,
     );
-    return openHubWindow(diagnostics, now, lifecycle);
+    return openHubWindow(diagnostics, now, lifecycle, installed.loaded);
   });
 
   // Registered now, not once the window is open, so a launch during startup is not missed: it

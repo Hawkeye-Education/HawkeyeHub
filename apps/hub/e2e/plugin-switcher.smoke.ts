@@ -96,7 +96,7 @@ function reloadedSwitcherNames(hub: ElectronApplication): Promise<unknown[]> {
         .getAllWebContents()
         .map((contents): Promise<unknown> =>
           contents.executeJavaScript(
-            'Array.from(document.querySelector("hub-chrome")?.shadowRoot?.querySelector("plugin-switcher")?.shadowRoot?.querySelectorAll("li") ?? [], (li) => li.textContent)',
+            'Array.from(document.querySelector("hub-chrome")?.shadowRoot?.querySelector("plugin-switcher")?.shadowRoot?.querySelectorAll("li") ?? [], (li) => li.textContent.trim())',
           ),
         ),
     ),

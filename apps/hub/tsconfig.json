@@ -4,6 +4,6 @@
     "types": ["node"]
   },
   "include": ["src", "e2e", "*.config.ts"],
-  // The Hub Chrome runs in a browser: it has its own tsconfig, with DOM and without Node.
-  "exclude": ["src/renderer"]
+  // The Hub Chrome and the preloads run in a page: each has its own tsconfig, with DOM.
+  "exclude": ["src/renderer", "src/preload"]
 }
