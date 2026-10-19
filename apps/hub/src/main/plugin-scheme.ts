@@ -3,19 +3,10 @@
 
 import { relative, resolve, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
-import { net, protocol, type Session } from "electron";
+import { net, type Session } from "electron";
 
+/** Its privileges are granted in index.ts, in the Hub's one registerSchemesAsPrivileged call. */
 export const PLUGIN_SCHEME = "hawkeye-plugin";
-
-/** Call once, before `ready`: a standard, secure scheme gets an origin and relative URLs. */
-export function registerPluginScheme(): void {
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: PLUGIN_SCHEME,
-      privileges: { standard: true, secure: true, supportFetchAPI: true },
-    },
-  ]);
-}
 
 /**
  * The file in `uiDir` that `url` names, or null when the URL is not on `id`'s host or would leave

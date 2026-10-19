@@ -5,6 +5,14 @@
 import { LitElement, css, html, nothing } from "lit";
 import type { HubChromeApi, SwitcherPlugin } from "../shared/hub-chrome-ipc";
 
+/**
+ * Hands the icon URL to the `li::before` mask. Bound as the `.style` property, which sets it
+ * through the CSSOM: the CSP refuses a `style` attribute, and Lit's styleMap writes one at first.
+ */
+function iconStyle({ iconUrl }: SwitcherPlugin): string {
+  return `--icon: url("${iconUrl}")`;
+}
+
 export class PluginSwitcher extends LitElement {
   static override styles = css`
     :host {
@@ -17,12 +25,15 @@ export class PluginSwitcher extends LitElement {
     }
     li {
       display: flex;
+      align-items: center;
+      gap: 4px;
+      padding-inline-start: 16px;
     }
     button {
       font: inherit;
       border: none;
       background: none;
-      padding: 8px 16px;
+      padding: 8px;
       text-align: start;
       cursor: pointer;
     }
@@ -31,6 +42,19 @@ export class PluginSwitcher extends LitElement {
     }
     [aria-current="page"] {
       font-weight: bold;
+    }
+    /* The Plugin's icon.svg as a mask over currentColor: the SVG is only ever an image, never
+       part of this page, so nothing in it runs, and it takes the text's colour. */
+    li::before {
+      content: "";
+      flex: none;
+      width: 24px;
+      height: 24px;
+      background-color: currentColor;
+      mask-size: contain;
+      mask-repeat: no-repeat;
+      mask-position: center;
+      mask-image: var(--icon);
     }
   `;
 
@@ -58,23 +82,23 @@ export class PluginSwitcher extends LitElement {
     return html`<nav aria-label=${this.label}>
       <ul>
         ${this.plugins.map(
-          ({ id, name }) =>
-            html`<li>
+          (plugin) =>
+            html`<li .style=${iconStyle(plugin)}>
               <button
                 class="name"
-                aria-current=${id === this.foreground ? "page" : nothing}
+                aria-current=${plugin.id === this.foreground ? "page" : nothing}
                 @click=${() => {
-                  this.hub.open(id);
+                  this.hub.open(plugin.id);
                 }}
               >
-                ${name}
+                ${plugin.name}
               </button>
               ${
-                this.open.includes(id)
+                this.open.includes(plugin.id)
                   ? html`<button
-                      aria-label=${this.closeLabel(name)}
+                      aria-label=${this.closeLabel(plugin.name)}
                       @click=${() => {
-                        this.hub.close(id);
+                        this.hub.close(plugin.id);
                       }}
                     >
                       ×
