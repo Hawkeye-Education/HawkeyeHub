@@ -8,10 +8,13 @@ import {
   realpathSync,
   writeFileSync,
 } from "node:fs";
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   _electron,
+  chromium,
   test as base,
   expect,
   type ElectronApplication,
@@ -30,6 +33,83 @@ export function hubEnv(dataDir: string) {
 export function launchHub(dataDir: string): Promise<ElectronApplication> {
   // `env` replaces the environment rather than adding to it.
   return _electron.launch({ args: [HUB_DIR], env: hubEnv(dataDir) });
+}
+
+// The electron package's runtime export is the binary's path, but its types describe the
+// Electron API, so it is read as unknown and narrowed.
+const electronExport: unknown = createRequire(import.meta.url)("electron");
+if (typeof electronExport !== "string") {
+  throw new Error("electron did not resolve to its binary path");
+}
+export const electronBinary: string = electronExport;
+
+/** A Hub driven over CDP: its pages only, with no main-process access. */
+export interface CdpHub {
+  hubChrome: Page;
+  /** Every open page: the Hub Chrome and each Plugin UI. */
+  pages: () => Page[];
+  /** Kills the Hub: no "Hub closing", so tests of the log use `launchHub`. */
+  close(): Promise<void>;
+}
+
+/**
+ * Launches the Hub and connects over CDP without Playwright's default overrides. `launchHub`'s
+ * focus emulation keeps every page's `document.visibilityState` "visible" whatever the Hub does
+ * (probed: hiding, removing or minimising changed nothing until it was gone), so tests of
+ * visibility use this.
+ */
+export async function launchHubOverCdp(dataDir: string): Promise<CdpHub> {
+  // Without focus emulation the OS's view of the window counts: an occluded window, behind another
+  // or with the display asleep, hides every page and stalls Playwright's clicks. Playwright's own
+  // Chromium launches pass these same switches.
+  const args = [
+    HUB_DIR,
+    "--remote-debugging-port=0",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-features=CalculateNativeWinOcclusion",
+  ];
+  const child = spawn(electronBinary, args, {
+    env: hubEnv(dataDir),
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  const exited = new Promise<void>((resolve) => {
+    child.once("exit", () => {
+      resolve();
+    });
+  });
+  const endpoint = await new Promise<string>((resolve, reject) => {
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+      const match = /DevTools listening on (ws:\/\/\S+)/.exec(stderr);
+      if (match?.[1] !== undefined) resolve(match[1]);
+    });
+    void exited.then(() => {
+      reject(new Error(`The Hub exited before it was ready:\n${stderr}`));
+    });
+  });
+  const browser = await chromium.connectOverCDP(endpoint, { noDefaults: true });
+  const [context] = browser.contexts();
+  if (context === undefined) throw new Error("The Hub has no browser context");
+  const pages = (): Page[] => context.pages();
+  let hubChrome: Page | undefined;
+  await expect
+    .poll(() => {
+      hubChrome = pages().find((page) => page.url().startsWith("file:"));
+      return hubChrome !== undefined;
+    })
+    .toBe(true);
+  if (hubChrome === undefined) throw new Error("unreachable: polled for above");
+  return {
+    hubChrome,
+    pages,
+    close: async () => {
+      await browser.close();
+      child.kill();
+      await exited;
+    },
+  };
 }
 
 export const test = base.extend<{ dataDir: string; hub: ElectronApplication }>({
@@ -106,12 +186,14 @@ export function fixtureInstall(fixture: string): FixtureInstall {
   return { fixture, id: fixture, version: "1.0.0" };
 }
 
-/** The Plugin names the Plugin Switcher lists, top to bottom. */
-export function switcherNames(hubChrome: Page): Promise<string[]> {
-  return hubChrome
-    .getByRole("navigation")
-    .getByRole("listitem")
-    .allTextContents();
+/** The Plugin names the Plugin Switcher lists, top to bottom, while no Plugin is open. */
+export async function switcherNames(hubChrome: Page): Promise<string[]> {
+  return (
+    await hubChrome
+      .getByRole("navigation")
+      .getByRole("listitem")
+      .allTextContents()
+  ).map((text) => text.trim());
 }
 
 export type DisplayLanguage = "en-HK" | "zh-HK";
@@ -137,23 +219,62 @@ export async function displayLanguageOf(
 export function crashHubChrome(hub: ElectronApplication): Promise<boolean[]> {
   return hub.evaluate(({ webContents }) =>
     Promise.all(
-      webContents.getAllWebContents().map(async (contents) => {
-        const wasLoading = contents.isLoading();
-        // The did-finish-load after the crash: a first load can still finish while the crash is
-        // on its way, and executeJavaScript on the dead renderer would then never answer.
-        const reloaded = new Promise<void>((resolve) => {
-          contents.once("render-process-gone", () => {
-            contents.once("did-finish-load", () => {
-              resolve();
+      webContents
+        .getAllWebContents()
+        // Only the Hub Chrome: Plugin UIs are hawkeye-plugin:// pages.
+        .filter((contents) => !contents.getURL().startsWith("hawkeye-plugin:"))
+        .map(async (contents) => {
+          const wasLoading = contents.isLoading();
+          // The did-finish-load after the crash: a first load can still finish while the crash is
+          // on its way, and executeJavaScript on the dead renderer would then never answer.
+          const reloaded = new Promise<void>((resolve) => {
+            contents.once("render-process-gone", () => {
+              contents.once("did-finish-load", () => {
+                resolve();
+              });
             });
           });
-        });
-        contents.forcefullyCrashRenderer();
-        await reloaded;
-        return wasLoading;
-      }),
+          contents.forcefullyCrashRenderer();
+          await reloaded;
+          return wasLoading;
+        }),
     ),
   );
+}
+
+/** The open Plugin UI of Plugin `id` among `pages`, once there is one and its scripts have run. */
+export async function pluginPage(
+  pages: () => Page[],
+  id: string,
+): Promise<Page> {
+  let page: Page | undefined;
+  await expect
+    .poll(() => {
+      page = pluginPages(pages(), id)[0];
+      return page !== undefined;
+    })
+    .toBe(true);
+  if (page === undefined) throw new Error("unreachable: polled for above");
+  // The page is listed as soon as its URL commits, before its classic scripts have run.
+  await page.waitForLoadState("domcontentloaded");
+  return page;
+}
+
+/** Every open Plugin UI of Plugin `id` among `pages`: never more than one. */
+export function pluginPages(pages: Page[], id: string): Page[] {
+  return pages.filter((page) =>
+    page.url().startsWith(`hawkeye-plugin://${id}/`),
+  );
+}
+
+/** The messages in a Plugin's log, oldest first, or none if it has no log yet. */
+export function pluginLogMessages(dataDir: string, id: string): string[] {
+  const log = join(dataDir, "logs", "plugins", `${id}.log`);
+  if (!existsSync(log)) return [];
+  return readFileSync(log, "utf8")
+    .trimEnd()
+    .split("\n")
+    .map((line) => (JSON.parse(line) as { message: string }).message);
 }
 
 export function lifecycleLine(message: string): unknown {

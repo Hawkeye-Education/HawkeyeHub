@@ -1,15 +1,26 @@
-// The Hub's one window: a BaseWindow whose view stack holds the Hub Chrome. Plugin UIs and
-// overlays for Hub Chrome dialogs join the same stack later (ADRs 0003, 0006).
+// The Hub's one window: a BaseWindow whose view stack holds the Hub Chrome, with the open Plugin
+// UIs above it. The overlay for Hub Chrome dialogs joins the same stack later (ADRs 0003, 0006).
 
 import { join } from "node:path";
-import { app, BaseWindow, dialog, ipcMain, WebContentsView } from "electron";
 import {
+  app,
+  BaseWindow,
+  dialog,
+  ipcMain,
+  WebContentsView,
+  type WebContents,
+} from "electron";
+import {
+  CLOSE_PLUGIN,
   GET_SNAPSHOT,
+  OPEN_PLUGIN,
   SNAPSHOT_CHANGED,
   type DisplayLanguage,
 } from "../shared/hub-chrome-ipc";
 import type { Diagnostics } from "./diagnostics";
+import type { InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
+import { createPluginViews } from "./plugin-views";
 import {
   countHubChromeCrashes,
   HUB_CHROME_CRASH_WINDOW_SECONDS,
@@ -52,6 +63,7 @@ export function openHubWindow(
   diagnostics: Diagnostics,
   now: () => Date,
   lifecycle: Lifecycle,
+  installed: readonly InstalledPlugin[],
 ): BaseWindow {
   const { displayLanguage } = lifecycle.snapshot();
   // Native frame and title bar until the Theme brings the Hub Chrome's own (ADR 0006).
@@ -77,16 +89,42 @@ export function openHubWindow(
     },
   });
   window.contentView.addChildView(hubChrome);
+  // Above the Hub Chrome in the view stack, beside the Plugin Switcher.
+  const pluginViews = createPluginViews(
+    window,
+    diagnostics,
+    installed,
+    displayLanguage,
+    (id) => {
+      lifecycle.close(id);
+    },
+  );
   // The Hub Chrome draws snapshots of the lifecycle state held here: it fetches one on every load,
-  // reloads included, and is sent a new one on every change.
-  ipcMain.handle(GET_SNAPSHOT, (event) => {
-    if (event.sender !== hubChrome.webContents) {
-      throw new Error(`${GET_SNAPSHOT} is only for the Hub Chrome`);
+  // reloads included, and is sent a new one on every change. Its requests are invoked, so a bad
+  // one rejects back to it rather than throwing in the main process.
+  const fromHubChrome = (channel: string, sender: WebContents): void => {
+    if (sender !== hubChrome.webContents) {
+      throw new Error(`${channel} is only for the Hub Chrome`);
     }
+  };
+  ipcMain.handle(GET_SNAPSHOT, (event) => {
+    fromHubChrome(GET_SNAPSHOT, event.sender);
     return lifecycle.snapshot();
   });
+  ipcMain.handle(OPEN_PLUGIN, (event, id: unknown) => {
+    fromHubChrome(OPEN_PLUGIN, event.sender);
+    if (typeof id !== "string") throw new Error(`${OPEN_PLUGIN} takes an id`);
+    lifecycle.open(id);
+  });
+  ipcMain.handle(CLOSE_PLUGIN, (event, id: unknown) => {
+    fromHubChrome(CLOSE_PLUGIN, event.sender);
+    if (typeof id !== "string") throw new Error(`${CLOSE_PLUGIN} takes an id`);
+    lifecycle.close(id);
+  });
   lifecycle.onChange(() => {
-    hubChrome.webContents.send(SNAPSHOT_CHANGED, lifecycle.snapshot());
+    const snapshot = lifecycle.snapshot();
+    pluginViews.follow(snapshot);
+    hubChrome.webContents.send(SNAPSHOT_CHANGED, snapshot);
   });
   // ADR 0012: a crashed Hub Chrome is logged and reloaded in place, until it keeps crashing.
   // Then the Hub gives up, says so in a native box (the Hub Chrome cannot draw one) and quits.
@@ -126,9 +164,21 @@ export function openHubWindow(
     // getContentBounds() is in screen coordinates; only its size applies to a child view.
     const { width, height } = window.getContentBounds();
     hubChrome.setBounds({ x: 0, y: 0, width, height });
+    pluginViews.layout();
   };
   fillContentArea();
   window.on("resize", fillContentArea);
+  // Quitting closes every open Plugin first. Their pages unload asynchronously, and the Hub exits
+  // as soon as the window has closed, so the window waits for them.
+  let pluginsClosed = false;
+  window.on("close", (event) => {
+    if (pluginsClosed) return;
+    event.preventDefault();
+    void pluginViews.closeAll().then(() => {
+      pluginsClosed = true;
+      window.close();
+    });
+  });
   // A BaseWindow does not destroy its views' webContents.
   window.on("closed", () => {
     hubChrome.webContents.close();

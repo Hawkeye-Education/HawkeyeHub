@@ -1,6 +1,6 @@
 // The Plugin lifecycle's state, held in the main process (spec #44 story 49) and drawn by the Hub
-// Chrome from snapshots. Holds only the installed Plugins so far; open Plugins, the foreground
-// Plugin, blocked reasons and the pending dialog join it in later tickets.
+// Chrome from snapshots: the installed Plugins with their icons, which are open and which is in
+// front. Blocked reasons, closing and the pending dialog join it in later tickets.
 
 import type { DisplayText } from "@hawkeye-hub/plugin-format";
 import type {
@@ -14,6 +14,10 @@ export interface Lifecycle {
   snapshot(): HubChromeSnapshot;
   /** `listener` runs after every change to the state, to push a new snapshot. */
   onChange(listener: () => void): void;
+  /** Opens an installed Plugin, or brings it forward if it is open. Throws if it is not installed. */
+  open(id: string): void;
+  /** Closes an open Plugin. Throws if it is not open. */
+  close(id: string): void;
 }
 
 /** Display text in `language`, falling back to English (ADR 0007). */
@@ -40,12 +44,36 @@ export function createLifecycle(
       access: { kind: "openable" } as const,
     }))
     .sort((a, b) => byName(a.name, b.name));
-  // Nothing changes the state yet; open and close (#48) will call these.
+  // The open Plugins, most recently foregrounded first: the first is in front, and closing it
+  // brings forward the next.
+  let open: string[] = [];
   const listeners: (() => void)[] = [];
+  const changed = (): void => {
+    for (const listener of listeners) listener();
+  };
   return {
-    snapshot: () => ({ displayLanguage, plugins }),
+    snapshot: () => ({
+      displayLanguage,
+      plugins,
+      open: [...open],
+      foreground: open[0] ?? null,
+    }),
     onChange: (listener) => {
       listeners.push(listener);
+    },
+    open: (id) => {
+      if (!plugins.some((plugin) => plugin.id === id)) {
+        throw new Error(`No installed Plugin has the id ${JSON.stringify(id)}`);
+      }
+      open = [id, ...open.filter((other) => other !== id)];
+      changed();
+    },
+    close: (id) => {
+      if (!open.includes(id)) {
+        throw new Error(`No open Plugin has the id ${JSON.stringify(id)}`);
+      }
+      open = open.filter((other) => other !== id);
+      changed();
     },
   };
 }

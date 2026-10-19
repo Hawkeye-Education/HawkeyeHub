@@ -10,6 +10,7 @@ import { parseAbsolutePath } from "./ids";
 import { loadInstalledPlugins } from "./installed-plugins";
 import { createLifecycle } from "./lifecycle";
 import { PLUGIN_ICON_SCHEME, servePluginIcons } from "./plugin-icons";
+import { PLUGIN_SCHEME } from "./plugin-scheme";
 
 // 1. On-disk location, before anything reads or writes a path. The single-instance lock lives
 // in userData, and getPath("logs") creates the default folder, so both must move first.
@@ -28,12 +29,18 @@ if (dataDirRaw !== undefined) {
 // variable it is Electron's userData for the OS user.
 const hubDataDir = parseAbsolutePath(dataDirRaw ?? app.getPath("userData"));
 
-// Privileges are granted once, before `ready`, for every scheme the Hub serves. The icon scheme is
-// standard (host and path), secure, and CORS-enabled: CSS masks fetch in CORS mode.
+// Privileges are granted once, before `ready`, for every scheme the Hub serves: a second call
+// replaces the first. The icon scheme is standard (host and path), secure, and CORS-enabled: CSS
+// masks fetch in CORS mode. The Plugin UI scheme is standard and secure, so each Plugin UI has its
+// own origin and relative URLs, and its pages may use fetch.
 protocol.registerSchemesAsPrivileged([
   {
     scheme: PLUGIN_ICON_SCHEME,
     privileges: { standard: true, secure: true, corsEnabled: true },
+  },
+  {
+    scheme: PLUGIN_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true },
   },
 ]);
 
@@ -105,7 +112,7 @@ function runHub(): void {
       displayLanguageFor(app.getPreferredSystemLanguages()),
       installed.loaded,
     );
-    return openHubWindow(diagnostics, now, lifecycle);
+    return openHubWindow(diagnostics, now, lifecycle, installed.loaded);
   });
 
   // Registered now, not once the window is open, so a launch during startup is not missed: it

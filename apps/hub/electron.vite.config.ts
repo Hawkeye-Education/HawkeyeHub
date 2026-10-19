@@ -22,6 +22,7 @@ export default defineConfig(({ command }) => {
               import.meta.dirname,
               "src/preload/hub-chrome.ts",
             ),
+            plugin: join(import.meta.dirname, "src/preload/plugin.ts"),
           },
           // A sandboxed preload runs as a plain script, never as ESM, and this package is
           // "type": "module", so the output must be CommonJS with a .cjs name.

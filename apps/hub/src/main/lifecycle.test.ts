@@ -1,7 +1,7 @@
 import { parseManifest, type Manifest } from "@hawkeye-hub/plugin-format";
 import { expect, test } from "vitest";
 import { parseAbsolutePath } from "./ids";
-import { createLifecycle } from "./lifecycle";
+import { createLifecycle, type Lifecycle } from "./lifecycle";
 
 function installed(id: string, name: unknown) {
   const parsed = parseManifest({
@@ -50,6 +50,8 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
         access: { kind: "openable" },
       },
     ],
+    open: [],
+    foreground: null,
   });
 });
 
@@ -60,4 +62,78 @@ test("in zh-HK the snapshot uses zh-HK names, falls back to English, and sorts b
       .plugins.map(({ name }) => name),
     // ICU's zh-HK collation: Han by stroke count (計 9, 點 17), then Latin.
   ).toEqual(["計時器", "點名", "Seating Plan"]);
+});
+
+function openAndForeground(lifecycle: Lifecycle) {
+  const { open, foreground } = lifecycle.snapshot();
+  return { open, foreground };
+}
+
+test("opening Plugins brings each forward, and opening an open one brings it forward without a second copy", () => {
+  const lifecycle = createLifecycle("en-HK", plugins);
+  expect(openAndForeground(lifecycle)).toEqual({ open: [], foreground: null });
+
+  lifecycle.open("class-timer");
+  lifecycle.open("attendance");
+  expect(openAndForeground(lifecycle)).toEqual({
+    open: ["attendance", "class-timer"],
+    foreground: "attendance",
+  });
+
+  lifecycle.open("class-timer");
+  expect(openAndForeground(lifecycle)).toEqual({
+    open: ["class-timer", "attendance"],
+    foreground: "class-timer",
+  });
+});
+
+test("closing the foreground Plugin brings forward the most recently foregrounded one, then nothing", () => {
+  const lifecycle = createLifecycle("en-HK", plugins);
+  lifecycle.open("class-timer");
+  lifecycle.open("seating-plan");
+  lifecycle.open("attendance");
+  lifecycle.open("class-timer");
+
+  lifecycle.close("class-timer");
+  expect(lifecycle.snapshot().foreground).toBe("attendance");
+  lifecycle.close("attendance");
+  expect(lifecycle.snapshot().foreground).toBe("seating-plan");
+  lifecycle.close("seating-plan");
+  expect(openAndForeground(lifecycle)).toEqual({ open: [], foreground: null });
+});
+
+test("closing a background Plugin leaves the foreground one in front", () => {
+  const lifecycle = createLifecycle("en-HK", plugins);
+  lifecycle.open("class-timer");
+  lifecycle.open("attendance");
+
+  lifecycle.close("class-timer");
+  expect(openAndForeground(lifecycle)).toEqual({
+    open: ["attendance"],
+    foreground: "attendance",
+  });
+});
+
+test("every change is announced", () => {
+  const lifecycle = createLifecycle("en-HK", plugins);
+  const seen: (string | null)[] = [];
+  lifecycle.onChange(() => {
+    seen.push(lifecycle.snapshot().foreground);
+  });
+
+  lifecycle.open("class-timer");
+  lifecycle.open("attendance");
+  lifecycle.close("attendance");
+
+  expect(seen).toEqual(["class-timer", "attendance", "class-timer"]);
+});
+
+test("opening a Plugin that is not installed, or closing one that is not open, throws", () => {
+  const lifecycle = createLifecycle("en-HK", plugins);
+  expect(() => {
+    lifecycle.open("not-installed");
+  }).toThrow();
+  expect(() => {
+    lifecycle.close("attendance");
+  }).toThrow();
 });
