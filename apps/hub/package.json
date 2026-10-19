@@ -14,7 +14,7 @@
   "devDependencies": {
     "@hawkeye-hub/hub-api": "workspace:*",
     "@hawkeye-hub/plugin-format": "workspace:*",
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "1.64.1",
     "@types/node": "22.17.2",
     "electron": "44.5.1",
     "electron-vite": "5.0.0",
