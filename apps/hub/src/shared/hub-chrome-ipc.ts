@@ -9,10 +9,15 @@ export type DisplayLanguage = "en-HK" | "zh-HK";
 /** The Plugin Switcher's width: the Hub Chrome draws it, main lays Plugin UIs out beside it. */
 export const SWITCHER_WIDTH_PX = 240;
 
-/** Whether staff can open an installed Plugin. Later tickets add `blocked` with its reason. */
-export interface PluginAccess {
-  kind: "openable";
-}
+/**
+ * Why the Hub cannot run an installed Plugin (ADRs 0002, 0005): it needs a Staff Identity and
+ * there is no Auth Provider, or its `hubApi` range excludes this Hub's Hub API version.
+ */
+export type BlockedReason = "needs-sign-in" | "needs-different-hub";
+
+/** Whether staff can open an installed Plugin, and if not, why. */
+export type PluginAccess =
+  { kind: "openable" } | { kind: "blocked"; reason: BlockedReason };
 
 export interface SwitcherPlugin {
   id: string;
