@@ -4,8 +4,11 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { app, Menu } from "electron";
 import { openDiagnostics } from "./diagnostics";
+import { displayLanguageFor } from "./display-language";
 import { openHubWindow } from "./hub-window";
 import { parseAbsolutePath } from "./ids";
+import { loadInstalledPlugins } from "./installed-plugins";
+import { createLifecycle } from "./lifecycle";
 
 // 1. On-disk location, before anything reads or writes a path. The single-instance lock lives
 // in userData, and getPath("logs") creates the default folder, so both must move first.
@@ -20,6 +23,9 @@ if (dataDirRaw !== undefined) {
   // --user-data-dir alone would leave the logs in ~/Library/Logs on macOS.
   app.setAppLogsPath(join(dataDir, "logs"));
 }
+// The Hub's data folder: installed Plugins now, Plugin Data and Shared Stores later. With no
+// variable it is Electron's userData for the OS user.
+const hubDataDir = parseAbsolutePath(dataDirRaw ?? app.getPath("userData"));
 
 // 2. The single-instance lock, keyed on userData. A launch that fails to take it quits before
 // Diagnostics opens or any handler is registered, so it logs nothing. The running Hub hears of it
@@ -74,7 +80,17 @@ function runHub(): void {
         ? Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }])
         : null,
     );
-    return openHubWindow(diagnostics, now);
+    // Here, not before `ready`: a record that does not parse throws, and a throw in this callback
+    // is an unhandled rejection, which the listener above logs as a Hub crash.
+    const installed = loadInstalledPlugins(hubDataDir);
+    for (const { plugin, reason } of installed.leftOut) {
+      diagnostics.recordHubEvent({ kind: "plugin-left-out", plugin, reason });
+    }
+    const lifecycle = createLifecycle(
+      displayLanguageFor(app.getPreferredSystemLanguages()),
+      installed.loaded,
+    );
+    return openHubWindow(diagnostics, now, lifecycle);
   });
 
   // Registered now, not once the window is open, so a launch during startup is not missed: it

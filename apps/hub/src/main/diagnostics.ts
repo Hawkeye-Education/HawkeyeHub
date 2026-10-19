@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
+import type { DisplayLanguage } from "../shared/hub-chrome-ipc";
 import type {
   AbsolutePath,
   AiProviderKind,
@@ -36,6 +37,16 @@ export type SignInFailure =
   | "invalid-credentials"
   | "provider-unreachable"
   | "provider-error";
+
+/** Why an installed Plugin's entry in the record could not be loaded. */
+export type PluginLeftOutReason =
+  "folder-missing" | "manifest-invalid" | "manifest-disagrees";
+
+const LEFT_OUT_REASONS = {
+  "folder-missing": "folder missing",
+  "manifest-invalid": "Manifest invalid",
+  "manifest-disagrees": "Manifest disagrees with the record",
+} satisfies Record<PluginLeftOutReason, string>;
 
 export type BackendExit =
   { kind: "code"; code: number } | { kind: "signal"; signal: NodeJS.Signals };
@@ -98,6 +109,8 @@ export type HubEvent =
       previousVersion: PluginVersion;
     }
   | { kind: "plugin-uninstalled"; plugin: PluginRef }
+  // An entry in the record of installed Plugins that could not be loaded, so it is not listed.
+  | { kind: "plugin-left-out"; plugin: PluginRef; reason: PluginLeftOutReason }
   | {
       kind: "sign-in";
       result: { signedIn: true } | { signedIn: false; failure: SignInFailure };
@@ -189,8 +202,7 @@ export interface Diagnostics {
   exportBundle(destination: AbsolutePath, system: SystemDescription): void;
 }
 
-/** The languages the Hub draws in (ADR 0007): adding one is a Hub release. */
-export type DisplayLanguage = "en-HK" | "zh-HK";
+export type { DisplayLanguage };
 
 /** The Themes built into the Hub (ADR 0006): adding one is a Hub release. */
 export type ThemeName = "hawkeye";
@@ -435,6 +447,12 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
       return {
         level: "info",
         message: "Plugin uninstalled",
+        subject: subjectOf(event.plugin),
+      };
+    case "plugin-left-out":
+      return {
+        level: "warn",
+        message: `Plugin left out: ${LEFT_OUT_REASONS[event.reason]}`,
         subject: subjectOf(event.plugin),
       };
     case "sign-in":

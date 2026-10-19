@@ -103,6 +103,21 @@ const cases: [string, HubEvent, unknown][] = [
     hubLine("warn", "Sign-in failed: provider unreachable"),
   ],
   [
+    "Plugin left out: folder missing",
+    { kind: "plugin-left-out", plugin, reason: "folder-missing" },
+    pluginLine("warn", "Plugin left out: folder missing"),
+  ],
+  [
+    "Plugin left out: Manifest invalid",
+    { kind: "plugin-left-out", plugin, reason: "manifest-invalid" },
+    pluginLine("warn", "Plugin left out: Manifest invalid"),
+  ],
+  [
+    "Plugin left out: Manifest disagrees",
+    { kind: "plugin-left-out", plugin, reason: "manifest-disagrees" },
+    pluginLine("warn", "Plugin left out: Manifest disagrees with the record"),
+  ],
+  [
     "Backend spawned",
     { kind: "backend-spawned", plugin },
     pluginLine("info", "Backend spawned"),

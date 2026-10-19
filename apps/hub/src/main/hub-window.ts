@@ -2,8 +2,14 @@
 // overlays for Hub Chrome dialogs join the same stack later (ADRs 0003, 0006).
 
 import { join } from "node:path";
-import { app, BaseWindow, dialog, WebContentsView } from "electron";
-import type { Diagnostics, DisplayLanguage } from "./diagnostics";
+import { app, BaseWindow, dialog, ipcMain, WebContentsView } from "electron";
+import {
+  GET_SNAPSHOT,
+  SNAPSHOT_CHANGED,
+  type DisplayLanguage,
+} from "../shared/hub-chrome-ipc";
+import type { Diagnostics } from "./diagnostics";
+import type { Lifecycle } from "./lifecycle";
 import {
   countHubChromeCrashes,
   HUB_CHROME_CRASH_WINDOW_SECONDS,
@@ -45,7 +51,9 @@ function isCutShort(error: unknown): boolean {
 export function openHubWindow(
   diagnostics: Diagnostics,
   now: () => Date,
+  lifecycle: Lifecycle,
 ): BaseWindow {
+  const { displayLanguage } = lifecycle.snapshot();
   // Native frame and title bar until the Theme brings the Hub Chrome's own (ADR 0006).
   // Size and position are not remembered.
   const window = new BaseWindow({
@@ -59,15 +67,27 @@ export function openHubWindow(
   });
 
   // These are Electron's defaults; they are spelled out because the Hub Chrome must never have
-  // Node access. No preload until a Hub Chrome feature needs IPC.
+  // Node access. Its preload is its only way to the main process.
   const hubChrome = new WebContentsView({
     webPreferences: {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      preload: join(import.meta.dirname, "../preload/hub-chrome.cjs"),
     },
   });
   window.contentView.addChildView(hubChrome);
+  // The Hub Chrome draws snapshots of the lifecycle state held here: it fetches one on every load,
+  // reloads included, and is sent a new one on every change.
+  ipcMain.handle(GET_SNAPSHOT, (event) => {
+    if (event.sender !== hubChrome.webContents) {
+      throw new Error(`${GET_SNAPSHOT} is only for the Hub Chrome`);
+    }
+    return lifecycle.snapshot();
+  });
+  lifecycle.onChange(() => {
+    hubChrome.webContents.send(SNAPSHOT_CHANGED, lifecycle.snapshot());
+  });
   // ADR 0012: a crashed Hub Chrome is logged and reloaded in place, until it keeps crashing.
   // Then the Hub gives up, says so in a native box (the Hub Chrome cannot draw one) and quits.
   const recordCrash = countHubChromeCrashes(now);
@@ -87,8 +107,7 @@ export function openHubWindow(
         crashes: HUB_CHROME_MAX_CRASHES,
         withinSeconds: HUB_CHROME_CRASH_WINDOW_SECONDS,
       });
-      // en-HK until the Display Language setting exists; its ticket wires this box up.
-      const text = STOPPED_UNEXPECTEDLY["en-HK"];
+      const text = STOPPED_UNEXPECTEDLY[displayLanguage];
       // The main process is healthy, so a normal quit, which logs "Hub closing".
       void dialog
         .showMessageBox(window, {
