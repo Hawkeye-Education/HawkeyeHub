@@ -242,7 +242,7 @@ export function crashHubChrome(hub: ElectronApplication): Promise<boolean[]> {
   );
 }
 
-/** The open Plugin UI of Plugin `id` among `pages`, once there is one. */
+/** The open Plugin UI of Plugin `id` among `pages`, once there is one and its scripts have run. */
 export async function pluginPage(
   pages: () => Page[],
   id: string,
@@ -255,6 +255,8 @@ export async function pluginPage(
     })
     .toBe(true);
   if (page === undefined) throw new Error("unreachable: polled for above");
+  // The page is listed as soon as its URL commits, before its classic scripts have run.
+  await page.waitForLoadState("domcontentloaded");
   return page;
 }
 
