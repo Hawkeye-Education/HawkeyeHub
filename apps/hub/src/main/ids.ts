@@ -8,6 +8,7 @@ type Branded<T, Name extends string> = T & { readonly [brand]: Name };
 export type PluginId = Branded<string, "PluginId">;
 export type PluginVersion = Branded<string, "PluginVersion">;
 export type HubVersion = Branded<string, "HubVersion">;
+export type HubApiVersion = Branded<string, "HubApiVersion">;
 export type PythonVersion = Branded<string, "PythonVersion">;
 export type AiProviderLabel = Branded<string, "AiProviderLabel">;
 export type AiProviderKind = Branded<string, "AiProviderKind">;
@@ -46,6 +47,13 @@ export function parseHubVersion(raw: string): HubVersion {
     throw new Error(`Not a Hub version (semver): ${JSON.stringify(raw)}`);
   }
   return raw as HubVersion;
+}
+
+export function parseHubApiVersion(raw: string): HubApiVersion {
+  if (!SEMVER.test(raw)) {
+    throw new Error(`Not a Hub API version (semver): ${JSON.stringify(raw)}`);
+  }
+  return raw as HubApiVersion;
 }
 
 export function parsePythonVersion(raw: string): PythonVersion {

@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@hawkeye-hub/hub-api": "workspace:*",
     "@playwright/test": "1.63.0",
     "@types/node": "22.17.2",
     "electron": "44.5.1",
