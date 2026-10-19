@@ -1,0 +1,5 @@
+{
+  "id": "invalid-manifest",
+  "version": "1.0.0",
+  "name": "Missing every other field"
+}

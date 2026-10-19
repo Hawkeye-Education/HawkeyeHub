@@ -1,5 +1,7 @@
 import type { ElectronApplication } from "@playwright/test";
 import {
+  crashHubChrome,
+  displayLanguageOf,
   exitCodeOf,
   expect,
   hubLogLines,
@@ -62,32 +64,6 @@ test("an unhandled main-process rejection is logged and the Hub quits", async ({
     errorLine(/^unhandledRejection: Error\n\s+at /),
   ]);
 });
-
-/**
- * Crashes the Hub Chrome's renderer and waits in the main process for the Hub to reload it: a
- * crashed renderer never answers executeJavaScript. Says whether the first load was still running.
- */
-function crashHubChrome(hub: ElectronApplication): Promise<boolean[]> {
-  return hub.evaluate(({ webContents }) =>
-    Promise.all(
-      webContents.getAllWebContents().map(async (contents) => {
-        const wasLoading = contents.isLoading();
-        // The did-finish-load after the crash: a first load can still finish while the crash is
-        // on its way, and executeJavaScript on the dead renderer would then never answer.
-        const reloaded = new Promise<void>((resolve) => {
-          contents.once("render-process-gone", () => {
-            contents.once("did-finish-load", () => {
-              resolve();
-            });
-          });
-        });
-        contents.forcefullyCrashRenderer();
-        await reloaded;
-        return wasLoading;
-      }),
-    ),
-  );
-}
 
 // Read from the main process: Playwright's page stays crashed even once the view has reloaded.
 function hubChromeHeadings(hub: ElectronApplication): Promise<unknown[]> {
@@ -177,12 +153,27 @@ test("a crashed Hub Chrome renderer is logged and the Hub Chrome comes back", as
   ]);
 });
 
+// The box in each Display Language; the Hub follows the OS's.
+const STOPPED_UNEXPECTEDLY = {
+  "en-HK": {
+    message: "Hawkeye Hub stopped unexpectedly",
+    detail: "Its window kept crashing.",
+    buttons: ["Quit"],
+  },
+  "zh-HK": {
+    message: "Hawkeye Hub 意外停止運作",
+    detail: "其視窗不斷當機。",
+    buttons: ["結束"],
+  },
+};
+
 test("a Hub Chrome that crashes 3 times within 60 s is not reloaded, and the Hub quits", async ({
   hub,
   dataDir,
 }) => {
   const hubChrome = await hub.firstWindow();
   await expect(hubChrome.getByText("Hawkeye Hub")).toBeVisible();
+  const language = await displayLanguageOf(hubChrome);
   await stubMessageBox(hub);
   await crashHubChrome(hub);
   await crashHubChrome(hub);
@@ -192,14 +183,7 @@ test("a Hub Chrome that crashes 3 times within 60 s is not reloaded, and the Hub
 
   await expect
     .poll(() => messageBoxesShown(hub))
-    .toEqual([
-      {
-        type: "error",
-        message: "Hawkeye Hub stopped unexpectedly",
-        detail: "Its window kept crashing.",
-        buttons: ["Quit"],
-      },
-    ]);
+    .toEqual([{ type: "error", ...STOPPED_UNEXPECTEDLY[language] }]);
   await answerMessageBox(hub);
   expect(await exitCode).toBe(0);
   expect(hubLogLines(dataDir)).toEqual([

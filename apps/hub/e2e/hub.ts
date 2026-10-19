@@ -1,6 +1,13 @@
 // The smoke harness: every test gets a fresh HAWKEYE_HUB_DATA_DIR and the built Hub running in it.
 
-import { existsSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,6 +15,7 @@ import {
   test as base,
   expect,
   type ElectronApplication,
+  type Page,
 } from "@playwright/test";
 
 // The package directory, so Electron reads package.json's `main` and `productName`.
@@ -61,6 +69,91 @@ export function hubLogLines(dataDir: string): unknown[] {
     .trimEnd()
     .split("\n")
     .map((line): unknown => JSON.parse(line));
+}
+
+const FIXTURE_PLUGINS = join(import.meta.dirname, "fixtures", "plugins");
+
+/** One entry to write in the record of installed Plugins, and the fixture its folder copies. */
+export interface FixtureInstall {
+  /** A folder of `e2e/fixtures/plugins`. */
+  fixture: string;
+  id: string;
+  version: string;
+}
+
+/**
+ * Installs Plugins into a data folder before the Hub starts, as install will: copies each fixture
+ * to `<id>@<version>` and writes the record. The entry need not agree with the fixture's Manifest.
+ */
+export function installFixturePlugins(
+  dataDir: string,
+  installs: FixtureInstall[],
+): void {
+  for (const { fixture, id, version } of installs) {
+    cpSync(join(FIXTURE_PLUGINS, fixture), join(dataDir, `${id}@${version}`), {
+      recursive: true,
+    });
+  }
+  // The Hub's RECORD_FILE (src/main/installed-plugins.ts).
+  writeFileSync(
+    join(dataDir, "installed-plugins.json"),
+    JSON.stringify(installs.map(({ id, version }) => ({ id, version }))),
+  );
+}
+
+/** A fixture installed as the version and id its Manifest says. */
+export function fixtureInstall(fixture: string): FixtureInstall {
+  return { fixture, id: fixture, version: "1.0.0" };
+}
+
+/** The Plugin names the Plugin Switcher lists, top to bottom. */
+export function switcherNames(hubChrome: Page): Promise<string[]> {
+  return hubChrome
+    .getByRole("navigation")
+    .getByRole("listitem")
+    .allTextContents();
+}
+
+export type DisplayLanguage = "en-HK" | "zh-HK";
+
+/**
+ * The Display Language the Hub took from the OS, as the Hub Chrome's `<html lang>` says. The Hub
+ * follows the OS, so tests of what it says pick their expected words with this.
+ */
+export async function displayLanguageOf(
+  hubChrome: Page,
+): Promise<DisplayLanguage> {
+  const html = hubChrome.locator("html");
+  await expect(html).toHaveAttribute("lang", /^(en|zh)-HK$/);
+  return (await html.getAttribute("lang")) === "zh-HK" ? "zh-HK" : "en-HK";
+}
+
+/**
+ * Crashes the Hub Chrome's renderer and waits in the main process for the Hub to reload it: a
+ * crashed renderer never answers executeJavaScript. Says whether the first load was still running.
+ * Playwright's page stays crashed even once the view has reloaded, so read the reloaded Hub Chrome
+ * from the main process.
+ */
+export function crashHubChrome(hub: ElectronApplication): Promise<boolean[]> {
+  return hub.evaluate(({ webContents }) =>
+    Promise.all(
+      webContents.getAllWebContents().map(async (contents) => {
+        const wasLoading = contents.isLoading();
+        // The did-finish-load after the crash: a first load can still finish while the crash is
+        // on its way, and executeJavaScript on the dead renderer would then never answer.
+        const reloaded = new Promise<void>((resolve) => {
+          contents.once("render-process-gone", () => {
+            contents.once("did-finish-load", () => {
+              resolve();
+            });
+          });
+        });
+        contents.forcefullyCrashRenderer();
+        await reloaded;
+        return wasLoading;
+      }),
+    ),
+  );
 }
 
 export function lifecycleLine(message: string): unknown {
