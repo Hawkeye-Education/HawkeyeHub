@@ -101,6 +101,9 @@ export function openHubWindow(
     (id) => {
       lifecycle.close(id);
     },
+    (id) => {
+      lifecycle.closed(id);
+    },
   );
   // The Hub Chrome draws snapshots of the lifecycle state held here: it fetches one on every load,
   // reloads included, and is sent a new one on every change. Its requests are invoked, so a bad
@@ -171,13 +174,15 @@ export function openHubWindow(
   };
   fillContentArea();
   window.on("resize", fillContentArea);
-  // Quitting closes every open Plugin first. Their pages unload asynchronously, and the Hub exits
-  // as soon as the window has closed, so the window waits for them.
+  // Quitting closes every open Plugin first, in parallel. Their pages unload and their Backends
+  // exit asynchronously, and the Hub exits as soon as the window has closed, so the window waits
+  // for them all, including Plugins already closing.
   let pluginsClosed = false;
   window.on("close", (event) => {
     if (pluginsClosed) return;
     event.preventDefault();
-    void pluginViews.closeAll().then(() => {
+    for (const id of lifecycle.snapshot().open) lifecycle.close(id);
+    void pluginViews.allClosed().then(() => {
       pluginsClosed = true;
       window.close();
     });

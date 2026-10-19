@@ -1,8 +1,9 @@
 // A Plugin's Backend process (ADRs 0003, 0008, 0009): spawned at open with its folders in place,
-// sent `initialize`, relayed to its Plugin UI over a MessagePort, and sent `shutdown` at close.
-// Each abnormal end closes the Plugin with what went wrong.
+// sent `initialize`, relayed to its Plugin UI over a MessagePort, and sent `shutdown` at close,
+// with its whole process tree killed if it has not exited after a grace period. Each abnormal end
+// closes the Plugin with what went wrong.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -30,8 +31,72 @@ export interface Backend {
   initialized: Promise<void>;
   /** Relays JSON-RPC between `port` (the Plugin preload's) and the Backend. Once per open. */
   relay(port: MessagePortMain): void;
-  /** Sends `shutdown`, once the Plugin UI is gone. Resolves once the process has exited. */
+  /**
+   * Sends `shutdown`, once the Plugin UI is gone, and kills the process tree if it has not exited
+   * after `SHUTDOWN_GRACE_MS`. Resolves once the process has exited, and any kill has finished.
+   */
   shutdown(): Promise<void>;
+}
+
+/** How long a Backend has to exit after `shutdown` before its process tree is killed (ADR 0003). */
+export const SHUTDOWN_GRACE_MS = 5_000;
+
+// Every Backend process still running, so a Hub crash can kill them all.
+const running = new Set<ChildProcess>();
+
+/**
+ * Kills a Backend and every process it launched: taskkill /T on Windows, which walks the live
+ * process tree (the venv's python.exe is a launcher with the real interpreter as its child), and
+ * the process group on macOS, where the Backend is spawned detached as its group's leader.
+ * Resolves once the whole tree is gone: the Backend itself can exit before taskkill has reached
+ * its children.
+ */
+function killTree(pid: number): Promise<void> {
+  if (process.platform !== "win32") {
+    killTreeNow(pid);
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    spawn("taskkill", taskkillArgs(pid), TASKKILL_OPTIONS).once("exit", () => {
+      resolve();
+    });
+  });
+}
+
+// taskkill reports a tree already gone by its exit code, which is not needed here.
+const TASKKILL_OPTIONS = { stdio: "ignore", windowsHide: true } as const;
+function taskkillArgs(pid: number): string[] {
+  return ["/pid", String(pid), "/T", "/F"];
+}
+
+/** `killTree`, waiting for taskkill, for a Hub that is about to exit. */
+function killTreeNow(pid: number): void {
+  if (process.platform === "win32") {
+    spawnSync("taskkill", taskkillArgs(pid), TASKKILL_OPTIONS);
+    return;
+  }
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch (error) {
+    // The whole group has already exited: there is nothing left to kill.
+    if (!(
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ESRCH"
+    )) {
+      throw error;
+    }
+  }
+}
+
+/**
+ * Kills every running Backend's process tree, synchronously, as the Hub crashes. Best effort: the
+ * stdin rule (PLUGIN_STANDARD.md §5.4) covers anything it misses.
+ */
+export function killBackendsNow(): void {
+  for (const { pid } of running) {
+    if (pid !== undefined) killTreeNow(pid);
+  }
 }
 
 /** How long a Backend has to answer `initialize` before the Plugin fails to start (ADR 0009). */
@@ -120,8 +185,11 @@ export function startBackend(
     detached: process.platform === "darwin",
   });
   diagnostics.recordHubEvent({ kind: "backend-spawned", plugin });
+  running.add(child);
   let shuttingDown = false;
   let isInitialized = false;
+  // Set while the grace period after `shutdown` runs. Null before `shutdown`, and once it ends.
+  let graceKill: NodeJS.Timeout | null = null;
 
   const initializeTimeout = setTimeout(() => {
     diagnostics.recordHubEvent({
@@ -135,6 +203,8 @@ export function startBackend(
   const exited = new Promise<void>((resolve) => {
     child.once("close", (code, signal) => {
       clearTimeout(initializeTimeout);
+      running.delete(child);
+      if (graceKill !== null) clearTimeout(graceKill);
       const exit: BackendExit =
         code !== null
           ? { kind: "code", code }
@@ -257,7 +327,16 @@ export function startBackend(
       clearTimeout(initializeTimeout);
       toPreload?.close();
       send(JSON.stringify({ jsonrpc: "2.0", method: "shutdown" }));
-      return exited;
+      // Resolved at once unless the grace period runs out and the tree is killed.
+      let killed = Promise.resolve();
+      // A Backend that exited on its own, or never spawned, has no tree left to kill.
+      if (running.has(child) && child.pid !== undefined) {
+        const { pid } = child;
+        graceKill = setTimeout(() => {
+          killed = killTree(pid);
+        }, SHUTDOWN_GRACE_MS);
+      }
+      return exited.then(() => killed);
     },
   };
 }

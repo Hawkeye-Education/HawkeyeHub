@@ -1,7 +1,7 @@
 // The Plugin lifecycle's state, held in the main process (spec #44 story 49) and drawn by the Hub
 // Chrome from snapshots: the installed Plugins with their icons, which are open and which is in
-// front, and which cannot be opened and why. Closing and the pending dialog join it in later
-// tickets.
+// front, which cannot be opened and why, and which are closing. The pending dialog joins it in a
+// later ticket.
 
 import type { DisplayText, Manifest } from "@hawkeye-hub/plugin-format";
 import semver from "semver";
@@ -24,8 +24,16 @@ export interface Lifecycle {
    * or is blocked.
    */
   open(id: string): void;
-  /** Closes an open Plugin. Throws if it is not open. */
+  /**
+   * Starts closing an open Plugin: it is `closing`, and cannot be reopened, until `closed`.
+   * Throws if it is not open.
+   */
   close(id: string): void;
+  /**
+   * Finishes closing a Plugin, once its Plugin UI is gone and its Backend, if any, has exited.
+   * Throws if it is not closing.
+   */
+  closed(id: string): void;
 }
 
 /** Display text in `language`, falling back to English (ADR 0007). */
@@ -73,6 +81,9 @@ export function createLifecycle(
   // The open Plugins, most recently foregrounded first: the first is in front, and closing it
   // brings forward the next.
   let open: string[] = [];
+  // Closed by staff or the Hub, but not yet gone: two Backends never share one Plugin Data
+  // folder (ADR 0008), so a closing Plugin cannot be reopened.
+  let closing: string[] = [];
   const listeners: (() => void)[] = [];
   const changed = (): void => {
     for (const listener of listeners) listener();
@@ -82,6 +93,7 @@ export function createLifecycle(
       displayLanguage,
       plugins,
       open: [...open],
+      closing: [...closing],
       foreground: open[0] ?? null,
     }),
     onChange: (listener) => {
@@ -97,6 +109,9 @@ export function createLifecycle(
           `The Plugin ${JSON.stringify(id)} cannot be opened: ${plugin.access.reason}`,
         );
       }
+      if (closing.includes(id)) {
+        throw new Error(`${id} is still closing`);
+      }
       open = [id, ...open.filter((other) => other !== id)];
       changed();
     },
@@ -105,6 +120,14 @@ export function createLifecycle(
         throw new Error(`No open Plugin has the id ${JSON.stringify(id)}`);
       }
       open = open.filter((other) => other !== id);
+      closing = [...closing, id];
+      changed();
+    },
+    closed: (id) => {
+      if (!closing.includes(id)) {
+        throw new Error(`No closing Plugin has the id ${JSON.stringify(id)}`);
+      }
+      closing = closing.filter((other) => other !== id);
       changed();
     },
   };

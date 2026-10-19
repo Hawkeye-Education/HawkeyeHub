@@ -34,6 +34,8 @@ export interface HubChromeSnapshot {
   plugins: SwitcherPlugin[];
   /** The ids of the open Plugins, most recently foregrounded first. */
   open: string[];
+  /** The ids of the Plugins closed but not yet gone, which cannot be reopened until they are. */
+  closing: string[];
   /** The Plugin in front. Null when none is: the Hub Chrome then draws the empty state. */
   foreground: string | null;
 }

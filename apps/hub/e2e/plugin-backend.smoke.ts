@@ -16,6 +16,7 @@ import {
   hubEnv,
   hubLogLines,
   installFixturePlugins,
+  isRunning,
   launchHub,
   pluginLogMessages,
   pluginPage,
@@ -116,16 +117,6 @@ test("requests sent at page load are answered, a JSON-RPC error rejects with bac
     await hub.close();
   }
 });
-
-function isRunning(pid: number): boolean {
-  try {
-    // Signal 0 only checks that the process exists.
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function backendLine(message: string): unknown {
   return {

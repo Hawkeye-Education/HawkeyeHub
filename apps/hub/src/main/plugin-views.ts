@@ -33,10 +33,10 @@ export interface PluginViews {
   /** Lays every view out beside the Plugin Switcher, at the window's current size. */
   layout(): void;
   /**
-   * Closes every open Plugin, as the Hub quits; resolves once each page has run its pagehide and
-   * each Backend has exited.
+   * Resolves once every Plugin that has been closed is gone: each page has run its pagehide and
+   * each Backend has exited. The Hub quits only then.
    */
-  closeAll(): Promise<void>;
+  allClosed(): Promise<void>;
 }
 
 interface OpenPlugin {
@@ -56,8 +56,12 @@ export function createPluginViews(
    * broke or failed to start. The whole Plugin closes.
    */
   closePlugin: (id: string) => void,
+  /** Called once a closed Plugin is gone: its page destroyed and its Backend, if any, exited. */
+  pluginClosed: (id: string) => void,
 ): PluginViews {
   const opened = new Map<string, OpenPlugin>();
+  // The closes still under way, by id.
+  const closing = new Map<string, Promise<void>>();
 
   const contentArea = () => {
     // getContentBounds() is in screen coordinates; only its size applies to a child view.
@@ -169,7 +173,7 @@ export function createPluginViews(
     return { view, closed };
   };
 
-  const close = (id: string, { view, closed }: OpenPlugin): Promise<void> => {
+  const close = (id: string, { view, closed }: OpenPlugin): void => {
     opened.delete(id);
     window.contentView.removeChildView(view);
     // Destroys the page; removing the view alone would leak its webContents. On Electron 44 a plain
@@ -177,13 +181,19 @@ export function createPluginViews(
     // will-prevent-unload handler above stops any beforeunload from cancelling (probed by hand: a
     // cancelling page still closes in under 100 ms; the smoke suite asserts pagehide).
     view.webContents.close({ waitForBeforeUnload: true });
-    return closed;
+    closing.set(
+      id,
+      closed.then(() => {
+        closing.delete(id);
+        pluginClosed(id);
+      }),
+    );
   };
 
   return {
     follow({ open: openIds, foreground }) {
       for (const [id, plugin] of opened) {
-        if (!openIds.includes(id)) void close(id, plugin);
+        if (!openIds.includes(id)) close(id, plugin);
       }
       for (const id of openIds) {
         const plugin = installed.find(({ manifest }) => manifest.id === id);
@@ -198,8 +208,8 @@ export function createPluginViews(
     layout() {
       for (const { view } of opened.values()) view.setBounds(contentArea());
     },
-    async closeAll() {
-      await Promise.all([...opened].map(([id, plugin]) => close(id, plugin)));
+    async allClosed() {
+      await Promise.all(closing.values());
     },
   };
 }
