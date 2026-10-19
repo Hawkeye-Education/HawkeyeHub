@@ -21,7 +21,7 @@ import {
   HAS_BACKEND_ARG,
 } from "../shared/plugin-preload";
 import { startBackend } from "./backend";
-import type { Diagnostics } from "./diagnostics";
+import type { Diagnostics, NetErrorCode, PluginCrash } from "./diagnostics";
 import { parsePluginId, parsePluginVersion, type AbsolutePath } from "./ids";
 import type { InstalledPlugin } from "./installed-plugins";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
@@ -50,7 +50,10 @@ export function createPluginViews(
   installed: readonly InstalledPlugin[],
   displayLanguage: DisplayLanguage,
   hubDataDir: AbsolutePath,
-  /** Called when a Plugin UI fails to load or its Backend breaks: the whole Plugin closes. */
+  /**
+   * Called once a Plugin's crash is recorded: its UI crashed or failed to load, or its Backend
+   * broke or failed to start. The whole Plugin closes.
+   */
   closePlugin: (id: string) => void,
   /** Called once a closed Plugin is gone: its page destroyed and its Backend, if any, exited. */
   pluginClosed: (id: string) => void,
@@ -90,14 +93,26 @@ export function createPluginViews(
         ],
       },
     });
-    // Closes the Plugin only if this open is still the open one.
-    const closeThisOpen = (): void => {
-      if (opened.get(id)?.view === view) closePlugin(id);
-    };
     const pluginSession = diagnostics.startPluginSession({
       id: parsePluginId(id),
       version: parsePluginVersion(manifest.version),
     });
+    // Records the crash and closes the Plugin, only if this open is still the open one: once it is
+    // closing, nothing that follows is a crash, and nothing restarts.
+    const crashed = (crash: PluginCrash): void => {
+      if (opened.get(id)?.view !== view) return;
+      pluginSession.recordCrash(crash);
+      closePlugin(id);
+    };
+    view.webContents.on(
+      "render-process-gone",
+      (_event, { reason, exitCode }) => {
+        crashed({
+          cause: "crashed",
+          exit: { kind: "plugin-ui-gone", exit: { reason, exitCode } },
+        });
+      },
+    );
     view.webContents.on("console-message", ({ level, message }) => {
       pluginSession.recordConsoleMessage(level, message);
     });
@@ -114,13 +129,7 @@ export function createPluginViews(
 
     // Alongside the Plugin UI load. Null for a UI-only Plugin, which has no Backend.
     const backend = hasBackend
-      ? startBackend(
-          plugin,
-          hubDataDir,
-          diagnostics,
-          pluginSession,
-          closeThisOpen,
-        )
+      ? startBackend(plugin, hubDataDir, diagnostics, pluginSession, crashed)
       : null;
     if (backend !== null) {
       // The preload asks for its port as it starts. It gets it once `initialize` has succeeded,
@@ -148,13 +157,14 @@ export function createPluginViews(
     view.webContents
       .loadURL(`${PLUGIN_SCHEME}://${id}/index.html`)
       .catch((error: unknown) => {
-        // A close cuts the load short: that is not a failure. Anything else closes the Plugin, if
-        // this open is still the open one; its crash record arrives with #53.
-        const cutShort =
-          error instanceof Error &&
-          "code" in error &&
-          error.code === "ERR_ABORTED";
-        if (!cutShort) closeThisOpen();
+        // The first load's main frame failed. A close cuts the load short: that is not a failure.
+        // Navigation is locked to this one page, so no later load can fail this way.
+        const code = netErrorCodeOf(error);
+        if (code === "ERR_ABORTED") return;
+        crashed({
+          cause: "failed-to-start",
+          exit: { kind: "plugin-ui-load-failed", error: code },
+        });
       });
     return { view, closed };
   };
@@ -198,4 +208,23 @@ export function createPluginViews(
       await Promise.all(closing.values());
     },
   };
+}
+
+/** The net error a rejected `loadURL` carries: Electron's rejection is an Error with its `code`. */
+function netErrorCodeOf(error: unknown): NetErrorCode {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    isNetErrorCode(error.code)
+  ) {
+    return error.code;
+  }
+  throw new Error("A Plugin UI load failed without a net error code", {
+    cause: error,
+  });
+}
+
+function isNetErrorCode(code: string): code is NetErrorCode {
+  return code.startsWith("ERR_");
 }

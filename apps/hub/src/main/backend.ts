@@ -1,7 +1,7 @@
 // A Plugin's Backend process (ADRs 0003, 0008, 0009): spawned at open with its folders in place,
 // sent `initialize`, relayed to its Plugin UI over a MessagePort, and sent `shutdown` at close,
-// with its whole process tree killed if it has not exited after a grace period. The crash records
-// for its abnormal ends arrive with a later ticket.
+// with its whole process tree killed if it has not exited after a grace period. Each abnormal end
+// closes the Plugin with what went wrong.
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -9,7 +9,13 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { MessagePortMain } from "electron";
 import { z } from "zod";
-import type { BackendExit, Diagnostics, PluginSession } from "./diagnostics";
+import type {
+  BackendExit,
+  Diagnostics,
+  PluginCrash,
+  PluginSession,
+  ProtocolViolation,
+} from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
 import {
   KEBAB_CASE,
@@ -31,6 +37,9 @@ export interface Backend {
    */
   shutdown(): Promise<void>;
 }
+
+/** How long a Backend has to answer `initialize` before the Plugin fails to start (ADR 0009). */
+export const INITIALIZE_TIMEOUT_MS = 10_000;
 
 /** How long a Backend has to exit after `shutdown` before its process tree is killed (ADR 0003). */
 export const SHUTDOWN_GRACE_MS = 5_000;
@@ -115,6 +124,12 @@ const FromBackend = z.union([
     params: z.json().optional(),
   }),
 ]);
+// A request on the Backend's stdout: a protocol violation of its own kind.
+const Request = z.object({
+  jsonrpc: z.literal("2.0"),
+  id: Id,
+  method: z.string(),
+});
 // What the Plugin preload sends, as JSON text: only the parts the relay needs to read.
 const FromPreload = z
   .object({ id: z.number(), method: z.string() })
@@ -144,7 +159,7 @@ export function startBackend(
   diagnostics: Diagnostics,
   pluginSession: PluginSession,
   /** Closes the whole Plugin, while it is still open: the Backend broke or failed to start. */
-  closePlugin: () => void,
+  closePlugin: (crash: PluginCrash) => void,
 ): Backend {
   const plugin = {
     id: parsePluginId(manifest.id),
@@ -172,11 +187,22 @@ export function startBackend(
   diagnostics.recordHubEvent({ kind: "backend-spawned", plugin });
   running.add(child);
   let shuttingDown = false;
+  let isInitialized = false;
   // Set while the grace period after `shutdown` runs. Null before `shutdown`, and once it ends.
   let graceKill: NodeJS.Timeout | null = null;
 
+  const initializeTimeout = setTimeout(() => {
+    diagnostics.recordHubEvent({
+      kind: "initialize-failed",
+      plugin,
+      failure: "timed-out",
+    });
+    closePlugin({ cause: "failed-to-start", exit: { kind: "no-exit" } });
+  }, INITIALIZE_TIMEOUT_MS);
+
   const exited = new Promise<void>((resolve) => {
     child.once("close", (code, signal) => {
+      clearTimeout(initializeTimeout);
       running.delete(child);
       if (graceKill !== null) clearTimeout(graceKill);
       const exit: BackendExit =
@@ -184,13 +210,21 @@ export function startBackend(
           ? { kind: "code", code }
           : { kind: "signal", signal: signalOf(signal) };
       diagnostics.recordHubEvent({ kind: "backend-exited", plugin, exit });
-      if (!shuttingDown) closePlugin();
+      if (!shuttingDown) {
+        closePlugin({
+          cause: isInitialized ? "crashed" : "failed-to-start",
+          exit: { kind: "backend-exited", exit },
+        });
+      }
       resolve();
     });
   });
-  // The Backend could not be spawned at all, such as a missing venv: the Plugin cannot run.
+  // The Backend could not be spawned at all, such as a missing venv: the Plugin cannot run. Its
+  // close follows, but a Backend that never ran has no exit worth reporting.
   child.once("error", () => {
-    if (child.pid === undefined) closePlugin();
+    if (child.pid === undefined) {
+      closePlugin({ cause: "failed-to-start", exit: { kind: "no-exit" } });
+    }
   });
   // A write to a Backend that has already exited fails with EPIPE. That is not a Hub error: the
   // exit itself is handled by the close listener above.
@@ -210,28 +244,44 @@ export function startBackend(
   // The relayed requests still waiting for an answer, by id: an error answer is logged with its method.
   const pending = new Map<number | string, string>();
   let toPreload: MessagePortMain | null = null;
+  const violated = (violation: ProtocolViolation): void => {
+    closePlugin({
+      cause: "crashed",
+      exit: { kind: "protocol-violation", violation },
+    });
+  };
 
   createInterface({ input: child.stdout, crlfDelay: Infinity }).on(
     "line",
     (line) => {
-      const parsed = FromBackend.safeParse(parseJson(line));
+      const json = parseJson(line);
+      const parsed = FromBackend.safeParse(json);
       // A line that is not a response or notification breaks the protocol: the Plugin closes.
-      // Its crash record arrives with #53.
       if (!parsed.success) {
-        closePlugin();
+        violated(Request.safeParse(json).success ? "request" : "not-json-rpc");
         return;
       }
       const message = parsed.data;
       if ("id" in message && message.id === INITIALIZE_ID) {
-        if ("error" in message) closePlugin();
-        else resolveInitialized();
+        clearTimeout(initializeTimeout);
+        if ("error" in message) {
+          diagnostics.recordHubEvent({
+            kind: "initialize-failed",
+            plugin,
+            failure: "rejected",
+          });
+          closePlugin({ cause: "failed-to-start", exit: { kind: "no-exit" } });
+        } else {
+          isInitialized = true;
+          resolveInitialized();
+        }
         return;
       }
       if ("id" in message) {
         const method = pending.get(message.id);
         // An answer to a request nobody sent breaks the protocol too.
         if (method === undefined) {
-          closePlugin();
+          violated("unknown-response");
           return;
         }
         pending.delete(message.id);
@@ -274,6 +324,7 @@ export function startBackend(
     },
     shutdown() {
       shuttingDown = true;
+      clearTimeout(initializeTimeout);
       toPreload?.close();
       send(JSON.stringify({ jsonrpc: "2.0", method: "shutdown" }));
       // Resolved at once unless the grace period runs out and the tree is killed.

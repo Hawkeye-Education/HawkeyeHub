@@ -84,10 +84,42 @@ interface NoExit {
   kind: "no-exit";
 }
 
+/** How a Backend broke the wire protocol (ADR 0009). Never the offending line: it may hold anything. */
+export type ProtocolViolation =
+  // A stdout line that is not a JSON-RPC response or notification.
+  | "not-json-rpc"
+  // Only the Plugin UI sends requests.
+  | "request"
+  // A response whose id no relayed request had.
+  | "unknown-response";
+
+const PROTOCOL_VIOLATIONS = {
+  "not-json-rpc": "a stdout line that is not JSON-RPC",
+  request: "a request from the Backend",
+  "unknown-response": "an answer to no request",
+} satisfies Record<ProtocolViolation, string>;
+
+interface ProtocolViolated {
+  kind: "protocol-violation";
+  violation: ProtocolViolation;
+}
+
+/** Chromium's name for a network error, such as `ERR_FILE_NOT_FOUND`. */
+export type NetErrorCode = `ERR_${string}`;
+
+// The Plugin UI's main frame failed to load before its first successful load.
+interface PluginUiLoadFailed {
+  kind: "plugin-ui-load-failed";
+  error: NetErrorCode;
+}
+
 /** A Plugin closing abnormally (ADR 0012), with what each cause can report about the exit. */
 export type PluginCrash =
-  | { cause: "crashed"; exit: PluginUiGone | BackendExited }
-  | { cause: "failed-to-start"; exit: BackendExited | NoExit }
+  | { cause: "crashed"; exit: PluginUiGone | BackendExited | ProtocolViolated }
+  | {
+      cause: "failed-to-start";
+      exit: BackendExited | NoExit | PluginUiLoadFailed;
+    }
   // The Plugin UI is hung, not gone, and the Backend has done nothing wrong.
   | { cause: "stopped-responding" };
 
@@ -558,6 +590,10 @@ function describeCrash(crash: PluginCrash): string {
       return `${cause} (${describeBackendExit(crash.exit.exit)})`;
     case "no-exit":
       return cause;
+    case "protocol-violation":
+      return `${cause} (protocol violation: ${PROTOCOL_VIOLATIONS[crash.exit.violation]})`;
+    case "plugin-ui-load-failed":
+      return `${cause} (Plugin UI failed to load: ${crash.exit.error})`;
     default:
       return crash.exit satisfies never;
   }
