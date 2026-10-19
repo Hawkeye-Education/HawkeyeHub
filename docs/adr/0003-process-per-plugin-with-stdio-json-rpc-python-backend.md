@@ -8,6 +8,7 @@ We chose this over a shared extension host (VS Code, Raycast), where closing a p
 
 - Lifecycle is Closed → Open (foreground) ↔ Open (background). Nothing starts until the user opens a Plugin. Background Plugins keep running, and only the user closes one. There is no auto-unload and no resource limits.
 - Close sends a `shutdown` notification, waits a fixed grace period (~5 s), then kills the Backend's whole process tree (`taskkill /T /F` on Windows, process group on macOS), so children such as a Playwright browser die too. The Plugin UI is destroyed with `webContents.close()`, because detaching a view leaks it.
+- A Backend exits when its stdin closes, because that means the Hub is gone, so a Hub that crashes leaves no Backend behind. The Hub's crash handler also tree-kills every Backend, best effort, before it exits ([#44](https://github.com/Hawkeye-Education/HawkeyeHub/issues/44)).
 - A Plugin can mark itself **Busy**; the Hub asks before closing it or quitting.
 - If any part dies, the whole Plugin closes and the user is told, with an offer to export diagnostics (ADR 0012). Nothing restarts automatically, so no Plugin has to handle a half-alive state.
 - The Hub's Python SDK moves `sys.stdout` to stderr, so stray `print()`s can't corrupt the protocol; stderr is the Backend's log.

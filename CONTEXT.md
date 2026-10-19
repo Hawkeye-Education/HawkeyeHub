@@ -53,8 +53,12 @@ _Avoid_: Crash report, log dump, support bundle, telemetry
 ### Look and feel
 
 **Hub Chrome**:
-Everything the Hub draws around the Plugin UIs, such as the switcher between open Plugins, the Assistant Panel, dialogs and settings; Plugins never add to it.
+Everything the Hub draws around the Plugin UIs, such as the Plugin Switcher, the Assistant Panel, dialogs and settings; Plugins never add to it.
 _Avoid_: Shell UI, frame, toolbar
+
+**Plugin Switcher**:
+The part of the Hub Chrome that shows every installed Plugin and from which staff open, switch between and close them.
+_Avoid_: Launcher, dock, tab bar, home screen
 
 **Hub Kit**:
 The shared set of ready-styled interface pieces the Hub provides to every Plugin UI and builds its own Hub Chrome from; Plugins compose their screens from it rather than styling their own.

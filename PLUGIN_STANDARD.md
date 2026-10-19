@@ -504,6 +504,7 @@ Reject a request with `RpcError(reason, message)`. The `reason` is a kebab-case 
 
 - A request longer than a few seconds checks a Plugin-defined `cancel` notification between units of work, such as files. There is no Hub-level cancel (ADR 0010).
 - Handle `shutdown` as a cancel. After your handler returns and in-flight requests finish, the SDK exits the process. Whatever is still running about 5 s after `shutdown` is killed with its whole process tree, including any browser Playwright launched.
+- Exit when stdin closes: the Hub is gone, so no `shutdown` will come (ADR 0003). The SDK does this; a Backend without it must do it too.
 - Write each output file whole or not at all: write to a temp file beside the target, then `os.replace` it.
 
 ### 5.5 Files, stores and processes
