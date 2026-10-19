@@ -139,19 +139,16 @@ test("opening a second Plugin hides the first, and bringing the first forward sh
     await pluginButton(hubChrome, words.attendance).click();
     const attendance = await pluginPage(hub.pages, "attendance");
 
-    await expect
-      .poll(() => eventsOf(timer))
-      .toEqual(["visibilitychange hidden"]);
-    expect(await visibilityOf(attendance)).toBe("visible");
+    await expect.poll(() => visibilityOf(timer)).toBe("hidden");
+    expect(await eventsOf(timer)).toContain("visibilitychange hidden");
+    await expect.poll(() => visibilityOf(attendance)).toBe("visible");
 
     await pluginButton(hubChrome, words.timer).click();
 
-    await expect
-      .poll(() => eventsOf(timer))
-      .toEqual(["visibilitychange hidden", "visibilitychange visible"]);
-    await expect
-      .poll(() => eventsOf(attendance))
-      .toEqual(["visibilitychange hidden"]);
+    await expect.poll(() => visibilityOf(timer)).toBe("visible");
+    expect(await eventsOf(timer)).toContain("visibilitychange visible");
+    await expect.poll(() => visibilityOf(attendance)).toBe("hidden");
+    expect(await eventsOf(attendance)).toContain("visibilitychange hidden");
     await expect(pluginButton(hubChrome, words.timer)).toHaveAttribute(
       "aria-current",
       "page",

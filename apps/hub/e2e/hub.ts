@@ -59,7 +59,16 @@ export interface CdpHub {
  * visibility use this.
  */
 export async function launchHubOverCdp(dataDir: string): Promise<CdpHub> {
-  const child = spawn(electronBinary, [HUB_DIR, "--remote-debugging-port=0"], {
+  // Without focus emulation the OS's view of the window counts: an occluded window, behind another
+  // or with the display asleep, hides every page and stalls Playwright's clicks. Playwright's own
+  // Chromium launches pass these same switches.
+  const args = [
+    HUB_DIR,
+    "--remote-debugging-port=0",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-features=CalculateNativeWinOcclusion",
+  ];
+  const child = spawn(electronBinary, args, {
     env: hubEnv(dataDir),
     stdio: ["ignore", "ignore", "pipe"],
   });
