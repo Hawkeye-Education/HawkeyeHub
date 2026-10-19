@@ -11,3 +11,6 @@ export const HAS_BACKEND_ARG = "--hawkeye-hub-has-backend";
  * with the port, once the Backend's `initialize` has succeeded.
  */
 export const BACKEND_PORT = "hub:backend-port";
+
+/** The preload invokes this with a Busy reason, or with null to clear Busy (`window.hub.busy`). */
+export const BUSY = "hub:busy";

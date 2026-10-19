@@ -1,11 +1,17 @@
 // The Plugin preload: builds each Plugin UI's one frozen `window.hub` (ADR 0009) before any Plugin
 // code runs. Sandboxed, so it may import only `electron` (anything else is bundled) and is built as
-// CommonJS. `displayLanguage`, and `backend` when the Plugin has one; `busy` arrives later.
+// CommonJS. `displayLanguage`, `busy`, and `backend` when the Plugin has one.
 
-import type { HubBackend, HubError, RpcError } from "@hawkeye-hub/hub-api";
+import type {
+  HubBackend,
+  HubBusy,
+  HubError,
+  RpcError,
+} from "@hawkeye-hub/hub-api";
 import { contextBridge, ipcRenderer } from "electron";
 import {
   BACKEND_PORT,
+  BUSY,
   DISPLAY_LANGUAGE_ARG,
   HAS_BACKEND_ARG,
 } from "../shared/plugin-preload";
@@ -25,12 +31,22 @@ if (displayLanguage === undefined) {
   throw new Error(`The Plugin preload needs ${DISPLAY_LANGUAGE_ARG}`);
 }
 
+// `hub.busy`: main keeps the latest reason and shows it when staff close the Plugin or quit.
+const busy: HubBusy = {
+  set: async (reason) => {
+    await ipcRenderer.invoke(BUSY, reason);
+  },
+  clear: async () => {
+    await ipcRenderer.invoke(BUSY, null);
+  },
+};
+
 contextBridge.exposeInMainWorld(
   "hub",
   Object.freeze(
     process.argv.includes(HAS_BACKEND_ARG)
-      ? { displayLanguage, backend: connectBackend() }
-      : { displayLanguage },
+      ? { displayLanguage, busy, backend: connectBackend() }
+      : { displayLanguage, busy },
   ),
 );
 

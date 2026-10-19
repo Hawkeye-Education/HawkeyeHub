@@ -17,6 +17,7 @@ import {
 } from "../shared/hub-chrome-ipc";
 import {
   BACKEND_PORT,
+  BUSY,
   DISPLAY_LANGUAGE_ARG,
   HAS_BACKEND_ARG,
 } from "../shared/plugin-preload";
@@ -24,6 +25,7 @@ import { startBackend } from "./backend";
 import type { Diagnostics, NetErrorCode, PluginCrash } from "./diagnostics";
 import { parsePluginId, parsePluginVersion, type AbsolutePath } from "./ids";
 import type { InstalledPlugin } from "./installed-plugins";
+import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
 
@@ -52,12 +54,11 @@ export function createPluginViews(
   displayLanguage: DisplayLanguage,
   hubDataDir: AbsolutePath,
   /**
-   * Called once a Plugin's crash is recorded: its UI crashed or failed to load, or its Backend
-   * broke or failed to start. The whole Plugin closes.
+   * Told when a Plugin's crash is recorded (`close`: its UI crashed or failed to load, or its
+   * Backend broke or failed to start, and the whole Plugin closes), when a closed Plugin is gone
+   * (`closed`: its page destroyed and its Backend, if any, exited), and of its page's Busy.
    */
-  closePlugin: (id: string) => void,
-  /** Called once a closed Plugin is gone: its page destroyed and its Backend, if any, exited. */
-  pluginClosed: (id: string) => void,
+  lifecycle: Pick<Lifecycle, "close" | "closed" | "setBusy">,
 ): PluginViews {
   const opened = new Map<string, OpenPlugin>();
   // The closes still under way, by id.
@@ -106,7 +107,7 @@ export function createPluginViews(
     const crashed = (crash: PluginCrash): void => {
       if (opened.get(id)?.view !== view) return;
       pluginSession.recordCrash(crash);
-      closePlugin(id);
+      lifecycle.close(id);
     };
     view.webContents.on(
       "render-process-gone",
@@ -119,6 +120,14 @@ export function createPluginViews(
     );
     view.webContents.on("console-message", ({ level, message }) => {
       pluginSession.recordConsoleMessage(level, message);
+    });
+    // `hub.busy`: a reason, or null to clear. Anything else is the Plugin's mistake, and rejects
+    // back to its own call.
+    view.webContents.ipc.handle(BUSY, (_event, reason: unknown) => {
+      if (typeof reason !== "string" && reason !== null) {
+        throw new Error("hub.busy.set takes a string reason");
+      }
+      if (opened.get(id)?.view === view) lifecycle.setBusy(id, reason);
     });
     // A Plugin's beforeunload never holds a close (ADR 0009): Busy is how it asks to stay open.
     view.webContents.on("will-prevent-unload", (event) => {
@@ -185,7 +194,7 @@ export function createPluginViews(
       id,
       closed.then(() => {
         closing.delete(id);
-        pluginClosed(id);
+        lifecycle.closed(id);
       }),
     );
   };

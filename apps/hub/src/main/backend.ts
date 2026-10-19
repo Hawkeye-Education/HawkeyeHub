@@ -38,6 +38,9 @@ export interface Backend {
   shutdown(): Promise<void>;
 }
 
+/** How long a Backend has to answer `initialize` before the Plugin fails to start (ADR 0009). */
+export const INITIALIZE_TIMEOUT_MS = 10_000;
+
 /** How long a Backend has to exit after `shutdown` before its process tree is killed (ADR 0003). */
 export const SHUTDOWN_GRACE_MS = 5_000;
 
@@ -98,9 +101,6 @@ export function killBackendsNow(): void {
     if (pid !== undefined) killTreeNow(pid);
   }
 }
-
-/** How long a Backend has to answer `initialize` before the Plugin fails to start (ADR 0009). */
-export const INITIALIZE_TIMEOUT_MS = 10_000;
 
 // The Hub's own request id. The Plugin preload numbers its requests, so the two never meet.
 const INITIALIZE_ID = "hub-initialize";

@@ -8,6 +8,12 @@ export const STRINGS = {
     noPluginOpen: "No Plugin is open",
     close: (name: string) => `Close ${name}`,
     closing: "Closing…",
+    closeQuestion: (name: string) => `Close ${name}?`,
+    quitQuestion: "Quit Hawkeye Hub?",
+    busyPlugins: "These Plugins are in the middle of work:",
+    keepOpen: "Keep open",
+    closeAnyway: "Close anyway",
+    quitAnyway: "Quit anyway",
     blocked: {
       "needs-sign-in": "Needs sign-in",
       "needs-different-hub": "Needs a different Hub",
@@ -18,9 +24,17 @@ export const STRINGS = {
     noPluginOpen: "未有開啟任何外掛程式",
     close: (name: string) => `關閉 ${name}`,
     closing: "正在關閉…",
+    closeQuestion: (name: string) => `關閉 ${name}？`,
+    quitQuestion: "結束 Hawkeye Hub？",
+    busyPlugins: "以下外掛程式正在工作中：",
+    keepOpen: "保持開啟",
+    closeAnyway: "仍然關閉",
+    quitAnyway: "仍然結束",
     blocked: {
       "needs-sign-in": "需要登入",
       "needs-different-hub": "需要另一版本的 Hawkeye Hub",
     } satisfies Record<BlockedReason, string>,
   },
 } satisfies Record<DisplayLanguage, unknown>;
+
+export type Strings = (typeof STRINGS)[DisplayLanguage];

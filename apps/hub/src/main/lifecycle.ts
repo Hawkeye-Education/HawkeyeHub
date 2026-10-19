@@ -1,12 +1,15 @@
 // The Plugin lifecycle's state, held in the main process (spec #44 story 49) and drawn by the Hub
 // Chrome from snapshots: the installed Plugins with their icons, which are open and which is in
-// front, which cannot be opened and why, and which are closing. The pending dialog joins it in a
-// later ticket.
+// front, which cannot be opened and why, which are closing, and the Hub Chrome dialog waiting
+// for staff. It also keeps each open Plugin's Busy reason, which only the dialogs show.
 
 import type { DisplayText, Manifest } from "@hawkeye-hub/plugin-format";
 import semver from "semver";
 import type {
+  BusyPlugin,
+  DialogAnswer,
   DisplayLanguage,
+  HubChromeDialog,
   HubChromeSnapshot,
   PluginAccess,
 } from "../shared/hub-chrome-ipc";
@@ -25,8 +28,8 @@ export interface Lifecycle {
    */
   open(id: string): void;
   /**
-   * Starts closing an open Plugin: it is `closing`, and cannot be reopened, until `closed`.
-   * Throws if it is not open.
+   * Starts closing an open Plugin, without asking: it is `closing`, and cannot be reopened, until
+   * `closed`. Its Busy is cleared, and a dialog about closing it goes away. Throws if it is not open.
    */
   close(id: string): void;
   /**
@@ -34,6 +37,20 @@ export interface Lifecycle {
    * Throws if it is not closing.
    */
   closed(id: string): void;
+  /** A staff close: `close`, or, if the Plugin is Busy, the dialog asking first. */
+  requestClose(id: string): void;
+  /**
+   * Sets an open Plugin's Busy reason, or clears it with null. Ignored once the Plugin is not
+   * open: its page can still say so as it closes.
+   */
+  setBusy(id: string, reason: string | null): void;
+  /**
+   * A normal quit (spec #44 "Quitting"): calls `quit`, or, if any Plugin is Busy, shows the one
+   * dialog listing them all and calls `quit` on **Quit anyway**.
+   */
+  requestQuit(quit: () => void): void;
+  /** Answers the pending dialog. Throws if there is none or the answer is not one of its buttons. */
+  answer(answer: DialogAnswer): void;
 }
 
 /** Display text in `language`, falling back to English (ADR 0007). */
@@ -84,9 +101,30 @@ export function createLifecycle(
   // Closed by staff or the Hub, but not yet gone: two Backends never share one Plugin Data
   // folder (ADR 0008), so a closing Plugin cannot be reopened.
   let closing: string[] = [];
+  let dialog: HubChromeDialog | null = null;
+  // The latest Busy reason of each open Plugin that is Busy.
+  const busy = new Map<string, string>();
+  // What **Quit anyway** does while the Busy quit dialog is up. A no-op otherwise.
+  let quitAnyway: () => void = () => undefined;
   const listeners: (() => void)[] = [];
   const changed = (): void => {
     for (const listener of listeners) listener();
+  };
+  const close = (id: string): void => {
+    if (!open.includes(id)) {
+      throw new Error(`No open Plugin has the id ${JSON.stringify(id)}`);
+    }
+    open = open.filter((other) => other !== id);
+    closing = [...closing, id];
+    busy.delete(id);
+    if (dialog?.kind === "busy-close" && dialog.id === id) dialog = null;
+    changed();
+  };
+  const busyPlugin = (id: string, reason: string): BusyPlugin => {
+    const plugin = plugins.find((each) => each.id === id);
+    if (plugin === undefined)
+      throw new Error(`${id} is open but not installed`);
+    return { name: plugin.name, reason };
   };
   return {
     snapshot: () => ({
@@ -95,6 +133,7 @@ export function createLifecycle(
       open: [...open],
       closing: [...closing],
       foreground: open[0] ?? null,
+      dialog,
     }),
     onChange: (listener) => {
       listeners.push(listener);
@@ -115,20 +154,62 @@ export function createLifecycle(
       open = [id, ...open.filter((other) => other !== id)];
       changed();
     },
-    close: (id) => {
-      if (!open.includes(id)) {
-        throw new Error(`No open Plugin has the id ${JSON.stringify(id)}`);
-      }
-      open = open.filter((other) => other !== id);
-      closing = [...closing, id];
-      changed();
-    },
+    close,
     closed: (id) => {
       if (!closing.includes(id)) {
         throw new Error(`No closing Plugin has the id ${JSON.stringify(id)}`);
       }
       closing = closing.filter((other) => other !== id);
       changed();
+    },
+    requestClose: (id) => {
+      const reason = busy.get(id);
+      if (reason === undefined) {
+        close(id);
+        return;
+      }
+      dialog = { kind: "busy-close", id, plugin: busyPlugin(id, reason) };
+      changed();
+    },
+    setBusy: (id, reason) => {
+      if (!open.includes(id)) return;
+      if (reason === null) busy.delete(id);
+      else busy.set(id, reason);
+    },
+    requestQuit: (quit) => {
+      // In the Plugin Switcher's order.
+      const busyPlugins = plugins.flatMap(({ id }) => {
+        const reason = busy.get(id);
+        return reason === undefined ? [] : [busyPlugin(id, reason)];
+      });
+      if (busyPlugins.length === 0) {
+        quit();
+        return;
+      }
+      quitAnyway = quit;
+      dialog = { kind: "busy-quit", plugins: busyPlugins };
+      changed();
+    },
+    answer: (answer) => {
+      const pending = dialog;
+      if (pending === null)
+        throw new Error("No dialog is waiting for an answer");
+      if (answer === "keep-open") {
+        dialog = null;
+        changed();
+        return;
+      }
+      if (pending.kind === "busy-close" && answer === "close-anyway") {
+        close(pending.id);
+        return;
+      }
+      if (pending.kind === "busy-quit" && answer === "quit-anyway") {
+        dialog = null;
+        changed();
+        quitAnyway();
+        return;
+      }
+      throw new Error(`${answer} does not answer a ${pending.kind} dialog`);
     },
   };
 }
