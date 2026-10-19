@@ -42,6 +42,9 @@ importers:
       '@types/node':
         specifier: 22.17.2
         version: 22.17.2
+      '@types/semver':
+        specifier: 7.8.0
+        version: 7.8.0
       electron:
         specifier: 44.5.1
         version: 44.5.1
@@ -51,6 +54,9 @@ importers:
       lit:
         specifier: 3.3.3
         version: 3.3.3
+      semver:
+        specifier: 7.8.5
+        version: 7.8.5
       vite:
         specifier: 7.3.6
         version: 7.3.6(@types/node@22.17.2)(lightningcss@1.33.0)

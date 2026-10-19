@@ -1,9 +1,15 @@
 // The Plugin Switcher: every installed Plugin, down the side of the Hub window, in the order main
 // sorted them. Clicking one opens it or brings it forward; the one in front is marked, and each open
-// one has a close control. A closing one says so and cannot be clicked until it is gone. No Theme yet (ADR 0006). Blocked reasons arrive in a later ticket.
+// one has a close control. A closing one says so and cannot be clicked until it is gone. A Plugin
+// the Hub cannot run shows why, and is not a control, so clicking it does nothing. No Theme yet
+// (ADR 0006).
 
 import { LitElement, css, html, nothing } from "lit";
-import type { HubChromeApi, SwitcherPlugin } from "../shared/hub-chrome-ipc";
+import type {
+  BlockedReason,
+  HubChromeApi,
+  SwitcherPlugin,
+} from "../shared/hub-chrome-ipc";
 
 /**
  * Hands the icon URL to the `li::before` mask. Bound as the `.style` property, which sets it
@@ -44,6 +50,14 @@ export class PluginSwitcher extends LitElement {
       padding-inline-end: 8px;
       color: #666;
     }
+    .blocked {
+      padding: 8px;
+      opacity: 0.6;
+    }
+    .reason {
+      display: block;
+      font-size: smaller;
+    }
     [aria-current="page"] {
       font-weight: bold;
     }
@@ -66,6 +80,7 @@ export class PluginSwitcher extends LitElement {
     label: { attribute: false },
     closeLabel: { attribute: false },
     closingLabel: { attribute: false },
+    blockedReasons: { attribute: false },
     plugins: { attribute: false },
     open: { attribute: false },
     closing: { attribute: false },
@@ -80,6 +95,8 @@ export class PluginSwitcher extends LitElement {
   declare closeLabel: (name: string) => string;
   /** What a closing Plugin is marked with, in the Display Language. */
   declare closingLabel: string;
+  /** Why a Plugin cannot be opened, in the Display Language. */
+  declare blockedReasons: Record<BlockedReason, string>;
   declare plugins: SwitcherPlugin[];
   declare open: string[];
   declare closing: string[];
@@ -93,16 +110,25 @@ export class PluginSwitcher extends LitElement {
         ${this.plugins.map(
           (plugin) =>
             html`<li .style=${iconStyle(plugin)}>
-              <button
-                class="name"
-                aria-current=${plugin.id === this.foreground ? "page" : nothing}
-                ?disabled=${this.closing.includes(plugin.id)}
-                @click=${() => {
-                  this.hub.open(plugin.id);
-                }}
-              >
-                ${plugin.name}
-              </button>
+              ${
+                plugin.access.kind === "blocked"
+                  ? html`<span class="name blocked">
+                      ${plugin.name}
+                      <span class="reason">
+                        ${this.blockedReasons[plugin.access.reason]}
+                      </span>
+                    </span>`
+                  : html`<button
+                      class="name"
+                      aria-current=${plugin.id === this.foreground ? "page" : nothing}
+                      ?disabled=${this.closing.includes(plugin.id)}
+                      @click=${() => {
+                        this.hub.open(plugin.id);
+                      }}
+                    >
+                      ${plugin.name}
+                    </button>`
+              }
               ${
                 this.open.includes(plugin.id)
                   ? html`<button

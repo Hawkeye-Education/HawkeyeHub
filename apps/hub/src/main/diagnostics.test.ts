@@ -257,15 +257,53 @@ const crashes: [string, PluginCrash, string][] = [
     { cause: "failed-to-start", exit: { kind: "no-exit" } },
     "Plugin closed abnormally: failed to start",
   ],
+  [
+    "Backend broke the protocol with a line that is not JSON-RPC",
+    {
+      cause: "crashed",
+      exit: { kind: "protocol-violation", violation: "not-json-rpc" },
+    },
+    "Plugin closed abnormally: crashed (protocol violation: a stdout line that is not JSON-RPC)",
+  ],
+  [
+    "Backend broke the protocol with a request",
+    {
+      cause: "crashed",
+      exit: { kind: "protocol-violation", violation: "request" },
+    },
+    "Plugin closed abnormally: crashed (protocol violation: a request from the Backend)",
+  ],
+  [
+    "Backend broke the protocol with an answer to no request",
+    {
+      cause: "crashed",
+      exit: { kind: "protocol-violation", violation: "unknown-response" },
+    },
+    "Plugin closed abnormally: crashed (protocol violation: an answer to no request)",
+  ],
+  [
+    "Plugin UI failed to load",
+    {
+      cause: "failed-to-start",
+      exit: { kind: "plugin-ui-load-failed", error: "ERR_FILE_NOT_FOUND" },
+    },
+    "Plugin closed abnormally: failed to start (Plugin UI failed to load: ERR_FILE_NOT_FOUND)",
+  ],
 ];
 
-test.each(crashes)("%s is summarised in hub.log once", (_, crash, summary) => {
-  const diagnostics = openDiagnostics(logsDir, () => NOW);
+test.each(crashes)(
+  "%s is written to the Plugin log, and summarised in hub.log once",
+  (_, crash, summary) => {
+    const diagnostics = openDiagnostics(logsDir, () => NOW);
 
-  diagnostics.startPluginSession(plugin).recordCrash(crash);
+    diagnostics.startPluginSession(plugin).recordCrash(crash);
 
-  expect(readLines("hub.log")).toEqual([pluginLine("error", summary)]);
-});
+    expect(readLines(PLUGIN_LOG)).toEqual([
+      sessionLine("hub", "error", summary),
+    ]);
+    expect(readLines("hub.log")).toEqual([pluginLine("error", summary)]);
+  },
+);
 
 test("events append to hub.log in order", () => {
   const diagnostics = openDiagnostics(logsDir, () => NOW);

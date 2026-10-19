@@ -61,6 +61,7 @@ export class HubChrome extends LitElement {
           .label=${strings.plugins}
           .closeLabel=${strings.close}
           .closingLabel=${strings.closing}
+          .blockedReasons=${strings.blocked}
           .plugins=${this.snapshot.plugins}
           .open=${this.snapshot.open}
           .closing=${this.snapshot.closing}
