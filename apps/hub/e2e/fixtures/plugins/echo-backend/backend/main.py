@@ -20,6 +20,10 @@ def send(message: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
+# With no locale set, Python itself sets LC_CTYPE to one of these at startup (PEP 538), as it does
+# on macOS. The Hub passes none of them: its own locale is en_US.UTF-8 in the smoke test.
+PYTHON_COERCED_LOCALES = {("LC_CTYPE", "C.UTF-8"), ("LC_CTYPE", "C.utf8"), ("LC_CTYPE", "UTF-8")}
+
 started: dict[str, Any] = {}
 
 for line in sys.stdin:
@@ -35,7 +39,10 @@ for line in sys.stdin:
             },
             "cwd": os.getcwd(),
             "localeVariables": sorted(
-                name for name in os.environ if name == "LANG" or name.startswith("LC_")
+                name
+                for name, value in os.environ.items()
+                if (name == "LANG" or name.startswith("LC_"))
+                and (name, value) not in PYTHON_COERCED_LOCALES
             ),
             "pid": os.getpid(),
         }
