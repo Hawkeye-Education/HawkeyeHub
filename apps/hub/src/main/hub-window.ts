@@ -3,6 +3,7 @@
 // a second Hub Chrome view (ADRs 0003, 0006).
 
 import { join } from "node:path";
+import { PluginId } from "@hawkeye-hub/plugin-format";
 import {
   app,
   BaseWindow,
@@ -14,13 +15,14 @@ import {
 import {
   ANSWER_DIALOG,
   CLOSE_PLUGIN,
+  DIALOG_ANSWERS,
   GET_SNAPSHOT,
   OPEN_PLUGIN,
   SNAPSHOT_CHANGED,
-  type DialogAnswer,
   type DisplayLanguage,
   type HubChromeDialog,
 } from "../shared/hub-chrome-ipc";
+import { z } from "zod";
 import type { Diagnostics } from "./diagnostics";
 import type { AbsolutePath } from "./ids";
 import type { InstalledPlugin } from "./installed-plugins";
@@ -55,15 +57,7 @@ const STOPPED_UNEXPECTEDLY = {
   },
 } satisfies Record<DisplayLanguage, unknown>;
 
-const DIALOG_ANSWERS = new Set<unknown>([
-  "keep-open",
-  "close-anyway",
-  "quit-anyway",
-] satisfies DialogAnswer[]);
-
-function isDialogAnswer(answer: unknown): answer is DialogAnswer {
-  return DIALOG_ANSWERS.has(answer);
-}
+const DialogAnswer = z.enum(DIALOG_ANSWERS);
 
 function isCutShort(error: unknown): boolean {
   return (
@@ -180,27 +174,45 @@ export function openHubWindow(
   });
   ipcMain.handle(OPEN_PLUGIN, (event, id: unknown) => {
     fromHubChrome(OPEN_PLUGIN, event.sender);
-    if (typeof id !== "string") throw new Error(`${OPEN_PLUGIN} takes an id`);
-    lifecycle.open(id);
+    lifecycle.open(PluginId.parse(id));
   });
   ipcMain.handle(CLOSE_PLUGIN, (event, id: unknown) => {
     fromHubChrome(CLOSE_PLUGIN, event.sender);
-    if (typeof id !== "string") throw new Error(`${CLOSE_PLUGIN} takes an id`);
-    lifecycle.requestClose(id);
+    lifecycle.requestClose(PluginId.parse(id));
   });
   ipcMain.handle(ANSWER_DIALOG, (event, answer: unknown) => {
     fromHubChrome(ANSWER_DIALOG, event.sender);
-    if (!isDialogAnswer(answer)) {
-      throw new Error(`${ANSWER_DIALOG} takes a dialog answer`);
-    }
-    lifecycle.answer(answer);
+    lifecycle.answer(DialogAnswer.parse(answer));
   });
+  // Quitting (a window close, or app.quit as Cmd+Q does, which closes the window) asks first if any
+  // Plugin is Busy, and **Keep open** cancels it. Then every open Plugin closes, in parallel. Their
+  // pages unload and their Backends exit asynchronously, and the Hub exits as soon as the window
+  // has closed, so the window waits until none is open or closing, including Plugins already
+  // closing before the quit.
+  let quit: "not-quitting" | "closing-plugins" | "plugins-closed" =
+    "not-quitting";
+  const closeWindowOncePluginsGone = (): void => {
+    const { open, closing } = lifecycle.snapshot();
+    if (quit !== "closing-plugins" || open.length > 0 || closing.length > 0)
+      return;
+    quit = "plugins-closed";
+    // Not from inside the window's own close handler, or a lifecycle listener.
+    queueMicrotask(() => {
+      window.close();
+    });
+  };
+  const closePluginsThenWindow = (): void => {
+    quit = "closing-plugins";
+    for (const id of lifecycle.snapshot().open) lifecycle.close(id);
+    closeWindowOncePluginsGone();
+  };
   lifecycle.onChange(() => {
     const snapshot = lifecycle.snapshot();
     pluginViews.follow(snapshot);
     followDialog(snapshot.dialog);
     hubChrome.webContents.send(SNAPSHOT_CHANGED, snapshot);
     overlay?.webContents.send(SNAPSHOT_CHANGED, snapshot);
+    closeWindowOncePluginsGone();
   });
   // ADR 0012: a crashed Hub Chrome is logged and reloaded in place, until it keeps crashing.
   // Then the Hub gives up, says so in a native box (the Hub Chrome cannot draw one) and quits.
@@ -247,21 +259,11 @@ export function openHubWindow(
   };
   fillContentArea();
   window.on("resize", fillContentArea);
-  // Quitting (a window close, or app.quit as Cmd+Q does, which closes the window) asks first if any
-  // Plugin is Busy, and **Keep open** cancels it. Then every open Plugin closes, in parallel. Their
-  // pages unload and their Backends exit asynchronously, and the Hub exits as soon as the window
-  // has closed, so the window waits for them all, including Plugins already closing.
-  let pluginsClosed = false;
-  const closePluginsThenWindow = (): void => {
-    for (const id of lifecycle.snapshot().open) lifecycle.close(id);
-    void pluginViews.allClosed().then(() => {
-      pluginsClosed = true;
-      window.close();
-    });
-  };
   window.on("close", (event) => {
-    if (pluginsClosed) return;
+    if (quit === "plugins-closed") return;
     event.preventDefault();
+    // Already closing them: the window closes once they are gone.
+    if (quit === "closing-plugins") return;
     if (gaveUp) closePluginsThenWindow();
     else lifecycle.requestQuit(closePluginsThenWindow);
   });

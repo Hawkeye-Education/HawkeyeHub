@@ -4,6 +4,8 @@
 // Diagnostics.
 
 import { join } from "node:path";
+import type { PluginId } from "@hawkeye-hub/plugin-format";
+import { z } from "zod";
 import {
   MessageChannelMain,
   session,
@@ -23,22 +25,20 @@ import {
 } from "../shared/plugin-preload";
 import { startBackend } from "./backend";
 import type { Diagnostics, NetErrorCode, PluginCrash } from "./diagnostics";
-import { parsePluginId, parsePluginVersion, type AbsolutePath } from "./ids";
+import type { AbsolutePath } from "./ids";
 import type { InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
+
+// What the preload sends on `BUSY`: a reason, or null to clear.
+const BusyReason = z.string().nullable();
 
 export interface PluginViews {
   /** Creates, shows, hides and destroys views until they match `snapshot`. */
   follow(snapshot: HubChromeSnapshot): void;
   /** Lays every view out beside the Plugin Switcher, at the window's current size. */
   layout(): void;
-  /**
-   * Resolves once every Plugin that has been closed is gone: each page has run its pagehide and
-   * each Backend has exited. The Hub quits only then.
-   */
-  allClosed(): Promise<void>;
 }
 
 interface OpenPlugin {
@@ -60,9 +60,7 @@ export function createPluginViews(
    */
   lifecycle: Pick<Lifecycle, "close" | "closed" | "setBusy">,
 ): PluginViews {
-  const opened = new Map<string, OpenPlugin>();
-  // The closes still under way, by id.
-  const closing = new Map<string, Promise<void>>();
+  const opened = new Map<PluginId, OpenPlugin>();
 
   const contentArea = () => {
     // getContentBounds() is in screen coordinates; only its size applies to a child view.
@@ -99,8 +97,8 @@ export function createPluginViews(
     });
     lockDown(view, window, id);
     const pluginSession = diagnostics.startPluginSession({
-      id: parsePluginId(id),
-      version: parsePluginVersion(manifest.version),
+      id,
+      version: manifest.version,
     });
     // Records the crash and closes the Plugin, only if this open is still the open one: once it is
     // closing, nothing that follows is a crash, and nothing restarts.
@@ -123,10 +121,8 @@ export function createPluginViews(
     });
     // `hub.busy`: a reason, or null to clear. Anything else is the Plugin's mistake, and rejects
     // back to its own call.
-    view.webContents.ipc.handle(BUSY, (_event, reason: unknown) => {
-      if (typeof reason !== "string" && reason !== null) {
-        throw new Error("hub.busy.set takes a string reason");
-      }
+    view.webContents.ipc.handle(BUSY, (_event, raw: unknown) => {
+      const reason = BusyReason.parse(raw);
       if (opened.get(id)?.view === view) lifecycle.setBusy(id, reason);
     });
     // A Plugin's beforeunload never holds a close (ADR 0009): Busy is how it asks to stay open.
@@ -182,7 +178,7 @@ export function createPluginViews(
     return { view, closed };
   };
 
-  const close = (id: string, { view, closed }: OpenPlugin): void => {
+  const close = (id: PluginId, { view, closed }: OpenPlugin): void => {
     opened.delete(id);
     window.contentView.removeChildView(view);
     // Destroys the page; removing the view alone would leak its webContents. On Electron 44 a plain
@@ -190,13 +186,9 @@ export function createPluginViews(
     // will-prevent-unload handler above stops any beforeunload from cancelling (probed by hand: a
     // cancelling page still closes in under 100 ms; the smoke suite asserts pagehide).
     view.webContents.close({ waitForBeforeUnload: true });
-    closing.set(
-      id,
-      closed.then(() => {
-        closing.delete(id);
-        lifecycle.closed(id);
-      }),
-    );
+    void closed.then(() => {
+      lifecycle.closed(id);
+    });
   };
 
   return {
@@ -216,9 +208,6 @@ export function createPluginViews(
     },
     layout() {
       for (const { view } of opened.values()) view.setBounds(contentArea());
-    },
-    async allClosed() {
-      await Promise.all(closing.values());
     },
   };
 }
