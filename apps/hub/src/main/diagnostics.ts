@@ -171,7 +171,9 @@ export type ConsoleMessageLevel = "debug" | "info" | "warning" | "error";
 /** A JSON-RPC error response, reduced to what may be logged: never its params or result. */
 export interface RpcError {
   method: string;
-  reason: RpcErrorReason;
+  // Null when the error has no `data.reason`: only SDK Backends send one, and a raw JSON-RPC
+  // Backend is still a valid Backend.
+  reason: RpcErrorReason | null;
   message: string;
 }
 
@@ -376,7 +378,9 @@ export function openDiagnostics(
           writeLine(
             logPath,
             { source: "hub", level: "error" },
-            `${method} failed: ${reason}: ${message}`,
+            reason === null
+              ? `${method} failed: ${message}`
+              : `${method} failed: ${reason}: ${message}`,
             subject,
           );
         },

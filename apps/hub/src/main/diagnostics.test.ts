@@ -466,6 +466,26 @@ test("a JSON-RPC error response is written as its method, data.reason and messag
   ]);
 });
 
+test("a JSON-RPC error response without a data.reason is written as its method and message", () => {
+  const session = openDiagnostics(logsDir, () => NOW).startPluginSession(
+    plugin,
+  );
+
+  session.recordRpcError({
+    method: "markEssays",
+    reason: null,
+    message: "Input and output are the same folder",
+  });
+
+  expect(readLines(PLUGIN_LOG)).toEqual([
+    sessionLine(
+      "hub",
+      "error",
+      "markEssays failed: Input and output are the same folder",
+    ),
+  ]);
+});
+
 test("a crash record carries its cause, exit details and the last 50 stderr lines; hub.log gets the summary without them", () => {
   const diagnostics = openDiagnostics(logsDir, () => NOW);
   const session = diagnostics.startPluginSession(plugin);
