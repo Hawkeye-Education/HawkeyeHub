@@ -1,0 +1,12 @@
+{
+  "id": "sign-in-required",
+  "version": "1.0.0",
+  "hubApi": "^1.0.0",
+  "name": { "en-HK": "Gradebook", "zh-HK": "成績表" },
+  "description": "A smoke-test fixture Plugin that needs a Staff Identity.",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "required", "roles": [] },
+  "stores": [],
+  "backend": { "kind": "none" },
+  "assistant": { "kind": "none" }
+}
