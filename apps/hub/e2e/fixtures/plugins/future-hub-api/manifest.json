@@ -1,0 +1,12 @@
+{
+  "id": "future-hub-api",
+  "version": "1.0.0",
+  "hubApi": "^99.0.0",
+  "name": { "en-HK": "Library", "zh-HK": "圖書館" },
+  "description": "A smoke-test fixture Plugin that needs a Hub API this Hub does not offer.",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "none" },
+  "assistant": { "kind": "none" }
+}

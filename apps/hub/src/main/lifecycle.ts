@@ -1,16 +1,20 @@
 // The Plugin lifecycle's state, held in the main process (spec #44 story 49) and drawn by the Hub
 // Chrome from snapshots: the installed Plugins with their icons, which are open and which is in
-// front, which are closing, and the Hub Chrome dialog waiting for staff. It also keeps each open
-// Plugin's Busy reason, which only the dialogs show. Blocked reasons join it in a later ticket.
+// front, which cannot be opened and why, which are closing, and the Hub Chrome dialog waiting
+// for staff. It also keeps each open Plugin's Busy reason, which only the dialogs show.
 
-import type { DisplayText } from "@hawkeye-hub/plugin-format";
+import type { DisplayText, Manifest } from "@hawkeye-hub/plugin-format";
+import semver from "semver";
 import type {
   BusyPlugin,
   DialogAnswer,
   DisplayLanguage,
   HubChromeDialog,
   HubChromeSnapshot,
+  PluginAccess,
 } from "../shared/hub-chrome-ipc";
+import { HUB_API_VERSION } from "./hub-api-version";
+import type { HubApiVersion } from "./ids";
 import type { InstalledPlugin } from "./installed-plugins";
 import { pluginIconUrl } from "./plugin-icons";
 
@@ -18,7 +22,10 @@ export interface Lifecycle {
   snapshot(): HubChromeSnapshot;
   /** `listener` runs after every change to the state, to push a new snapshot. */
   onChange(listener: () => void): void;
-  /** Opens an installed Plugin, or brings it forward if it is open. Throws if it is not installed. */
+  /**
+   * Opens an installed Plugin, or brings it forward if it is open. Throws if it is not installed
+   * or is blocked.
+   */
   open(id: string): void;
   /**
    * Starts closing an open Plugin, without asking: it is `closing`, and cannot be reopened, until
@@ -57,6 +64,24 @@ export function displayTextIn(
     : text["en-HK"];
 }
 
+/**
+ * The gates (ADRs 0002, 0005), run when the list is built; `open` refuses what they block.
+ * Supported Platforms is checked at install, not here. There is no Auth Provider yet, so every
+ * Plugin that requires a Staff Identity is blocked.
+ */
+export function accessOf(
+  manifest: Manifest,
+  hubApiVersion: HubApiVersion,
+): PluginAccess {
+  if (manifest.identity.kind === "required") {
+    return { kind: "blocked", reason: "needs-sign-in" };
+  }
+  if (!semver.satisfies(hubApiVersion, manifest.hubApi)) {
+    return { kind: "blocked", reason: "needs-different-hub" };
+  }
+  return { kind: "openable" };
+}
+
 export function createLifecycle(
   displayLanguage: DisplayLanguage,
   installed: readonly InstalledPlugin[],
@@ -67,7 +92,7 @@ export function createLifecycle(
       id: manifest.id,
       name: displayTextIn(manifest.name, displayLanguage),
       iconUrl: pluginIconUrl(manifest.id),
-      access: { kind: "openable" } as const,
+      access: accessOf(manifest, HUB_API_VERSION),
     }))
     .sort((a, b) => byName(a.name, b.name));
   // The open Plugins, most recently foregrounded first: the first is in front, and closing it
@@ -114,8 +139,14 @@ export function createLifecycle(
       listeners.push(listener);
     },
     open: (id) => {
-      if (!plugins.some((plugin) => plugin.id === id)) {
+      const plugin = plugins.find((installed) => installed.id === id);
+      if (plugin === undefined) {
         throw new Error(`No installed Plugin has the id ${JSON.stringify(id)}`);
+      }
+      if (plugin.access.kind === "blocked") {
+        throw new Error(
+          `The Plugin ${JSON.stringify(id)} cannot be opened: ${plugin.access.reason}`,
+        );
       }
       if (closing.includes(id)) {
         throw new Error(`${id} is still closing`);
