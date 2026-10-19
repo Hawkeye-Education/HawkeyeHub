@@ -15,7 +15,7 @@ export type AiProviderKind = Branded<string, "AiProviderKind">;
 export type RpcErrorReason = Branded<string, "RpcErrorReason">;
 export type AbsolutePath = Branded<string, "AbsolutePath">;
 
-const KEBAB_CASE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+export const KEBAB_CASE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 // PLUGIN_STANDARD.md "Ids": kebab-case, at most 64 characters.
 const PLUGIN_ID_MAX_LENGTH = 64;
 // semver.org's suggested regex.

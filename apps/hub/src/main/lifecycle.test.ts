@@ -1,9 +1,13 @@
 import { parseManifest, type Manifest } from "@hawkeye-hub/plugin-format";
 import { expect, test } from "vitest";
-import { parseAbsolutePath } from "./ids";
-import { createLifecycle, type Lifecycle } from "./lifecycle";
+import { parseAbsolutePath, parseHubApiVersion } from "./ids";
+import { accessOf, createLifecycle, type Lifecycle } from "./lifecycle";
 
-function installed(id: string, name: unknown) {
+function installed(
+  id: string,
+  name: unknown,
+  overrides: { hubApi?: string; identity?: unknown } = {},
+) {
   const parsed = parseManifest({
     id,
     version: "1.0.0",
@@ -15,6 +19,7 @@ function installed(id: string, name: unknown) {
     stores: [],
     backend: { kind: "none" },
     assistant: { kind: "none" },
+    ...overrides,
   });
   if (parsed.kind === "invalid") throw new Error(parsed.reason);
   const manifest: Manifest = parsed.manifest;
@@ -136,4 +141,58 @@ test("opening a Plugin that is not installed, or closing one that is not open, t
   expect(() => {
     lifecycle.close("attendance");
   }).toThrow();
+});
+
+const HUB_API = parseHubApiVersion("1.4.0");
+
+function accessWith(overrides: { hubApi?: string; identity?: unknown }) {
+  return accessOf(installed("gated", "Gated", overrides).manifest, HUB_API);
+}
+
+test("a Plugin needing no identity, with a hubApi range this Hub satisfies, is openable", () => {
+  expect(accessWith({ hubApi: "^1.2.0" })).toEqual({ kind: "openable" });
+});
+
+test("a Plugin that requires a Staff Identity is blocked: there is no Auth Provider", () => {
+  expect(accessWith({ identity: { kind: "required", roles: [] } })).toEqual({
+    kind: "blocked",
+    reason: "needs-sign-in",
+  });
+});
+
+test.each([
+  ["too new for the Plugin", "~1.2.0"],
+  ["too new for the Plugin", "<1.4.0"],
+  ["too old for the Plugin", "^1.5.0"],
+  ["too old for the Plugin", "^2.0.0"],
+])("a Hub %s (range %s) blocks the Plugin", (_, hubApi) => {
+  expect(accessWith({ hubApi })).toEqual({
+    kind: "blocked",
+    reason: "needs-different-hub",
+  });
+});
+
+test("the snapshot marks blocked Plugins, and opening one throws", () => {
+  const lifecycle = createLifecycle("en-HK", [
+    installed("sign-in", "Sign In", {
+      identity: { kind: "required", roles: [] },
+    }),
+    installed("future", "Future", { hubApi: "^99.0.0" }),
+  ]);
+  expect(
+    lifecycle.snapshot().plugins.map(({ id, access }) => ({ id, access })),
+  ).toEqual([
+    {
+      id: "future",
+      access: { kind: "blocked", reason: "needs-different-hub" },
+    },
+    { id: "sign-in", access: { kind: "blocked", reason: "needs-sign-in" } },
+  ]);
+  expect(() => {
+    lifecycle.open("sign-in");
+  }).toThrow();
+  expect(() => {
+    lifecycle.open("future");
+  }).toThrow();
+  expect(lifecycle.snapshot().open).toEqual([]);
 });

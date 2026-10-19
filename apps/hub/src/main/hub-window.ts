@@ -18,6 +18,7 @@ import {
   type DisplayLanguage,
 } from "../shared/hub-chrome-ipc";
 import type { Diagnostics } from "./diagnostics";
+import type { AbsolutePath } from "./ids";
 import type { InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
 import { createPluginViews } from "./plugin-views";
@@ -64,6 +65,7 @@ export function openHubWindow(
   now: () => Date,
   lifecycle: Lifecycle,
   installed: readonly InstalledPlugin[],
+  hubDataDir: AbsolutePath,
 ): BaseWindow {
   const { displayLanguage } = lifecycle.snapshot();
   // Native frame and title bar until the Theme brings the Hub Chrome's own (ADR 0006).
@@ -95,6 +97,7 @@ export function openHubWindow(
     diagnostics,
     installed,
     displayLanguage,
+    hubDataDir,
     (id) => {
       lifecycle.close(id);
     },

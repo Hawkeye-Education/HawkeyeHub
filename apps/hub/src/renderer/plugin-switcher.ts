@@ -1,9 +1,14 @@
 // The Plugin Switcher: every installed Plugin, down the side of the Hub window, in the order main
 // sorted them. Clicking one opens it or brings it forward; the one in front is marked, and each open
-// one has a close control. No Theme yet (ADR 0006). Blocked reasons arrive in a later ticket.
+// one has a close control. A Plugin the Hub cannot run shows why, and is not a control, so clicking
+// it does nothing. No Theme yet (ADR 0006).
 
 import { LitElement, css, html, nothing } from "lit";
-import type { HubChromeApi, SwitcherPlugin } from "../shared/hub-chrome-ipc";
+import type {
+  BlockedReason,
+  HubChromeApi,
+  SwitcherPlugin,
+} from "../shared/hub-chrome-ipc";
 
 /**
  * Hands the icon URL to the `li::before` mask. Bound as the `.style` property, which sets it
@@ -40,6 +45,14 @@ export class PluginSwitcher extends LitElement {
     .name {
       flex: 1;
     }
+    .blocked {
+      padding: 8px;
+      opacity: 0.6;
+    }
+    .reason {
+      display: block;
+      font-size: smaller;
+    }
     [aria-current="page"] {
       font-weight: bold;
     }
@@ -61,6 +74,7 @@ export class PluginSwitcher extends LitElement {
   static override properties = {
     label: { attribute: false },
     closeLabel: { attribute: false },
+    blockedReasons: { attribute: false },
     plugins: { attribute: false },
     open: { attribute: false },
     foreground: { attribute: false },
@@ -72,6 +86,8 @@ export class PluginSwitcher extends LitElement {
   declare label: string;
   /** The close control's accessible name for a Plugin, in the Display Language. */
   declare closeLabel: (name: string) => string;
+  /** Why a Plugin cannot be opened, in the Display Language. */
+  declare blockedReasons: Record<BlockedReason, string>;
   declare plugins: SwitcherPlugin[];
   declare open: string[];
   /** Null when no Plugin is in front. */
@@ -84,15 +100,24 @@ export class PluginSwitcher extends LitElement {
         ${this.plugins.map(
           (plugin) =>
             html`<li .style=${iconStyle(plugin)}>
-              <button
-                class="name"
-                aria-current=${plugin.id === this.foreground ? "page" : nothing}
-                @click=${() => {
-                  this.hub.open(plugin.id);
-                }}
-              >
-                ${plugin.name}
-              </button>
+              ${
+                plugin.access.kind === "blocked"
+                  ? html`<span class="name blocked">
+                      ${plugin.name}
+                      <span class="reason">
+                        ${this.blockedReasons[plugin.access.reason]}
+                      </span>
+                    </span>`
+                  : html`<button
+                      class="name"
+                      aria-current=${plugin.id === this.foreground ? "page" : nothing}
+                      @click=${() => {
+                        this.hub.open(plugin.id);
+                      }}
+                    >
+                      ${plugin.name}
+                    </button>`
+              }
               ${
                 this.open.includes(plugin.id)
                   ? html`<button

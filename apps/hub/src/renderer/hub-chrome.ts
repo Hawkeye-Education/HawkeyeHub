@@ -60,6 +60,7 @@ export class HubChrome extends LitElement {
         <plugin-switcher
           .label=${strings.plugins}
           .closeLabel=${strings.close}
+          .blockedReasons=${strings.blocked}
           .plugins=${this.snapshot.plugins}
           .open=${this.snapshot.open}
           .foreground=${this.snapshot.foreground}
