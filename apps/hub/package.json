@@ -16,9 +16,11 @@
     "@hawkeye-hub/plugin-format": "workspace:*",
     "@playwright/test": "1.63.0",
     "@types/node": "22.17.2",
+    "@types/semver": "7.8.0",
     "electron": "44.5.1",
     "electron-vite": "5.0.0",
     "lit": "3.3.3",
+    "semver": "7.8.5",
     "vite": "7.3.6",
     "vitest": "5.0.5",
     "zod": "4.6.7"
