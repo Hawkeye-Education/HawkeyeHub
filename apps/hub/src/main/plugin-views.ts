@@ -24,6 +24,7 @@ import { startBackend } from "./backend";
 import type { Diagnostics } from "./diagnostics";
 import { parsePluginId, parsePluginVersion, type AbsolutePath } from "./ids";
 import type { InstalledPlugin } from "./installed-plugins";
+import { lockDown } from "./plugin-lockdown";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
 
 export interface PluginViews {
@@ -78,6 +79,8 @@ export function createPluginViews(
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        // Dev mode (#31) turns them back on.
+        devTools: false,
         partition,
         preload: join(import.meta.dirname, "../preload/plugin.cjs"),
         additionalArguments: [
@@ -86,6 +89,7 @@ export function createPluginViews(
         ],
       },
     });
+    lockDown(view, window, id);
     // Closes the Plugin only if this open is still the open one.
     const closeThisOpen = (): void => {
       if (opened.get(id)?.view === view) closePlugin(id);
