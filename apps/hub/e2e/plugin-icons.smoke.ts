@@ -14,7 +14,7 @@ import {
 
 // The fixtures' ids in the order the Hub sorts their names (see plugin-switcher.smoke.ts).
 const SORTED_IDS = {
-  "en-HK": ["attendance", "seating-plan", "scripted-icon", "class-timer"],
+  "en-HK": ["attendance", "scripted-icon", "seating-plan", "class-timer"],
   "zh-HK": ["class-timer", "attendance", "scripted-icon", "seating-plan"],
 };
 
