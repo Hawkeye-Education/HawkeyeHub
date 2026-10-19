@@ -15,6 +15,8 @@ export interface SwitcherPlugin {
   id: string;
   /** Already in the Display Language. */
   name: string;
+  /** The Plugin's `icon.svg`, served to the Hub Chrome only as a CSS mask (spec #44 story 53). */
+  iconUrl: string;
   access: PluginAccess;
 }
 

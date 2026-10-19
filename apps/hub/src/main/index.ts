@@ -2,13 +2,14 @@
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { app, Menu } from "electron";
+import { app, Menu, protocol, session } from "electron";
 import { openDiagnostics } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
 import { openHubWindow } from "./hub-window";
 import { parseAbsolutePath } from "./ids";
 import { loadInstalledPlugins } from "./installed-plugins";
 import { createLifecycle } from "./lifecycle";
+import { PLUGIN_ICON_SCHEME, servePluginIcons } from "./plugin-icons";
 
 // 1. On-disk location, before anything reads or writes a path. The single-instance lock lives
 // in userData, and getPath("logs") creates the default folder, so both must move first.
@@ -26,6 +27,15 @@ if (dataDirRaw !== undefined) {
 // The Hub's data folder: installed Plugins now, Plugin Data and Shared Stores later. With no
 // variable it is Electron's userData for the OS user.
 const hubDataDir = parseAbsolutePath(dataDirRaw ?? app.getPath("userData"));
+
+// Privileges are granted once, before `ready`, for every scheme the Hub serves. The icon scheme is
+// standard (host and path), secure, and CORS-enabled: CSS masks fetch in CORS mode.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: PLUGIN_ICON_SCHEME,
+    privileges: { standard: true, secure: true, corsEnabled: true },
+  },
+]);
 
 // 2. The single-instance lock, keyed on userData. A launch that fails to take it quits before
 // Diagnostics opens or any handler is registered, so it logs nothing. The running Hub hears of it
@@ -86,6 +96,11 @@ function runHub(): void {
     for (const { plugin, reason } of installed.leftOut) {
       diagnostics.recordHubEvent({ kind: "plugin-left-out", plugin, reason });
     }
+    // The Hub Chrome has no partition, so its session is the default one.
+    session.defaultSession.protocol.handle(
+      PLUGIN_ICON_SCHEME,
+      servePluginIcons(installed.loaded),
+    );
     const lifecycle = createLifecycle(
       displayLanguageFor(app.getPreferredSystemLanguages()),
       installed.loaded,
