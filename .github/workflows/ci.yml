@@ -37,6 +37,8 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The smoke suite's global setup makes fixture Backends' venvs with `uv venv`.
+      - uses: astral-sh/setup-uv@v6
       # Electron downloads its binary on first use; do it here, not inside the first test's timeout.
       - run: pnpm --filter @hawkeye-hub/hub exec install-electron
       - run: pnpm --filter @hawkeye-hub/hub smoke

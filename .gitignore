@@ -3,3 +3,4 @@ out/
 test-results/
 playwright-report/
 .hub-data/
+.venv/
