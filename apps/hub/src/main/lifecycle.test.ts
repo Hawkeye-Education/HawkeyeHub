@@ -27,17 +27,28 @@ const plugins = [
   installed("seating-plan", "Seating Plan"),
 ];
 
-test("the snapshot lists every installed Plugin by its en-HK name, sorted", () => {
+test("the snapshot lists every installed Plugin by its en-HK name and icon URL, sorted", () => {
   expect(createLifecycle("en-HK", plugins).snapshot()).toEqual({
     displayLanguage: "en-HK",
     plugins: [
-      { id: "attendance", name: "Attendance", access: { kind: "openable" } },
+      {
+        id: "attendance",
+        name: "Attendance",
+        iconUrl: "hawkeye-icon://attendance/icon.svg",
+        access: { kind: "openable" },
+      },
       {
         id: "seating-plan",
         name: "Seating Plan",
+        iconUrl: "hawkeye-icon://seating-plan/icon.svg",
         access: { kind: "openable" },
       },
-      { id: "class-timer", name: "Timer", access: { kind: "openable" } },
+      {
+        id: "class-timer",
+        name: "Timer",
+        iconUrl: "hawkeye-icon://class-timer/icon.svg",
+        access: { kind: "openable" },
+      },
     ],
   });
 });

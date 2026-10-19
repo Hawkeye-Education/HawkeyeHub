@@ -1,6 +1,6 @@
 // The Plugin lifecycle's state, held in the main process (spec #44 story 49) and drawn by the Hub
 // Chrome from snapshots. Holds only the installed Plugins so far; open Plugins, the foreground
-// Plugin, blocked reasons, icons and the pending dialog join it in later tickets.
+// Plugin, blocked reasons and the pending dialog join it in later tickets.
 
 import type { DisplayText } from "@hawkeye-hub/plugin-format";
 import type {
@@ -8,6 +8,7 @@ import type {
   HubChromeSnapshot,
 } from "../shared/hub-chrome-ipc";
 import type { InstalledPlugin } from "./installed-plugins";
+import { pluginIconUrl } from "./plugin-icons";
 
 export interface Lifecycle {
   snapshot(): HubChromeSnapshot;
@@ -35,6 +36,7 @@ export function createLifecycle(
     .map(({ manifest }) => ({
       id: manifest.id,
       name: displayTextIn(manifest.name, displayLanguage),
+      iconUrl: pluginIconUrl(manifest.id),
       access: { kind: "openable" } as const,
     }))
     .sort((a, b) => byName(a.name, b.name));
