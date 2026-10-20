@@ -1,5 +1,5 @@
-// The Display Language (ADR 0007). Until the settings spec adds the per-installation choice, the Hub
-// follows the OS: its first preferred language that maps to one the Hub draws in, else en-HK.
+// The OS's Display Language (ADR 0007), which a `system` Display Language in Hub Settings follows:
+// its first preferred language that maps to one the Hub draws in, else en-HK.
 
 import type { DisplayLanguage } from "../shared/hub-chrome-ipc";
 

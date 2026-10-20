@@ -21,6 +21,7 @@ import type {
   HubSettings,
   HubVersion,
   PluginAccess,
+  ThemeName,
 } from "../shared/hub-chrome-ipc";
 import { HUB_API_VERSION } from "./hub-api-version";
 import type { HubApiVersion } from "./ids";
@@ -115,6 +116,14 @@ export function accessOf(
   return { kind: "openable" };
 }
 
+// The `as` grants the brand to a literal that is kebab-case, as ThemeName requires.
+const HAWKEYE = "hawkeye" as ThemeName;
+/** The Themes built into the Hub (ADR 0006): adding one is a Hub release. */
+export const THEMES: readonly ThemeName[] = [HAWKEYE];
+// ponytail: Hawkeye until the Company Configuration is fetched; the Registry work routes the
+// fetched default Theme in here (spec #71).
+const COMPANY_THEME = HAWKEYE;
+
 // The dialog waiting for staff, as the lifecycle holds it: the quit dialog keeps the quit that
 // **Quit anyway** goes ahead with, and the Discard dialog the action **Discard** goes ahead with.
 type Asking =
@@ -138,25 +147,44 @@ function dialogOf(asking: Asking | null): HubChromeDialog | null {
 
 export function createLifecycle(
   hubVersion: HubVersion,
-  displayLanguage: DisplayLanguage,
+  /** The OS's Display Language (`displayLanguageFor`), which a `system` Display Language follows. */
+  systemLanguage: DisplayLanguage,
   installed: readonly InstalledPlugin[],
   storedAtStart: HubSettings,
   /** Writes saved Hub Settings and applies them; called only when they changed. */
   save: (settings: HubSettings) => void,
+  /** Logs a stored or company Theme this Hub does not have; called once per name. */
+  unknownTheme: (name: ThemeName) => void,
 ): Lifecycle {
-  const byName = new Intl.Collator(displayLanguage).compare;
-  const plugins = installed
-    .map((plugin) => ({
-      plugin,
-      listed: {
-        id: plugin.manifest.id,
-        name: displayTextIn(plugin.manifest.name, displayLanguage),
-        iconUrl: pluginIconUrl(plugin.manifest.id),
-        access: accessOf(plugin.manifest, HUB_API_VERSION),
-      },
-    }))
-    .sort((a, b) => byName(a.listed.name, b.listed.name));
-  const listed = plugins.map((plugin) => plugin.listed);
+  const languageOf = ({ displayLanguage }: HubSettings): DisplayLanguage => {
+    switch (displayLanguage.kind) {
+      case "system":
+        return systemLanguage;
+      case "chosen":
+        return displayLanguage.language;
+      default:
+        return displayLanguage satisfies never;
+    }
+  };
+  // The installed Plugins, named and sorted in `language`.
+  const listIn = (language: DisplayLanguage) => {
+    const byName = new Intl.Collator(language).compare;
+    return installed
+      .map((plugin) => ({
+        plugin,
+        listed: {
+          id: plugin.manifest.id,
+          name: displayTextIn(plugin.manifest.name, language),
+          iconUrl: pluginIconUrl(plugin.manifest.id),
+          access: accessOf(plugin.manifest, HUB_API_VERSION),
+        },
+      }))
+      .sort((a, b) => byName(a.listed.name, b.listed.name));
+  };
+  // Re-derived when a Save changes the Display Language; open Plugin UIs keep theirs (ADR 0007).
+  let displayLanguage = languageOf(storedAtStart);
+  let plugins = listIn(displayLanguage);
+  let listed = plugins.map((plugin) => plugin.listed);
   const installedPlugin = (id: PluginId) => {
     const plugin = plugins.find(({ listed }) => listed.id === id);
     if (plugin === undefined) {
@@ -186,6 +214,21 @@ export function createLifecycle(
     asking = { kind: "discard-changes", proceed };
     changed();
   };
+  // Says open Plugins switch language when reopened, from a Save that changed it while any was
+  // open, until staff leave settings.
+  let languageNoteShowing = false;
+  // The stored Theme resolved: a name this Hub has no Theme for draws in Hawkeye, and is kept.
+  const reported = new Set<ThemeName>();
+  const resolveTheme = (setting: HubSettings["theme"]): ThemeName => {
+    const name = setting.kind === "company" ? COMPANY_THEME : setting.name;
+    if (THEMES.includes(name)) return name;
+    if (!reported.has(name)) {
+      reported.add(name);
+      unknownTheme(name);
+    }
+    return HAWKEYE;
+  };
+  let theme = resolveTheme(stored.theme);
   const settingsShowing = (operation: string): void => {
     if (content !== "settings") {
       throw new Error(`${operation} needs Hub Settings showing`);
@@ -237,10 +280,12 @@ export function createLifecycle(
       foreground: open[0] ?? null,
       content:
         content === "settings"
-          ? { kind: "settings", stored, form }
+          ? { kind: "settings", stored, form, languageNoteShowing }
           : { kind: "plugin" },
       dialog: dialogOf(asking),
       hubVersion,
+      theme,
+      themes: [...THEMES],
     }),
     installed: (id) => installedPlugin(id).plugin,
     onChange: (listener) => {
@@ -263,6 +308,7 @@ export function createLifecycle(
       discardingEditsFirst(() => {
         open = [id, ...open.filter((other) => other !== id)];
         content = "plugin";
+        languageNoteShowing = false;
         changed();
       });
     },
@@ -325,6 +371,14 @@ export function createLifecycle(
       if (isDeepStrictEqual(form, stored)) return;
       save(form);
       stored = form;
+      const language = languageOf(stored);
+      if (language !== displayLanguage) {
+        displayLanguage = language;
+        plugins = listIn(language);
+        listed = plugins.map((plugin) => plugin.listed);
+        if (open.length > 0) languageNoteShowing = true;
+      }
+      theme = resolveTheme(stored.theme);
       changed();
     },
     cancelSettings: () => {

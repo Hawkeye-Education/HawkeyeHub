@@ -61,7 +61,16 @@ export interface HubSettings {
  */
 export type HubChromeContent =
   | { kind: "plugin" }
-  | { kind: "settings"; stored: HubSettings; form: HubSettings };
+  | {
+      kind: "settings";
+      stored: HubSettings;
+      form: HubSettings;
+      /**
+       * A Save changed the Display Language while a Plugin was open: open Plugin UIs keep the one
+       * they were opened with until reopened (ADR 0007). Cleared on leaving settings.
+       */
+      languageNoteShowing: boolean;
+    };
 
 export interface HubChromeSnapshot {
   displayLanguage: DisplayLanguage;
@@ -77,6 +86,10 @@ export interface HubChromeSnapshot {
   /** The Hub Chrome dialog waiting for an answer, drawn on the dialog overlay. Null when none is. */
   dialog: HubChromeDialog | null;
   hubVersion: HubVersion;
+  /** The Theme the Hub draws in: the stored one resolved, Hawkeye when this Hub lacks it. */
+  theme: ThemeName;
+  /** The Themes this Hub has, for the Theme picker. */
+  themes: ThemeName[];
 }
 
 declare const busyReason: unique symbol;
