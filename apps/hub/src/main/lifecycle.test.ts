@@ -780,3 +780,154 @@ test("installed answers the installed Plugin with an id, and throws for one that
   expect(lifecycle.installed(id("attendance"))).toBe(plugins[1]);
   expect(() => lifecycle.installed(id("not-installed"))).toThrow();
 });
+
+test("picking a Plugin with unsaved edits asks first; Keep editing stays with the edits", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(DARK);
+
+  lifecycle.open(id("attendance"));
+  expect(lifecycle.snapshot()).toMatchObject({
+    open: [],
+    content: { kind: "settings", form: DARK },
+    dialog: { kind: "discard-changes" },
+  });
+
+  lifecycle.answer("keep-editing");
+  expect(lifecycle.snapshot()).toMatchObject({
+    open: [],
+    content: { kind: "settings", stored: FIRST_LAUNCH_SETTINGS, form: DARK },
+    dialog: null,
+  });
+});
+
+test("Discard drops the edits and opens the Plugin that was picked", () => {
+  const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(DARK);
+  lifecycle.open(id("attendance"));
+
+  lifecycle.answer("discard");
+  expect(lifecycle.snapshot()).toMatchObject({
+    open: ["attendance"],
+    foreground: "attendance",
+    content: { kind: "plugin" },
+    dialog: null,
+  });
+  lifecycle.showSettings();
+  expect(lifecycle.snapshot().content).toMatchObject({
+    form: FIRST_LAUNCH_SETTINGS,
+  });
+  expect(saved).toEqual([]);
+});
+
+test("picking a Plugin after edits that were undone or saved asks nothing", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.open(id("attendance"));
+  expect(lifecycle.snapshot()).toMatchObject({
+    open: ["attendance"],
+    dialog: null,
+  });
+
+  lifecycle.showSettings();
+  lifecycle.editSettings(DARK);
+  lifecycle.saveSettings();
+  lifecycle.open(id("class-timer"));
+  expect(lifecycle.snapshot()).toMatchObject({
+    foreground: "class-timer",
+    dialog: null,
+  });
+});
+
+test("picking a blocked Plugin with unsaved edits throws rather than asking", () => {
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    [installed("future", "Future", { hubApi: "^99.0.0" })],
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
+  lifecycle.showSettings();
+  lifecycle.editSettings(DARK);
+  expect(() => {
+    lifecycle.open(id("future"));
+  }).toThrow();
+  expect(lifecycle.snapshot().dialog).toBeNull();
+});
+
+test("quitting with unsaved edits asks first; Keep editing stays, Discard quits when nothing is Busy", () => {
+  const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(DARK);
+  let quits = 0;
+  const quit = () => {
+    quits += 1;
+  };
+
+  lifecycle.requestQuit(quit);
+  expect(lifecycle.snapshot().dialog).toEqual({ kind: "discard-changes" });
+  lifecycle.answer("keep-editing");
+  expect(quits).toBe(0);
+  expect(lifecycle.snapshot()).toMatchObject({
+    content: { kind: "settings", form: DARK },
+    dialog: null,
+  });
+
+  lifecycle.requestQuit(quit);
+  lifecycle.answer("discard");
+  expect(quits).toBe(1);
+  expect(lifecycle.snapshot()).toMatchObject({
+    content: { form: FIRST_LAUNCH_SETTINGS },
+    dialog: null,
+  });
+  expect(saved).toEqual([]);
+});
+
+test("Discard on quit goes on to the Busy dialog when a Plugin is Busy", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.open(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
+  lifecycle.showSettings();
+  lifecycle.editSettings(DARK);
+  let quits = 0;
+
+  lifecycle.requestQuit(() => {
+    quits += 1;
+  });
+  lifecycle.answer("discard");
+  expect(quits).toBe(0);
+  expect(lifecycle.snapshot().dialog).toEqual({
+    kind: "busy-quit",
+    plugins: [{ id: "class-timer", name: "Timer", reason: "Timing an exam" }],
+  });
+
+  lifecycle.answer("quit-anyway");
+  expect(quits).toBe(1);
+});
+
+test("quitting from settings with no unsaved edits asks nothing", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  let quits = 0;
+  lifecycle.requestQuit(() => {
+    quits += 1;
+  });
+  expect(quits).toBe(1);
+  expect(lifecycle.snapshot().dialog).toBeNull();
+});
+
+test("the Discard dialog's answers answer only it", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(DARK);
+  lifecycle.open(id("attendance"));
+  expect(() => {
+    lifecycle.answer("keep-open");
+  }).toThrow();
+
+  lifecycle.answer("keep-editing");
+  lifecycle.open(id("attendance"));
+  lifecycle.answer("discard");
+  lifecycle.setBusy(id("attendance"), busy("Taking the register"));
+  lifecycle.requestClose(id("attendance"));
+  expect(() => {
+    lifecycle.answer("discard");
+  }).toThrow();
+});
