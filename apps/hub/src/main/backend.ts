@@ -23,6 +23,7 @@ import type { InstalledPlugin } from "./installed-plugins";
 import {
   killTreeNow,
   processTree,
+  type ProcessTree,
   SPAWN_DETACHED,
   venvPython,
 } from "./platform";
@@ -133,6 +134,12 @@ export function startBackend(
   running.add(child);
   let shuttingDown = false;
   let isInitialized = false;
+  // The process tree, noted as `initialize` succeeds, while the Backend surely runs. Absent before.
+  let tree: { processes: ProcessTree; noted: Promise<void> } | undefined;
+  const noteTree = (pid: number) => {
+    const processes = processTree(pid);
+    return { processes, noted: processes.remember() };
+  };
 
   const initializeTimeout = setTimeout(() => {
     diagnostics.recordHubEvent({
@@ -230,6 +237,11 @@ export function startBackend(
           closePlugin({ cause: "failed-to-start", exit: { kind: "no-exit" } });
         } else {
           isInitialized = true;
+          // A process that answered was spawned, so it has an id.
+          if (child.pid === undefined) {
+            throw new Error("A Backend answered with no process id");
+          }
+          tree = noteTree(child.pid);
           initialized.resolve(undefined);
         }
         return;
@@ -297,28 +309,34 @@ export function startBackend(
       clearTimeout(initializeTimeout);
       if (toPreload.kind === "relayed") toPreload.port.close();
       const { pid } = child;
-      // ponytail: a Backend that already exited, or never spawned, is not killed: on Windows its
-      // leftover children cannot be found any more. Remember the tree at `initialize` too if
-      // Backends that crash leaving children turn up.
+      // ponytail: what a Backend that already exited left behind is not killed. Kill the tree noted
+      // at `initialize` here too if Backends that crash leaving children turn up.
       if (!running.has(child) || pid === undefined) {
         await exited;
         return;
       }
-      // Noted before `shutdown` is sent, while the Backend surely runs.
-      const tree = processTree(pid);
-      await tree.remember();
+      // The tree is first noted while the Backend surely runs, before `shutdown`: on Windows what it
+      // leaves behind is found only through that note. It was noted at `initialize`, so this waits
+      // only when the Plugin closes while initializing, or before that note is done.
+      const { processes, noted } = tree ?? noteTree(pid);
+      await noted;
       send(JSON.stringify({ jsonrpc: "2.0", method: "shutdown" }));
+      // Noted again alongside the grace period, not before `shutdown`, as the Windows query takes a
+      // while: through what was noted, it finds what the Backend launched since, even once the
+      // Backend has exited.
+      const renoted = processes.remember();
       // Until the Backend exits, or the grace period runs out.
-      await new Promise<void>((resolve) => {
+      const stopped = new Promise<void>((resolve) => {
         const graceTimer = setTimeout(resolve, SHUTDOWN_GRACE_MS);
         void exited.then(() => {
           clearTimeout(graceTimer);
           resolve();
         });
       });
+      await Promise.all([stopped, renoted]);
       // Whether the Backend exited by itself or the grace period ran out, nothing it launched
       // outlives it (spec #44 story 42).
-      await tree.kill();
+      await processes.kill();
       await exited;
     },
   };

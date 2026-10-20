@@ -149,7 +149,7 @@ if (maybeBackend === undefined) throw new Error('manifest declares a Backend but
 export const backend = maybeBackend;
 ```
 
-The Plugin UI cannot open windows (`window.open` is refused), add to the Hub Chrome or reach Electron. All dialogs are the Hub's.
+The Plugin UI cannot open windows (`window.open` is refused in the top frame; a subframe's call can at most open an `https` URL in the system browser), add to the Hub Chrome or reach Electron. All dialogs are the Hub's.
 
 ### 4.3 Styling
 
