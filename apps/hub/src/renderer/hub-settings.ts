@@ -1,14 +1,22 @@
 // Hub Settings, drawn in the content area while the open Plugins run hidden behind them: one
 // scrolling page of sections. No Theme yet (ADR 0006).
 
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, nothing } from "lit";
 import {
   COLOUR_SCHEMES,
+  DISPLAY_LANGUAGES,
+  type DisplayLanguage,
   type HubChromeApi,
   type HubSettings as Settings,
   type HubVersion,
 } from "../shared/hub-chrome-ipc";
 import type { Strings } from "./strings";
+
+// Each language in itself, whatever the Hub Chrome is drawn in, so staff find theirs (spec #71).
+const LANGUAGE_NAMES = {
+  "en-HK": "English",
+  "zh-HK": "繁體中文",
+} satisfies Record<DisplayLanguage, string>;
 
 export class HubSettings extends LitElement {
   static override styles = css`
@@ -56,6 +64,7 @@ export class HubSettings extends LitElement {
     strings: { attribute: false },
     hubVersion: { attribute: false },
     form: { attribute: false },
+    languageNoteShowing: { attribute: false },
     hub: { attribute: false },
   };
   // `declare`: a class field would shadow Lit's reactive accessor. The Hub Chrome sets them all
@@ -64,6 +73,7 @@ export class HubSettings extends LitElement {
   declare hubVersion: HubVersion;
   /** The unsaved form, as main holds it: every control draws from it, and an edit goes to main. */
   declare form: Settings;
+  declare languageNoteShowing: boolean;
   declare hub: HubChromeApi;
 
   override render() {
@@ -89,6 +99,46 @@ export class HubSettings extends LitElement {
           )}
         </fieldset>
       </section>
+      <section aria-labelledby="language">
+        <h3 id="language">${strings.language}</h3>
+        <fieldset>
+          <legend>${strings.displayLanguage}</legend>
+          <label>
+            <input
+              type="radio"
+              name="display-language"
+              .checked=${form.displayLanguage.kind === "system"}
+              @change=${() => {
+                this.hub.editSettings({
+                  ...form,
+                  displayLanguage: { kind: "system" },
+                });
+              }}
+            />
+            ${strings.systemLanguage}
+          </label>
+          ${DISPLAY_LANGUAGES.map(
+            (language) =>
+              html`<label lang=${language}>
+                <input
+                  type="radio"
+                  name="display-language"
+                  .checked=${
+                    form.displayLanguage.kind === "chosen" &&
+                    form.displayLanguage.language === language
+                  }
+                  @change=${() => {
+                    this.hub.editSettings({
+                      ...form,
+                      displayLanguage: { kind: "chosen", language },
+                    });
+                  }}
+                />
+                ${LANGUAGE_NAMES[language]}
+              </label>`,
+          )}
+        </fieldset>
+      </section>
       <div class="actions">
         <button
           data-variant="primary"
@@ -106,6 +156,11 @@ export class HubSettings extends LitElement {
           ${strings.cancel}
         </button>
       </div>
+      ${
+        this.languageNoteShowing
+          ? html`<p role="status">${strings.languageNote}</p>`
+          : nothing
+      }
       <section aria-labelledby="about">
         <h3 id="about">${strings.about}</h3>
         <dl>

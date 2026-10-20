@@ -108,7 +108,6 @@ export function openHubWindow(
   lifecycle: Lifecycle,
   hubDataDir: AbsolutePath,
 ): BaseWindow {
-  const { displayLanguage } = lifecycle.snapshot();
   // Native frame and title bar until the Theme brings the Hub Chrome's own (ADR 0006).
   // Size and position are not remembered.
   const window = new BaseWindow({
@@ -127,7 +126,6 @@ export function openHubWindow(
   const pluginViews = createPluginViews(
     window,
     diagnostics,
-    displayLanguage,
     hubDataDir,
     lifecycle,
   );
@@ -276,7 +274,7 @@ export function openHubWindow(
         withinSeconds: HUB_CHROME_CRASH_WINDOW_SECONDS,
       });
       gaveUp = true;
-      const text = STOPPED_UNEXPECTEDLY[displayLanguage];
+      const text = STOPPED_UNEXPECTEDLY[lifecycle.snapshot().displayLanguage];
       // The main process is healthy, so a normal quit, which logs "Hub closing".
       void dialog
         .showMessageBox(window, {

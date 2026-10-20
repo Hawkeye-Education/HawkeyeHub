@@ -133,25 +133,42 @@ function dialogOf(asking: Asking | null): HubChromeDialog | null {
 
 export function createLifecycle(
   hubVersion: HubVersion,
-  displayLanguage: DisplayLanguage,
+  /** The OS's Display Language (`displayLanguageFor`), which a `system` Display Language follows. */
+  systemLanguage: DisplayLanguage,
   installed: readonly InstalledPlugin[],
   storedAtStart: HubSettings,
   /** Writes saved Hub Settings and applies them; called only when they changed. */
   save: (settings: HubSettings) => void,
 ): Lifecycle {
-  const byName = new Intl.Collator(displayLanguage).compare;
-  const plugins = installed
-    .map((plugin) => ({
-      plugin,
-      listed: {
-        id: plugin.manifest.id,
-        name: displayTextIn(plugin.manifest.name, displayLanguage),
-        iconUrl: pluginIconUrl(plugin.manifest.id),
-        access: accessOf(plugin.manifest, HUB_API_VERSION),
-      },
-    }))
-    .sort((a, b) => byName(a.listed.name, b.listed.name));
-  const listed = plugins.map((plugin) => plugin.listed);
+  const languageOf = ({ displayLanguage }: HubSettings): DisplayLanguage => {
+    switch (displayLanguage.kind) {
+      case "system":
+        return systemLanguage;
+      case "chosen":
+        return displayLanguage.language;
+      default:
+        return displayLanguage satisfies never;
+    }
+  };
+  // The installed Plugins, named and sorted in `language`.
+  const listIn = (language: DisplayLanguage) => {
+    const byName = new Intl.Collator(language).compare;
+    return installed
+      .map((plugin) => ({
+        plugin,
+        listed: {
+          id: plugin.manifest.id,
+          name: displayTextIn(plugin.manifest.name, language),
+          iconUrl: pluginIconUrl(plugin.manifest.id),
+          access: accessOf(plugin.manifest, HUB_API_VERSION),
+        },
+      }))
+      .sort((a, b) => byName(a.listed.name, b.listed.name));
+  };
+  // Re-derived when a Save changes the Display Language; open Plugin UIs keep theirs (ADR 0007).
+  let displayLanguage = languageOf(storedAtStart);
+  let plugins = listIn(displayLanguage);
+  let listed = plugins.map((plugin) => plugin.listed);
   const installedPlugin = (id: PluginId) => {
     const plugin = plugins.find(({ listed }) => listed.id === id);
     if (plugin === undefined) {
@@ -171,6 +188,9 @@ export function createLifecycle(
   let stored = storedAtStart;
   // The unsaved form: what is stored until staff edit it.
   let form = storedAtStart;
+  // Says open Plugins switch language when reopened, from a Save that changed it while any was
+  // open, until staff leave settings.
+  let languageNoteShowing = false;
   const settingsShowing = (operation: string): void => {
     if (content !== "settings") {
       throw new Error(`${operation} needs Hub Settings showing`);
@@ -220,7 +240,7 @@ export function createLifecycle(
       foreground: open[0] ?? null,
       content:
         content === "settings"
-          ? { kind: "settings", stored, form }
+          ? { kind: "settings", stored, form, languageNoteShowing }
           : { kind: "plugin" },
       dialog: dialogOf(asking),
       hubVersion,
@@ -245,6 +265,7 @@ export function createLifecycle(
       }
       open = [id, ...open.filter((other) => other !== id)];
       content = "plugin";
+      languageNoteShowing = false;
       changed();
     },
     close,
@@ -304,6 +325,13 @@ export function createLifecycle(
       if (isDeepStrictEqual(form, stored)) return;
       save(form);
       stored = form;
+      const language = languageOf(stored);
+      if (language !== displayLanguage) {
+        displayLanguage = language;
+        plugins = listIn(language);
+        listed = plugins.map((plugin) => plugin.listed);
+        if (open.length > 0) languageNoteShowing = true;
+      }
       changed();
     },
     cancelSettings: () => {
