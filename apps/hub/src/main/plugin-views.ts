@@ -77,7 +77,6 @@ export function contentAreaOf(window: BaseWindow): Rectangle {
 export function createPluginViews(
   window: BaseWindow,
   diagnostics: Diagnostics,
-  displayLanguage: DisplayLanguage,
   hubDataDir: AbsolutePath,
   /**
    * Told when a Plugin's crash is recorded (`close`: its UI crashed or failed to load, or its
@@ -100,7 +99,11 @@ export function createPluginViews(
     };
   };
 
-  const open = (plugin: InstalledPlugin): OpenPlugin => {
+  // In the Display Language at the time it opens, which it keeps until reopened (ADR 0007).
+  const open = (
+    plugin: InstalledPlugin,
+    displayLanguage: DisplayLanguage,
+  ): OpenPlugin => {
     const { folder, manifest } = plugin;
     const { id } = manifest;
     const hasBackend = manifest.backend.kind === "python";
@@ -223,12 +226,13 @@ export function createPluginViews(
   };
 
   return {
-    follow({ open: openIds, foreground, content }) {
+    follow({ open: openIds, foreground, content, displayLanguage }) {
       for (const [id, plugin] of opened) {
         if (!openIds.includes(id)) close(id, plugin);
       }
       for (const id of openIds) {
-        const openPlugin = opened.get(id) ?? open(lifecycle.installed(id));
+        const openPlugin =
+          opened.get(id) ?? open(lifecycle.installed(id), displayLanguage);
         opened.set(id, openPlugin);
         // A hidden view stays alive; Chromium throttles it and the page sees visibilitychange.
         // Hub Settings hide the front one too, so the Hub Chrome beneath draws them.

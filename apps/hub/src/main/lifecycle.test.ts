@@ -144,6 +144,7 @@ test("showing settings keeps open Plugins open with the front one still in front
       kind: "settings",
       stored: FIRST_LAUNCH_SETTINGS,
       form: FIRST_LAUNCH_SETTINGS,
+      languageNoteShowing: false,
     },
   });
   expect(seen).toEqual(["settings"]);
@@ -219,6 +220,7 @@ test("settings show what is stored", () => {
     kind: "settings",
     stored: DARK,
     form: DARK,
+    languageNoteShowing: false,
   });
 });
 
@@ -234,6 +236,7 @@ test("editing the form changes only the form, and saves nothing", () => {
     kind: "settings",
     stored: FIRST_LAUNCH_SETTINGS,
     form: DARK,
+    languageNoteShowing: false,
   };
   expect(lifecycle.snapshot().content).toEqual(edited);
   expect(seen).toEqual([edited]);
@@ -250,6 +253,7 @@ test("Save saves the form once and makes it what is stored", () => {
     kind: "settings",
     stored: DARK,
     form: DARK,
+    languageNoteShowing: false,
   });
   expect(lifecycle.storedSettings()).toEqual(DARK);
 
@@ -278,6 +282,7 @@ test("Cancel puts the form back to what is stored and stays in settings", () => 
     kind: "settings",
     stored: DARK,
     form: DARK,
+    languageNoteShowing: false,
   });
   expect(saved).toEqual([]);
 });
@@ -860,4 +865,96 @@ test("installed answers the installed Plugin with an id, and throws for one that
   );
   expect(lifecycle.installed(id("attendance"))).toBe(plugins[1]);
   expect(() => lifecycle.installed(id("not-installed"))).toThrow();
+});
+
+const IN_CHINESE: HubSettings = {
+  ...FIRST_LAUNCH_SETTINGS,
+  displayLanguage: { kind: "chosen", language: "zh-HK" },
+};
+
+test("a chosen Display Language overrides the OS one, and system follows the OS", () => {
+  const chosen = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    IN_CHINESE,
+    ignoreSave,
+    ignoreUnknownTheme,
+  ).snapshot();
+  expect(chosen.displayLanguage).toBe("zh-HK");
+  expect(chosen.plugins.map(({ name }) => name)).toEqual([
+    "計時器",
+    "點名",
+    "Seating Plan",
+  ]);
+  expect(
+    createLifecycle(
+      HUB_VERSION,
+      "zh-HK",
+      plugins,
+      FIRST_LAUNCH_SETTINGS,
+      ignoreSave,
+      ignoreUnknownTheme,
+    ).snapshot().displayLanguage,
+  ).toBe("zh-HK");
+});
+
+test("saving a Display Language switches the Hub Chrome and re-sorts Plugin names, with no note when no Plugin is open", () => {
+  const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(IN_CHINESE);
+  expect(lifecycle.snapshot().displayLanguage).toBe("en-HK");
+
+  lifecycle.saveSettings();
+  expect(saved).toEqual([IN_CHINESE]);
+  expect(lifecycle.snapshot()).toMatchObject({
+    displayLanguage: "zh-HK",
+    content: { kind: "settings", languageNoteShowing: false },
+  });
+  expect(lifecycle.snapshot().plugins.map(({ name }) => name)).toEqual([
+    "計時器",
+    "點名",
+    "Seating Plan",
+  ]);
+});
+
+test("saving a Display Language with a Plugin open shows the note, until staff leave settings", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.open(id("attendance"));
+  lifecycle.showSettings();
+  lifecycle.editSettings(IN_CHINESE);
+  lifecycle.saveSettings();
+  expect(lifecycle.snapshot().content).toMatchObject({
+    languageNoteShowing: true,
+  });
+
+  lifecycle.open(id("attendance"));
+  lifecycle.showSettings();
+  expect(lifecycle.snapshot().content).toMatchObject({
+    languageNoteShowing: false,
+  });
+});
+
+test("saving anything but the Display Language with a Plugin open shows no note", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.open(id("attendance"));
+  lifecycle.showSettings();
+  lifecycle.editSettings(DARK);
+  lifecycle.saveSettings();
+  expect(lifecycle.snapshot().content).toMatchObject({
+    languageNoteShowing: false,
+  });
+});
+
+test("choosing the language the OS already gives changes nothing a Plugin sees, so shows no note", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.open(id("attendance"));
+  lifecycle.showSettings();
+  lifecycle.editSettings({
+    ...FIRST_LAUNCH_SETTINGS,
+    displayLanguage: { kind: "chosen", language: "en-HK" },
+  });
+  lifecycle.saveSettings();
+  expect(lifecycle.snapshot().content).toMatchObject({
+    languageNoteShowing: false,
+  });
 });

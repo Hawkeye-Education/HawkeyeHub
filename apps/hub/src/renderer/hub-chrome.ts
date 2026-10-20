@@ -132,6 +132,7 @@ export class HubChrome extends LitElement {
           .theme=${this.snapshot.theme}
           .themes=${this.snapshot.themes}
           .form=${content.form}
+          .languageNoteShowing=${content.languageNoteShowing}
           .hub=${window.hubChrome}
         ></hub-settings>`;
       case "plugin":

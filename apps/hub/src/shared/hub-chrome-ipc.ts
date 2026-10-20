@@ -61,7 +61,16 @@ export interface HubSettings {
  */
 export type HubChromeContent =
   | { kind: "plugin" }
-  | { kind: "settings"; stored: HubSettings; form: HubSettings };
+  | {
+      kind: "settings";
+      stored: HubSettings;
+      form: HubSettings;
+      /**
+       * A Save changed the Display Language while a Plugin was open: open Plugin UIs keep the one
+       * they were opened with until reopened (ADR 0007). Cleared on leaving settings.
+       */
+      languageNoteShowing: boolean;
+    };
 
 export interface HubChromeSnapshot {
   displayLanguage: DisplayLanguage;
