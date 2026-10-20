@@ -5,7 +5,8 @@ import {
 } from "@hawkeye-hub/plugin-format";
 import { expect, test } from "vitest";
 import { parseAbsolutePath, parseHubApiVersion, parseHubVersion } from "./ids";
-import type { BusyReason } from "../shared/hub-chrome-ipc";
+import type { BusyReason, HubSettings } from "../shared/hub-chrome-ipc";
+import { FIRST_LAUNCH_SETTINGS } from "./hub-settings";
 import {
   accessOf,
   createLifecycle,
@@ -43,6 +44,9 @@ const busy = (reason: string): Busy => ({
 });
 const NOT_BUSY: Busy = { kind: "not-busy" };
 const HUB_VERSION = parseHubVersion("1.4.2");
+const ignoreSave = (): void => {
+  // Most tests never save.
+};
 
 const plugins = [
   installed("class-timer", { "en-HK": "Timer", "zh-HK": "計時器" }),
@@ -51,7 +55,15 @@ const plugins = [
 ];
 
 test("the snapshot lists every installed Plugin by its en-HK name and icon URL, sorted", () => {
-  expect(createLifecycle(HUB_VERSION, "en-HK", plugins).snapshot()).toEqual({
+  expect(
+    createLifecycle(
+      HUB_VERSION,
+      "en-HK",
+      plugins,
+      FIRST_LAUNCH_SETTINGS,
+      ignoreSave,
+    ).snapshot(),
+  ).toEqual({
     displayLanguage: "en-HK",
     plugins: [
       {
@@ -84,7 +96,13 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
 
 test("in zh-HK the snapshot uses zh-HK names, falls back to English, and sorts by them", () => {
   expect(
-    createLifecycle(HUB_VERSION, "zh-HK", plugins)
+    createLifecycle(
+      HUB_VERSION,
+      "zh-HK",
+      plugins,
+      FIRST_LAUNCH_SETTINGS,
+      ignoreSave,
+    )
       .snapshot()
       .plugins.map(({ name }) => name),
     // ICU's zh-HK collation: Han by stroke count (計 9, 點 17), then Latin.
@@ -92,7 +110,13 @@ test("in zh-HK the snapshot uses zh-HK names, falls back to English, and sorts b
 });
 
 test("showing settings keeps open Plugins open with the front one still in front, and lists no new Plugin", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
   const before = lifecycle.snapshot();
@@ -104,13 +128,117 @@ test("showing settings keeps open Plugins open with the front one still in front
   lifecycle.showSettings();
   expect(lifecycle.snapshot()).toEqual({
     ...before,
-    content: { kind: "settings" },
+    content: {
+      kind: "settings",
+      stored: FIRST_LAUNCH_SETTINGS,
+      form: FIRST_LAUNCH_SETTINGS,
+    },
   });
   expect(seen).toEqual(["settings"]);
 });
 
+const DARK: HubSettings = { ...FIRST_LAUNCH_SETTINGS, colourScheme: "dark" };
+const LIGHT: HubSettings = { ...FIRST_LAUNCH_SETTINGS, colourScheme: "light" };
+
+/** A Lifecycle showing settings, starting from `stored`, and the settings each Save saved. */
+function inSettings(stored: HubSettings) {
+  const saved: HubSettings[] = [];
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    stored,
+    (settings) => {
+      saved.push(settings);
+    },
+  );
+  lifecycle.showSettings();
+  return { lifecycle, saved };
+}
+
+test("settings show what is stored", () => {
+  const { lifecycle } = inSettings(DARK);
+  expect(lifecycle.snapshot().content).toEqual({
+    kind: "settings",
+    stored: DARK,
+    form: DARK,
+  });
+});
+
+test("editing the form changes only the form, and saves nothing", () => {
+  const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
+  const seen: unknown[] = [];
+  lifecycle.onChange(() => {
+    seen.push(lifecycle.snapshot().content);
+  });
+
+  lifecycle.editSettings(DARK);
+  const edited = {
+    kind: "settings",
+    stored: FIRST_LAUNCH_SETTINGS,
+    form: DARK,
+  };
+  expect(lifecycle.snapshot().content).toEqual(edited);
+  expect(seen).toEqual([edited]);
+  expect(saved).toEqual([]);
+});
+
+test("Save saves the form once and makes it what is stored", () => {
+  const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(DARK);
+
+  lifecycle.saveSettings();
+  expect(saved).toEqual([DARK]);
+  expect(lifecycle.snapshot().content).toEqual({
+    kind: "settings",
+    stored: DARK,
+    form: DARK,
+  });
+  expect(lifecycle.storedSettings()).toEqual(DARK);
+
+  lifecycle.saveSettings();
+  expect(saved).toEqual([DARK]);
+});
+
+test("Save does nothing when the form is what is stored, even after edits that undo each other", () => {
+  const { lifecycle, saved } = inSettings(DARK);
+  const before = lifecycle.snapshot();
+  lifecycle.saveSettings();
+  lifecycle.editSettings(LIGHT);
+  lifecycle.editSettings({ ...DARK });
+  lifecycle.saveSettings();
+
+  expect(saved).toEqual([]);
+  expect(lifecycle.snapshot()).toEqual(before);
+});
+
+test("Cancel puts the form back to what is stored and stays in settings", () => {
+  const { lifecycle, saved } = inSettings(DARK);
+  lifecycle.editSettings(LIGHT);
+
+  lifecycle.cancelSettings();
+  expect(lifecycle.snapshot().content).toEqual({
+    kind: "settings",
+    stored: DARK,
+    form: DARK,
+  });
+  expect(saved).toEqual([]);
+});
+
+test("a fresh snapshot, as a reloaded Hub Chrome fetches, still holds the unsaved form", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(LIGHT);
+  expect(lifecycle.snapshot().content).toMatchObject({ form: LIGHT });
+});
+
 test("picking a Plugin while settings show leaves them and brings that Plugin forward", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
   lifecycle.showSettings();
@@ -124,7 +252,13 @@ test("picking a Plugin while settings show leaves them and brings that Plugin fo
 });
 
 test("settings stay showing while the Plugins behind them close", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("attendance"));
   lifecycle.showSettings();
 
@@ -135,13 +269,38 @@ test("settings stay showing while the Plugins behind them close", () => {
   });
 });
 
+test("editing, saving or cancelling while settings are not showing throws", () => {
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
+  expect(() => {
+    lifecycle.editSettings(DARK);
+  }).toThrow();
+  expect(() => {
+    lifecycle.saveSettings();
+  }).toThrow();
+  expect(() => {
+    lifecycle.cancelSettings();
+  }).toThrow();
+});
+
 function openAndForeground(lifecycle: Lifecycle) {
   const { open, foreground } = lifecycle.snapshot();
   return { open, foreground };
 }
 
 test("opening Plugins brings each forward, and opening an open one brings it forward without a second copy", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   expect(openAndForeground(lifecycle)).toEqual({ open: [], foreground: null });
 
   lifecycle.open(id("class-timer"));
@@ -159,7 +318,13 @@ test("opening Plugins brings each forward, and opening an open one brings it for
 });
 
 test("closing the foreground Plugin brings forward the most recently foregrounded one, then nothing", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("seating-plan"));
   lifecycle.open(id("attendance"));
@@ -174,7 +339,13 @@ test("closing the foreground Plugin brings forward the most recently foregrounde
 });
 
 test("closing a background Plugin leaves the foreground one in front", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
 
@@ -186,7 +357,13 @@ test("closing a background Plugin leaves the foreground one in front", () => {
 });
 
 test("every change is announced", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   const seen: (string | null)[] = [];
   lifecycle.onChange(() => {
     seen.push(lifecycle.snapshot().foreground);
@@ -200,7 +377,13 @@ test("every change is announced", () => {
 });
 
 test("a closed Plugin is closing until its close finishes, cannot be reopened until then, and then reopens", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
 
@@ -224,7 +407,13 @@ test("a closed Plugin is closing until its close finishes, cannot be reopened un
 });
 
 test("finishing the close of a Plugin that is not closing throws", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("attendance"));
   expect(() => {
     lifecycle.closed(id("attendance"));
@@ -232,7 +421,13 @@ test("finishing the close of a Plugin that is not closing throws", () => {
 });
 
 test("a staff close of a Plugin that is not Busy closes it without asking", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("attendance"));
 
   lifecycle.requestClose(id("attendance"));
@@ -244,7 +439,13 @@ test("a staff close of a Plugin that is not Busy closes it without asking", () =
 });
 
 test("a staff close of a Busy Plugin asks with its latest reason; Keep open leaves it open", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
@@ -267,7 +468,13 @@ test("a staff close of a Busy Plugin asks with its latest reason; Keep open leav
 });
 
 test("Close anyway closes the Busy Plugin, and closing clears its Busy", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
   lifecycle.requestClose(id("class-timer"));
@@ -286,7 +493,13 @@ test("Close anyway closes the Busy Plugin, and closing clears its Busy", () => {
 });
 
 test("a Plugin that clears Busy closes without asking, but a dialog already up stays", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
@@ -307,7 +520,13 @@ test("a Plugin that clears Busy closes without asking, but a dialog already up s
 });
 
 test("a Busy Plugin that closes abnormally while its dialog is up takes the dialog with it", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
   lifecycle.requestClose(id("class-timer"));
@@ -320,7 +539,13 @@ test("a Busy Plugin that closes abnormally while its dialog is up takes the dial
 });
 
 test("a Busy Plugin that closes abnormally while the quit dialog is up leaves its list, and the last one takes the dialog with it", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
@@ -341,7 +566,13 @@ test("a Busy Plugin that closes abnormally while the quit dialog is up leaves it
 });
 
 test("a Busy reason that changes while its dialog is up leaves the dialog as it was asked", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
   lifecycle.requestQuit(() => undefined);
@@ -353,7 +584,13 @@ test("a Busy reason that changes while its dialog is up leaves the dialog as it 
 });
 
 test("Busy from a Plugin that is not open is ignored: it arrived as the Plugin closed", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.close(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
@@ -365,7 +602,13 @@ test("Busy from a Plugin that is not open is ignored: it arrived as the Plugin c
 });
 
 test("a quit with no Busy Plugin goes ahead without asking", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   let quits = 0;
 
@@ -377,7 +620,13 @@ test("a quit with no Busy Plugin goes ahead without asking", () => {
 });
 
 test("a quit with Busy Plugins asks once, listing each by name; Keep open stays, Quit anyway quits", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
   lifecycle.open(id("seating-plan"));
@@ -410,7 +659,13 @@ test("a quit with Busy Plugins asks once, listing each by name; Keep open stays,
 });
 
 test("a quit while a Busy close is asking asks about the quit instead", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
   lifecycle.requestClose(id("class-timer"));
@@ -420,7 +675,13 @@ test("a quit while a Busy close is asking asks about the quit instead", () => {
 });
 
 test("an answer that is not one of the pending dialog's buttons, or with no dialog, throws", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   expect(() => {
     lifecycle.answer("keep-open");
   }).toThrow();
@@ -433,7 +694,13 @@ test("an answer that is not one of the pending dialog's buttons, or with no dial
 });
 
 test("opening a Plugin that is not installed, or closing one that is not open, throws", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   expect(() => {
     lifecycle.open(id("not-installed"));
   }).toThrow();
@@ -472,12 +739,18 @@ test.each([
 });
 
 test("the snapshot marks blocked Plugins, and opening one throws", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", [
-    installed("sign-in", "Sign In", {
-      identity: { kind: "required", roles: [] },
-    }),
-    installed("future", "Future", { hubApi: "^99.0.0" }),
-  ]);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    [
+      installed("sign-in", "Sign In", {
+        identity: { kind: "required", roles: [] },
+      }),
+      installed("future", "Future", { hubApi: "^99.0.0" }),
+    ],
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   expect(
     lifecycle.snapshot().plugins.map(({ id, access }) => ({ id, access })),
   ).toEqual([
@@ -497,7 +770,13 @@ test("the snapshot marks blocked Plugins, and opening one throws", () => {
 });
 
 test("installed answers the installed Plugin with an id, and throws for one that is not installed", () => {
-  const lifecycle = createLifecycle(HUB_VERSION, "en-HK", plugins);
+  const lifecycle = createLifecycle(
+    HUB_VERSION,
+    "en-HK",
+    plugins,
+    FIRST_LAUNCH_SETTINGS,
+    ignoreSave,
+  );
   expect(lifecycle.installed(id("attendance"))).toBe(plugins[1]);
   expect(() => lifecycle.installed(id("not-installed"))).toThrow();
 });

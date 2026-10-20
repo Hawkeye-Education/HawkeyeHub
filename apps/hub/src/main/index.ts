@@ -2,10 +2,11 @@
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { app, Menu, protocol, session } from "electron";
+import { app, Menu, nativeTheme, protocol, session } from "electron";
 import { killBackendsNow } from "./backend";
 import { openDiagnostics } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
+import { loadHubSettings, saveHubSettings } from "./hub-settings";
 import { openHubWindow } from "./hub-window";
 import { parseAbsolutePath, parseHubVersion } from "./ids";
 import { loadInstalledPlugins } from "./installed-plugins";
@@ -115,11 +116,20 @@ function runHub(): void {
       PLUGIN_ICON_SCHEME,
       servePluginIcons(installed.loaded),
     );
+    // The Colour Scheme drives `prefers-color-scheme` in every view (ADR 0006), so it is applied
+    // before the window opens, and again on every Save.
+    const settings = loadHubSettings(hubDataDir, diagnostics);
+    nativeTheme.themeSource = settings.colourScheme;
     const lifecycle = createLifecycle(
       // package.json's `version`: without one Electron would answer its own version.
       parseHubVersion(app.getVersion()),
       displayLanguageFor(app.getPreferredSystemLanguages()),
       installed.loaded,
+      settings,
+      (saved) => {
+        saveHubSettings(hubDataDir, saved);
+        nativeTheme.themeSource = saved.colourScheme;
+      },
     );
     return openHubWindow(diagnostics, now, lifecycle, hubDataDir);
   });

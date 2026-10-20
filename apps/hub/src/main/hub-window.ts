@@ -14,11 +14,14 @@ import {
 } from "electron";
 import {
   ANSWER_DIALOG,
+  CANCEL_SETTINGS,
   CLOSE_PLUGIN,
   DIALOG_ANSWERS,
+  EDIT_SETTINGS,
   EXPORT_DIAGNOSTICS,
   GET_SNAPSHOT,
   OPEN_PLUGIN,
+  SAVE_SETTINGS,
   SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
   type DisplayLanguage,
@@ -27,6 +30,7 @@ import {
 import { z } from "zod";
 import { bundleFileName, type Diagnostics } from "./diagnostics";
 import { errorCode } from "./error-code";
+import { HubSettingsSchema } from "./hub-settings";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
 import { pluginRefOf } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
@@ -180,6 +184,18 @@ export function openHubWindow(
     fromHubChrome(SHOW_SETTINGS, event.sender);
     lifecycle.showSettings();
   });
+  ipcMain.handle(EDIT_SETTINGS, (event, form: unknown) => {
+    fromHubChrome(EDIT_SETTINGS, event.sender);
+    lifecycle.editSettings(HubSettingsSchema.parse(form));
+  });
+  ipcMain.handle(SAVE_SETTINGS, (event) => {
+    fromHubChrome(SAVE_SETTINGS, event.sender);
+    lifecycle.saveSettings();
+  });
+  ipcMain.handle(CANCEL_SETTINGS, (event) => {
+    fromHubChrome(CANCEL_SETTINGS, event.sender);
+    lifecycle.cancelSettings();
+  });
   ipcMain.handle(EXPORT_DIAGNOSTICS, async (event) => {
     fromHubChrome(EXPORT_DIAGNOSTICS, event.sender);
     const { canceled, filePath } = await dialog.showSaveDialog(window, {
@@ -195,9 +211,9 @@ export function openHubWindow(
         arch: process.arch,
       },
       displayLanguage: snapshot.displayLanguage,
-      // ponytail: the first-launch Hub Settings, until the Theme and Colour Scheme are stored (#71).
+      // ponytail: Hawkeye, the only Theme, until Theme resolution lands (#76).
       theme: "hawkeye",
-      colourScheme: "system",
+      colourScheme: lifecycle.storedSettings().colourScheme,
       plugins: snapshot.plugins.map(({ id }) =>
         pluginRefOf(lifecycle.installed(id)),
       ),

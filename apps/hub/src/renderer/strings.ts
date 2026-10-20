@@ -1,6 +1,10 @@
 // Everything the Hub Chrome says, in each Display Language (ADR 0007).
 
-import type { BlockedReason, DisplayLanguage } from "../shared/hub-chrome-ipc";
+import type {
+  BlockedReason,
+  ColourScheme,
+  DisplayLanguage,
+} from "../shared/hub-chrome-ipc";
 
 export const STRINGS = {
   "en-HK": {
@@ -15,6 +19,15 @@ export const STRINGS = {
     closeAnyway: "Close anyway",
     quitAnyway: "Quit anyway",
     settings: "Settings",
+    appearance: "Appearance",
+    colourScheme: "Colour Scheme",
+    colourSchemes: {
+      system: "System",
+      light: "Light",
+      dark: "Dark",
+    } satisfies Record<ColourScheme, string>,
+    save: "Save",
+    cancel: "Cancel",
     about: "About",
     hubVersion: "Version",
     exportDiagnostics: "Export diagnostics",
@@ -35,6 +48,15 @@ export const STRINGS = {
     closeAnyway: "仍然關閉",
     quitAnyway: "仍然結束",
     settings: "設定",
+    appearance: "外觀",
+    colourScheme: "色彩配置",
+    colourSchemes: {
+      system: "跟隨系統",
+      light: "淺色",
+      dark: "深色",
+    } satisfies Record<ColourScheme, string>,
+    save: "儲存",
+    cancel: "取消",
     about: "關於",
     hubVersion: "版本",
     exportDiagnostics: "匯出診斷資料",

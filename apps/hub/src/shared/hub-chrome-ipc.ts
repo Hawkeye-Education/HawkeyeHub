@@ -6,7 +6,8 @@
 import type { PluginId } from "@hawkeye-hub/plugin-format";
 
 /** The languages the Hub draws in (ADR 0007): adding one is a Hub release. */
-export type DisplayLanguage = "en-HK" | "zh-HK";
+export const DISPLAY_LANGUAGES = ["en-HK", "zh-HK"] as const;
+export type DisplayLanguage = (typeof DISPLAY_LANGUAGES)[number];
 
 /** The Plugin Switcher's width: the Hub Chrome draws it, main lays Plugin UIs out beside it. */
 export const SWITCHER_WIDTH_PX = 240;
@@ -34,11 +35,33 @@ declare const hubVersion: unique symbol;
 /** The Hub's own version (semver), as main parses it. */
 export type HubVersion = string & { readonly [hubVersion]: true };
 
+declare const themeName: unique symbol;
+/** A Theme's name, such as `hawkeye`: kebab-case, and not necessarily one this Hub has. */
+export type ThemeName = string & { readonly [themeName]: true };
+
+/** The Colour Schemes staff choose from (ADR 0006): `system` follows the OS. */
+export const COLOUR_SCHEMES = ["system", "light", "dark"] as const;
+export type ColourScheme = (typeof COLOUR_SCHEMES)[number];
+
+/**
+ * Hub Settings (spec #71). Every field always holds a value: following the company or the OS is a
+ * value of its own, never an absent field.
+ */
+export interface HubSettings {
+  theme: { kind: "company" } | { kind: "chosen"; name: ThemeName };
+  colourScheme: ColourScheme;
+  displayLanguage:
+    { kind: "system" } | { kind: "chosen"; language: DisplayLanguage };
+}
+
 /**
  * What the content area shows: the front Plugin's UI (or the empty state when none is open), or
- * Hub Settings, with the open Plugins still running hidden behind them.
+ * Hub Settings, with the open Plugins still running hidden behind them. Settings carry the stored
+ * Hub Settings and the unsaved form, both held in main, so a reloaded Hub Chrome redraws the form.
  */
-export type HubChromeContent = { kind: "plugin" } | { kind: "settings" };
+export type HubChromeContent =
+  | { kind: "plugin" }
+  | { kind: "settings"; stored: HubSettings; form: HubSettings };
 
 export interface HubChromeSnapshot {
   displayLanguage: DisplayLanguage;
@@ -98,6 +121,12 @@ export interface HubChromeApi {
   answer(answer: DialogAnswer): void;
   /** Shows Hub Settings in the content area. */
   showSettings(): void;
+  /** Replaces the unsaved Hub Settings form. */
+  editSettings(form: HubSettings): void;
+  /** Saves the form and applies it, unless it is what is stored. */
+  saveSettings(): void;
+  /** Puts the form back to what is stored. */
+  cancelSettings(): void;
   /** Exports a Diagnostics Bundle to where staff choose in a native save dialog. */
   exportDiagnostics(): void;
 }
@@ -114,5 +143,11 @@ export const CLOSE_PLUGIN = "hub-chrome:close-plugin";
 export const ANSWER_DIALOG = "hub-chrome:answer-dialog";
 /** Hub Chrome → main, `invoke`: shows Hub Settings. */
 export const SHOW_SETTINGS = "hub-chrome:show-settings";
+/** Hub Chrome → main, `invoke`: the `HubSettings` that replace the unsaved form. */
+export const EDIT_SETTINGS = "hub-chrome:edit-settings";
+/** Hub Chrome → main, `invoke`: saves the form. */
+export const SAVE_SETTINGS = "hub-chrome:save-settings";
+/** Hub Chrome → main, `invoke`: puts the form back to what is stored. */
+export const CANCEL_SETTINGS = "hub-chrome:cancel-settings";
 /** Hub Chrome → main, `invoke`: exports a Diagnostics Bundle through a native save dialog. */
 export const EXPORT_DIAGNOSTICS = "hub-chrome:export-diagnostics";

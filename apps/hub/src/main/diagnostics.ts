@@ -48,6 +48,15 @@ const LEFT_OUT_REASONS = {
   "manifest-disagrees": "Manifest disagrees with the record",
 } satisfies Record<PluginLeftOutReason, string>;
 
+/** What was wrong with a Hub Settings file the Hub overwrote with the first-launch values. */
+export type HubSettingsProblem = "unreadable" | "not-json" | "invalid";
+
+const HUB_SETTINGS_PROBLEMS = {
+  unreadable: "unreadable",
+  "not-json": "not JSON",
+  invalid: "invalid",
+} satisfies Record<HubSettingsProblem, string>;
+
 export type BackendExit =
   { kind: "code"; code: number } | { kind: "signal"; signal: NodeJS.Signals };
 
@@ -174,6 +183,9 @@ export type HubEvent =
       error: unknown;
     }
   | { kind: "hub-chrome-renderer-gone"; exit: RenderProcessExit }
+  // The Hub Settings file was damaged and overwritten with the first-launch values. Never its
+  // contents, only what was wrong with it.
+  | { kind: "hub-settings-replaced"; problem: HubSettingsProblem }
   // The Hub stopped reloading a Hub Chrome that crashed this many times this quickly.
   | {
       kind: "hub-chrome-kept-crashing";
@@ -552,6 +564,12 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
       return {
         level: "error",
         message: `Hub Chrome renderer gone: ${describeRenderProcessExit(event.exit)}`,
+        subject: NO_PLUGIN,
+      };
+    case "hub-settings-replaced":
+      return {
+        level: "warn",
+        message: `Hub Settings replaced with first-launch values: ${HUB_SETTINGS_PROBLEMS[event.problem]}`,
         subject: NO_PLUGIN,
       };
     case "hub-chrome-kept-crashing":
