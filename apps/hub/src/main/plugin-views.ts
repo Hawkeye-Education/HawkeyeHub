@@ -47,6 +47,13 @@ const BusyMessage = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("not-busy") }),
 ]);
 
+/**
+ * How long a failed Plugin UI load waits before it is recorded, so a renderer crash that caused it
+ * is recorded instead. Probed on Electron 44 (Windows): render-process-gone fired about 12 ms
+ * after the load rejected, for a renderer crashed as its page committed.
+ */
+const LOAD_FAILURE_SETTLE_MS = 500;
+
 export interface PluginViews {
   /** Creates, shows, hides and destroys views until they match `snapshot`. */
   follow(snapshot: HubChromeSnapshot): void;
@@ -160,14 +167,17 @@ export function createPluginViews(
     if (backend !== null) {
       // The preload asks for its port as it starts. It gets it once `initialize` has succeeded,
       // and queues the page's requests until then.
-      view.webContents.ipc.once(BACKEND_PORT, () => {
+      // Held, not read from the view later: once the page is destroyed, the view's `webContents`
+      // reads undefined (a smoke test crashes a Plugin UI as it loads, before `initialize` answers).
+      const { webContents } = view;
+      webContents.ipc.once(BACKEND_PORT, () => {
         void backend.initialized.then(() => {
           // ponytail: one port per open; a page that reloads itself loses its Backend. Hand a
           // fresh port per ask if a Plugin ever needs reload.
-          if (view.webContents.isDestroyed()) return;
+          if (webContents.isDestroyed()) return;
           const { port1, port2 } = new MessageChannelMain();
           backend.relay(port1);
-          view.webContents.postMessage(BACKEND_PORT, null, [port2]);
+          webContents.postMessage(BACKEND_PORT, null, [port2]);
         });
       });
     }
@@ -184,13 +194,17 @@ export function createPluginViews(
       .loadURL(`${PLUGIN_SCHEME}://${id}/index.html`)
       .catch((error: unknown) => {
         // The first load's main frame failed. A close cuts the load short: that is not a failure.
-        // Navigation is locked to this one page, so no later load can fail this way.
+        // Navigation is locked to this one page, so no later load can fail this way. A renderer
+        // that goes away mid-load rejects the load (ERR_FAILED) before render-process-gone fires,
+        // so the failure waits: if the crash is recorded meanwhile, `crashed` ignores it.
         const code = netErrorCodeOf(error);
         if (code === "ERR_ABORTED") return;
-        crashed({
-          cause: "failed-to-start",
-          exit: { kind: "plugin-ui-load-failed", error: code },
-        });
+        setTimeout(() => {
+          crashed({
+            cause: "failed-to-start",
+            exit: { kind: "plugin-ui-load-failed", error: code },
+          });
+        }, LOAD_FAILURE_SETTLE_MS);
       });
     return { view, closed };
   };
