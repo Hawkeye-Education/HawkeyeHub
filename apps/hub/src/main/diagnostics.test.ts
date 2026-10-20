@@ -20,6 +20,7 @@ import {
   RpcErrorReason,
   type AbsolutePath,
 } from "./ids";
+import type { ThemeName } from "../shared/hub-chrome-ipc";
 
 const NOW = new Date("2026-03-04T05:06:07.890Z");
 const plugin = {
@@ -213,6 +214,11 @@ const cases: [string, HubEvent, unknown][] = [
     "Hub Chrome kept crashing",
     { kind: "hub-chrome-kept-crashing", crashes: 3, withinSeconds: 60 },
     hubLine("error", "Hub Chrome kept crashing: 3 times in 60 s, giving up"),
+  ],
+  [
+    "Theme unknown",
+    { kind: "theme-unknown", name: "aurora" as ThemeName },
+    hubLine("warn", "Theme aurora unknown to this Hub, using hawkeye"),
   ],
 ];
 
@@ -649,7 +655,7 @@ const system: SystemDescription = {
   hubVersion: parseHubVersion("0.3.0"),
   os: { name: "Windows", version: "10.0.19045", arch: "x64" },
   displayLanguage: "zh-HK",
-  theme: "hawkeye",
+  theme: "hawkeye" as ThemeName,
   colourScheme: "system",
   plugins: [plugin, otherPlugin],
   pythonVersions: [parsePythonVersion("3.12.7")],

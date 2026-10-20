@@ -20,6 +20,7 @@ export const STRINGS = {
     quitAnyway: "Quit anyway",
     settings: "Settings",
     appearance: "Appearance",
+    theme: "Theme",
     colourScheme: "Colour Scheme",
     colourSchemes: {
       system: "System",
@@ -49,6 +50,7 @@ export const STRINGS = {
     quitAnyway: "仍然結束",
     settings: "設定",
     appearance: "外觀",
+    theme: "主題",
     colourScheme: "色彩配置",
     colourSchemes: {
       system: "跟隨系統",
