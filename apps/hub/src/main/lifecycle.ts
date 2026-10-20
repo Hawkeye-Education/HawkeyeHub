@@ -8,6 +8,7 @@ import type {
   Manifest,
   PluginId,
 } from "@hawkeye-hub/plugin-format";
+import { isDeepStrictEqual } from "node:util";
 import semver from "semver";
 import type {
   BusyPlugin,
@@ -17,6 +18,7 @@ import type {
   HubChromeContent,
   HubChromeDialog,
   HubChromeSnapshot,
+  HubSettings,
   HubVersion,
   PluginAccess,
 } from "../shared/hub-chrome-ipc";
@@ -68,6 +70,17 @@ export interface Lifecycle {
   answer(answer: DialogAnswer): void;
   /** Shows Hub Settings in the content area, until `open` brings a Plugin forward. */
   showSettings(): void;
+  /** Replaces the unsaved form. Throws if settings are not showing. */
+  editSettings(form: HubSettings): void;
+  /**
+   * Saves the form through the save callback and makes it what is stored. Does nothing when the
+   * form is what is stored. Throws if settings are not showing.
+   */
+  saveSettings(): void;
+  /** Puts the form back to what is stored. Throws if settings are not showing. */
+  cancelSettings(): void;
+  /** The Hub Settings as last saved, whatever the form holds. */
+  storedSettings(): HubSettings;
 }
 
 /** Display text in `language`, falling back to English (ADR 0007). */
@@ -122,6 +135,9 @@ export function createLifecycle(
   hubVersion: HubVersion,
   displayLanguage: DisplayLanguage,
   installed: readonly InstalledPlugin[],
+  storedAtStart: HubSettings,
+  /** Writes saved Hub Settings and applies them; called only when they changed. */
+  save: (settings: HubSettings) => void,
 ): Lifecycle {
   const byName = new Intl.Collator(displayLanguage).compare;
   const plugins = installed
@@ -151,7 +167,15 @@ export function createLifecycle(
   let closing: PluginId[] = [];
   let asking: Asking | null = null;
   // Plugins closing behind Hub Settings leave them showing.
-  let content: HubChromeContent = { kind: "plugin" };
+  let content: HubChromeContent["kind"] = "plugin";
+  let stored = storedAtStart;
+  // The unsaved form: what is stored until staff edit it.
+  let form = storedAtStart;
+  const settingsShowing = (operation: string): void => {
+    if (content !== "settings") {
+      throw new Error(`${operation} needs Hub Settings showing`);
+    }
+  };
   // The latest Busy reason of each open Plugin that is Busy.
   const busyReasons = new Map<PluginId, BusyReason>();
   const listeners: (() => void)[] = [];
@@ -194,7 +218,10 @@ export function createLifecycle(
       open: [...open],
       closing: [...closing],
       foreground: open[0] ?? null,
-      content,
+      content:
+        content === "settings"
+          ? { kind: "settings", stored, form }
+          : { kind: "plugin" },
       dialog: dialogOf(asking),
       hubVersion,
     }),
@@ -217,7 +244,7 @@ export function createLifecycle(
         throw new Error(`${id} is still closing`);
       }
       open = [id, ...open.filter((other) => other !== id)];
-      content = { kind: "plugin" };
+      content = "plugin";
       changed();
     },
     close,
@@ -264,9 +291,27 @@ export function createLifecycle(
       changed();
     },
     showSettings: () => {
-      content = { kind: "settings" };
+      content = "settings";
       changed();
     },
+    editSettings: (edited) => {
+      settingsShowing("editSettings");
+      form = edited;
+      changed();
+    },
+    saveSettings: () => {
+      settingsShowing("saveSettings");
+      if (isDeepStrictEqual(form, stored)) return;
+      save(form);
+      stored = form;
+      changed();
+    },
+    cancelSettings: () => {
+      settingsShowing("cancelSettings");
+      form = stored;
+      changed();
+    },
+    storedSettings: () => stored,
     answer: (answer) => {
       const pending = asking;
       if (pending === null)
