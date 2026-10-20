@@ -1,6 +1,6 @@
 // A Busy Plugin asks before it closes and before the Hub quits, on the dialog overlay (#54).
 
-import type { ElectronApplication, Page } from "@playwright/test";
+import type { ElectronApplication, Locator, Page } from "@playwright/test";
 import {
   displayLanguageOf,
   exitCodeOf,
@@ -83,6 +83,16 @@ async function overlay(hub: ElectronApplication): Promise<Page> {
   return page;
 }
 
+/**
+ * Presses a dialog button with Enter going down only. Its answer takes the overlay away, so a mouse
+ * click can lose its page before the mouseup that fired it is acknowledged (seen on macOS CI); the
+ * key answers as it goes down, as in the Enter and Esc test below.
+ */
+async function press(button: Locator): Promise<void> {
+  await button.focus();
+  await button.page().keyboard.down("Enter");
+}
+
 /** Whether the dialog overlay is showing. */
 function overlayShowing(hub: ElectronApplication): boolean {
   return hub.windows().some((page) => page.url().endsWith("#dialog"));
@@ -108,13 +118,13 @@ test("closing a Busy Plugin asks with its reason; Keep open leaves it open and C
     let dialog = (await overlay(hub)).getByRole("dialog");
     await expect(dialog).toContainText(words.closeTimerQuestion);
     await expect(dialog).toContainText("Timing an exam");
-    await dialog.getByRole("button", { name: words.keepOpen }).click();
+    await press(dialog.getByRole("button", { name: words.keepOpen }));
     await expect.poll(() => overlayShowing(hub)).toBe(false);
     await expect(closeTimer).toBeVisible();
 
     await closeTimer.click();
     dialog = (await overlay(hub)).getByRole("dialog");
-    await dialog.getByRole("button", { name: words.closeAnyway }).click();
+    await press(dialog.getByRole("button", { name: words.closeAnyway }));
     await expect(closeTimer).toHaveCount(0);
     await expect.poll(() => overlayShowing(hub)).toBe(false);
   } finally {
@@ -230,7 +240,7 @@ test("quitting with two Busy Plugins asks once, listing both; Keep open keeps th
   expect(
     hub.windows().filter((each) => each.url().endsWith("#dialog")),
   ).toHaveLength(1);
-  await dialog.getByRole("button", { name: words.keepOpen }).click();
+  await press(dialog.getByRole("button", { name: words.keepOpen }));
   await expect.poll(() => overlayShowing(hub)).toBe(false);
   await expect(
     hubChrome.getByRole("button", { name: words.closeTimer }),
@@ -240,7 +250,7 @@ test("quitting with two Busy Plugins asks once, listing both; Keep open keeps th
     app.quit();
   });
   page = await overlay(hub);
-  await page.getByRole("button", { name: words.quitAnyway }).click();
+  await press(page.getByRole("button", { name: words.quitAnyway }));
   expect(await exitCode).toBe(0);
 });
 
