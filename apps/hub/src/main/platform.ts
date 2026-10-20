@@ -28,21 +28,27 @@ export interface ProcessEntry {
   created: bigint;
 }
 
+const same = (a: ProcessEntry) => (b: ProcessEntry) =>
+  a.pid === b.pid && a.created === b.created;
+
 /**
- * The process tree rooted at `root`: it and every process descended from it. Windows never
+ * The `noted` processes and every process in `processes` descended from them. Windows never
  * re-parents an orphan, so a process whose parent id names a tree member but is older than it is
- * the orphan of an earlier process that had that id, and is not in the tree.
+ * the orphan of an earlier process that had that id, and is not in the tree. A noted process need
+ * not be running any more: its children keep its id as their parent's after it exits.
  */
 export function treeOf(
-  root: number,
+  noted: readonly ProcessEntry[],
   processes: readonly ProcessEntry[],
 ): ProcessEntry[] {
-  const rootEntry = processes.find(({ pid }) => pid === root);
-  if (rootEntry === undefined) return [];
-  const tree = [rootEntry];
+  const tree = [...noted];
   for (const parent of tree) {
     for (const each of processes) {
-      if (each.parent === parent.pid && each.created >= parent.created) {
+      if (
+        each.parent === parent.pid &&
+        each.created >= parent.created &&
+        !tree.some(same(each))
+      ) {
         tree.push(each);
       }
     }
@@ -106,9 +112,12 @@ function killGroup(pid: number): void {
 
 export interface ProcessTree {
   /**
-   * Notes the tree's processes while its root still runs. On Windows taskkill /T only finds a tree
-   * through live parents, and the venv's python.exe is a launcher whose child is the real
-   * interpreter, so once the root exits its leftover children can only be found from this note.
+   * Notes the tree's processes. On Windows taskkill /T only finds a tree through live parents, and
+   * the venv's python.exe is a launcher whose child is the real interpreter, so once the root exits
+   * its leftover children can only be found from this note. The first note must be taken while the
+   * root surely runs; each later one adds to it, and finds the children of every process noted
+   * before, even one that has exited since (probed on Windows 10: a child keeps its exited parent's
+   * id as its parent id, while the parent is no longer listed).
    */
   remember(): Promise<void>;
   /** Kills every remembered process still running, with any tree below it. Resolves once done. */
@@ -130,7 +139,15 @@ export function processTree(pid: number): ProcessTree {
   let remembered: ProcessEntry[] = [];
   return {
     async remember() {
-      remembered = treeOf(pid, await windowsProcesses());
+      const processes = await windowsProcesses();
+      // ponytail: once a noted process has exited, a process that reuses its id has its children
+      // taken for the noted one's; tell them apart by the reuser's creation time if that is seen.
+      remembered = treeOf(
+        remembered.length > 0
+          ? remembered
+          : processes.filter((each) => each.pid === pid),
+        processes,
+      );
     },
     async kill() {
       // Only processes that are still the same ones: an id may have been reused since.

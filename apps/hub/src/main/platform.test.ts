@@ -1,9 +1,11 @@
 import { expect, test } from "vitest";
 import { treeOf } from "./platform";
 
+const root = { pid: 10, parent: 1, created: 100n };
+
 test("a tree is its root and every process descended from it, created after its parent", () => {
   const processes = [
-    { pid: 10, parent: 1, created: 100n },
+    root,
     { pid: 11, parent: 10, created: 110n },
     { pid: 12, parent: 11, created: 120n },
     // A sibling of the root: not in its tree.
@@ -12,9 +14,19 @@ test("a tree is its root and every process descended from it, created after its 
     { pid: 30, parent: 10, created: 90n },
     { pid: 31, parent: 30, created: 130n },
   ];
-  expect(treeOf(10, processes).map(({ pid }) => pid)).toEqual([10, 11, 12]);
+  expect(treeOf([root], processes).map(({ pid }) => pid)).toEqual([10, 11, 12]);
 });
 
-test("a root that is no longer running has no tree", () => {
-  expect(treeOf(10, [{ pid: 11, parent: 10, created: 110n }])).toEqual([]);
+test("a noted process that has exited still has the children that name it as their parent", () => {
+  const processes = [
+    { pid: 11, parent: 10, created: 110n },
+    { pid: 12, parent: 11, created: 120n },
+    { pid: 30, parent: 10, created: 90n },
+  ];
+  expect(treeOf([root], processes).map(({ pid }) => pid)).toEqual([10, 11, 12]);
+});
+
+test("a process noted twice is in the tree once", () => {
+  const child = { pid: 11, parent: 10, created: 110n };
+  expect(treeOf([root, child], [root, child])).toEqual([root, child]);
 });
