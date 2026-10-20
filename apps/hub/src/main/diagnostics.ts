@@ -293,6 +293,14 @@ function describeSystem(system: SystemDescription): SystemDescription {
   };
 }
 
+/** The Diagnostics Bundle's file name, `hawkeye-hub-diagnostics-<yyyymmdd-hhmmss>.zip` in local time. */
+export function bundleFileName(time: Date): string {
+  const two = (n: number): string => String(n).padStart(2, "0");
+  const date = `${String(time.getFullYear())}${two(time.getMonth() + 1)}${two(time.getDate())}`;
+  const clock = `${two(time.getHours())}${two(time.getMinutes())}${two(time.getSeconds())}`;
+  return `hawkeye-hub-diagnostics-${date}-${clock}.zip`;
+}
+
 export function openDiagnostics(
   logsDir: AbsolutePath,
   now: () => Date,

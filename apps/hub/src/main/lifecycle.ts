@@ -14,8 +14,10 @@ import type {
   BusyReason,
   DialogAnswer,
   DisplayLanguage,
+  HubChromeContent,
   HubChromeDialog,
   HubChromeSnapshot,
+  HubVersion,
   PluginAccess,
 } from "../shared/hub-chrome-ipc";
 import { HUB_API_VERSION } from "./hub-api-version";
@@ -33,8 +35,8 @@ export interface Lifecycle {
   /** `listener` runs after every change to the state, to push a new snapshot. */
   onChange(listener: () => void): void;
   /**
-   * Opens an installed Plugin, or brings it forward if it is open. Throws if it is not installed
-   * or is blocked.
+   * Opens an installed Plugin, or brings it forward if it is open, leaving Hub Settings if they
+   * are showing. Throws if it is not installed or is blocked.
    */
   open(id: PluginId): void;
   /**
@@ -64,6 +66,8 @@ export interface Lifecycle {
   requestQuit(quit: () => void): void;
   /** Answers the pending dialog. Throws if there is none or the answer is not one of its buttons. */
   answer(answer: DialogAnswer): void;
+  /** Shows Hub Settings in the content area, until `open` brings a Plugin forward. */
+  showSettings(): void;
 }
 
 /** Display text in `language`, falling back to English (ADR 0007). */
@@ -115,6 +119,7 @@ function dialogOf(asking: Asking | null): HubChromeDialog | null {
 }
 
 export function createLifecycle(
+  hubVersion: HubVersion,
   displayLanguage: DisplayLanguage,
   installed: readonly InstalledPlugin[],
 ): Lifecycle {
@@ -145,6 +150,8 @@ export function createLifecycle(
   // folder (ADR 0008), so a closing Plugin cannot be reopened.
   let closing: PluginId[] = [];
   let asking: Asking | null = null;
+  // Plugins closing behind Hub Settings leave them showing.
+  let content: HubChromeContent = { kind: "plugin" };
   // The latest Busy reason of each open Plugin that is Busy.
   const busyReasons = new Map<PluginId, BusyReason>();
   const listeners: (() => void)[] = [];
@@ -187,7 +194,9 @@ export function createLifecycle(
       open: [...open],
       closing: [...closing],
       foreground: open[0] ?? null,
+      content,
       dialog: dialogOf(asking),
+      hubVersion,
     }),
     installed: (id) => installedPlugin(id).plugin,
     onChange: (listener) => {
@@ -208,6 +217,7 @@ export function createLifecycle(
         throw new Error(`${id} is still closing`);
       }
       open = [id, ...open.filter((other) => other !== id)];
+      content = { kind: "plugin" };
       changed();
     },
     close,
@@ -251,6 +261,10 @@ export function createLifecycle(
         return;
       }
       asking = { kind: "busy-quit", plugins: busyPlugins, quit };
+      changed();
+    },
+    showSettings: () => {
+      content = { kind: "settings" };
       changed();
     },
     answer: (answer) => {

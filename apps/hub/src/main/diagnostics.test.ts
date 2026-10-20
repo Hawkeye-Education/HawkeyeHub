@@ -5,6 +5,7 @@ import { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
 import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, expect, test } from "vitest";
 import {
+  bundleFileName,
   openDiagnostics,
   type HubEvent,
   type PluginCrash,
@@ -791,4 +792,11 @@ test("constrained strings are parsed, not taken as bare strings", () => {
   expect(() => parseAiProviderKind("Azure OpenAI")).toThrow();
   expect(() => RpcErrorReason.parse("Same folder")).toThrow();
   expect(() => parseAbsolutePath("logs")).toThrow();
+});
+
+test("a bundle is named for the local time it was exported", () => {
+  // Months count from 0: this is 5 March 2026, 09:07:02 local time.
+  expect(bundleFileName(new Date(2026, 2, 5, 9, 7, 2))).toBe(
+    "hawkeye-hub-diagnostics-20260305-090702.zip",
+  );
 });

@@ -14,6 +14,10 @@ export const STRINGS = {
     keepOpen: "Keep open",
     closeAnyway: "Close anyway",
     quitAnyway: "Quit anyway",
+    settings: "Settings",
+    about: "About",
+    hubVersion: "Version",
+    exportDiagnostics: "Export diagnostics",
     blocked: {
       "needs-sign-in": "Needs sign-in",
       "needs-different-hub": "Needs a different Hub",
@@ -30,6 +34,10 @@ export const STRINGS = {
     keepOpen: "保持開啟",
     closeAnyway: "仍然關閉",
     quitAnyway: "仍然結束",
+    settings: "設定",
+    about: "關於",
+    hubVersion: "版本",
+    exportDiagnostics: "匯出診斷資料",
     blocked: {
       "needs-sign-in": "需要登入",
       "needs-different-hub": "需要另一版本的 Hawkeye Hub",

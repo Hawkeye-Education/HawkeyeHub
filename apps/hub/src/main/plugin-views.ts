@@ -223,7 +223,7 @@ export function createPluginViews(
   };
 
   return {
-    follow({ open: openIds, foreground }) {
+    follow({ open: openIds, foreground, content }) {
       for (const [id, plugin] of opened) {
         if (!openIds.includes(id)) close(id, plugin);
       }
@@ -231,7 +231,10 @@ export function createPluginViews(
         const openPlugin = opened.get(id) ?? open(lifecycle.installed(id));
         opened.set(id, openPlugin);
         // A hidden view stays alive; Chromium throttles it and the page sees visibilitychange.
-        openPlugin.view.setVisible(id === foreground);
+        // Hub Settings hide the front one too, so the Hub Chrome beneath draws them.
+        openPlugin.view.setVisible(
+          id === foreground && content.kind === "plugin",
+        );
       }
     },
     layout() {

@@ -5,8 +5,10 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   ANSWER_DIALOG,
   CLOSE_PLUGIN,
+  EXPORT_DIAGNOSTICS,
   GET_SNAPSHOT,
   OPEN_PLUGIN,
+  SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
   type HubChromeApi,
   type HubChromeSnapshot,
@@ -34,6 +36,12 @@ const api: HubChromeApi = {
   },
   answer(answer) {
     void ipcRenderer.invoke(ANSWER_DIALOG, answer);
+  },
+  showSettings() {
+    void ipcRenderer.invoke(SHOW_SETTINGS);
+  },
+  exportDiagnostics() {
+    void ipcRenderer.invoke(EXPORT_DIAGNOSTICS);
   },
 };
 
