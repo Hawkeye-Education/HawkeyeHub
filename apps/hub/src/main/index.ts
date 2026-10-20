@@ -130,6 +130,9 @@ function runHub(): void {
         saveHubSettings(hubDataDir, saved);
         nativeTheme.themeSource = saved.colourScheme;
       },
+      (name) => {
+        diagnostics.recordHubEvent({ kind: "theme-unknown", name });
+      },
     );
     return openHubWindow(diagnostics, now, lifecycle, hubDataDir);
   });

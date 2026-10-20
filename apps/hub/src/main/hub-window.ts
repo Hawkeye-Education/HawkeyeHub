@@ -209,8 +209,7 @@ export function openHubWindow(
         arch: process.arch,
       },
       displayLanguage: snapshot.displayLanguage,
-      // ponytail: Hawkeye, the only Theme, until Theme resolution lands (#76).
-      theme: "hawkeye",
+      theme: snapshot.theme,
       colourScheme: lifecycle.storedSettings().colourScheme,
       plugins: snapshot.plugins.map(({ id }) =>
         pluginRefOf(lifecycle.installed(id)),

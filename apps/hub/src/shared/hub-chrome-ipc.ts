@@ -86,6 +86,10 @@ export interface HubChromeSnapshot {
   /** The Hub Chrome dialog waiting for an answer, drawn on the dialog overlay. Null when none is. */
   dialog: HubChromeDialog | null;
   hubVersion: HubVersion;
+  /** The Theme the Hub draws in: the stored one resolved, Hawkeye when this Hub lacks it. */
+  theme: ThemeName;
+  /** The Themes this Hub has, for the Theme picker. */
+  themes: ThemeName[];
 }
 
 declare const busyReason: unique symbol;

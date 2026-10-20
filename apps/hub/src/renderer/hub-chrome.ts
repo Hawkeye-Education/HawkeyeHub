@@ -129,6 +129,8 @@ export class HubChrome extends LitElement {
         return html`<hub-settings
           .strings=${strings}
           .hubVersion=${this.snapshot.hubVersion}
+          .theme=${this.snapshot.theme}
+          .themes=${this.snapshot.themes}
           .form=${content.form}
           .languageNoteShowing=${content.languageNoteShowing}
           .hub=${window.hubChrome}
