@@ -39,7 +39,8 @@ export interface Lifecycle {
   onChange(listener: () => void): void;
   /**
    * Opens an installed Plugin, or brings it forward if it is open, leaving Hub Settings if they
-   * are showing. Throws if it is not installed or is blocked.
+   * are showing; with unsaved edits, the Discard dialog asks first and **Discard** opens it.
+   * Throws if it is not installed or is blocked.
    */
   open(id: PluginId): void;
   /**
@@ -64,7 +65,8 @@ export interface Lifecycle {
   setBusy(id: PluginId, busy: Busy): void;
   /**
    * A normal quit (spec #44 "Quitting"): calls `quit`, or, if any Plugin is Busy, shows the one
-   * dialog listing them all and calls `quit` on **Quit anyway**.
+   * dialog listing them all and calls `quit` on **Quit anyway**. With unsaved Hub Settings edits,
+   * the Discard dialog asks before all that, and **Discard** goes on to it.
    */
   requestQuit(quit: () => void): void;
   /** Answers the pending dialog. Throws if there is none or the answer is not one of its buttons. */
@@ -123,10 +125,11 @@ export const THEMES: readonly ThemeName[] = [HAWKEYE];
 const COMPANY_THEME = HAWKEYE;
 
 // The dialog waiting for staff, as the lifecycle holds it: the quit dialog keeps the quit that
-// **Quit anyway** goes ahead with.
+// **Quit anyway** goes ahead with, and the Discard dialog the action **Discard** goes ahead with.
 type Asking =
   | Extract<HubChromeDialog, { kind: "busy-close" }>
-  | (Extract<HubChromeDialog, { kind: "busy-quit" }> & { quit: () => void });
+  | (Extract<HubChromeDialog, { kind: "busy-quit" }> & { quit: () => void })
+  | { kind: "discard-changes"; proceed: () => void };
 
 function dialogOf(asking: Asking | null): HubChromeDialog | null {
   if (asking === null) return null;
@@ -135,6 +138,8 @@ function dialogOf(asking: Asking | null): HubChromeDialog | null {
       return asking;
     case "busy-quit":
       return { kind: "busy-quit", plugins: asking.plugins };
+    case "discard-changes":
+      return { kind: "discard-changes" };
     default:
       return asking satisfies never;
   }
@@ -199,6 +204,16 @@ export function createLifecycle(
   let stored = storedAtStart;
   // The unsaved form: what is stored until staff edit it.
   let form = storedAtStart;
+  // Picking a Plugin or quitting with unsaved edits asks the Discard dialog first. Edits are only
+  // made while settings show, and can only be left behind through **Discard**.
+  const discardingEditsFirst = (proceed: () => void): void => {
+    if (isDeepStrictEqual(form, stored)) {
+      proceed();
+      return;
+    }
+    asking = { kind: "discard-changes", proceed };
+    changed();
+  };
   // Says open Plugins switch language when reopened, from a Save that changed it while any was
   // open, until staff leave settings.
   let languageNoteShowing = false;
@@ -240,6 +255,8 @@ export function createLifecycle(
         const plugins = asking.plugins.filter((plugin) => plugin.id !== id);
         return plugins.length === 0 ? null : { ...asking, plugins };
       }
+      case "discard-changes":
+        return asking;
       default:
         return asking satisfies never;
     }
@@ -288,10 +305,12 @@ export function createLifecycle(
       if (closing.includes(id)) {
         throw new Error(`${id} is still closing`);
       }
-      open = [id, ...open.filter((other) => other !== id)];
-      content = "plugin";
-      languageNoteShowing = false;
-      changed();
+      discardingEditsFirst(() => {
+        open = [id, ...open.filter((other) => other !== id)];
+        content = "plugin";
+        languageNoteShowing = false;
+        changed();
+      });
     },
     close,
     closed: (id) => {
@@ -324,17 +343,19 @@ export function createLifecycle(
       }
     },
     requestQuit: (quit) => {
-      // In the Plugin Switcher's order.
-      const busyPlugins = listed.flatMap(({ id }) => {
-        const reason = busyReasons.get(id);
-        return reason === undefined ? [] : [busyPlugin(id, reason)];
+      discardingEditsFirst(() => {
+        // In the Plugin Switcher's order.
+        const busyPlugins = listed.flatMap(({ id }) => {
+          const reason = busyReasons.get(id);
+          return reason === undefined ? [] : [busyPlugin(id, reason)];
+        });
+        if (busyPlugins.length === 0) {
+          quit();
+          return;
+        }
+        asking = { kind: "busy-quit", plugins: busyPlugins, quit };
+        changed();
       });
-      if (busyPlugins.length === 0) {
-        quit();
-        return;
-      }
-      asking = { kind: "busy-quit", plugins: busyPlugins, quit };
-      changed();
     },
     showSettings: () => {
       content = "settings";
@@ -370,9 +391,20 @@ export function createLifecycle(
       const pending = asking;
       if (pending === null)
         throw new Error("No dialog is waiting for an answer");
-      if (answer === "keep-open") {
+      const keep =
+        pending.kind === "discard-changes" ? "keep-editing" : "keep-open";
+      if (answer === keep) {
         asking = null;
         changed();
+        return;
+      }
+      if (pending.kind === "discard-changes" && answer === "discard") {
+        asking = null;
+        form = stored;
+        // Announced before going ahead, as **Quit anyway** is: the Busy quit dialog it may ask
+        // next comes up on a fresh overlay.
+        changed();
+        pending.proceed();
         return;
       }
       if (pending.kind === "busy-close" && answer === "close-anyway") {

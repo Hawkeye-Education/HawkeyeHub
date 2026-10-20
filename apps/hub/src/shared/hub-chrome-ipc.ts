@@ -106,16 +106,23 @@ export interface BusyPlugin {
 /**
  * A Hub Chrome dialog. Its Busy reasons are those at the time it was asked: a Plugin clearing or
  * changing Busy leaves the dialog as it is (spec #44). A Plugin that closes leaves it.
+ * `discard-changes` asks before picking a Plugin or quitting drops unsaved Hub Settings edits.
  */
 export type HubChromeDialog =
   | { kind: "busy-close"; plugin: BusyPlugin }
-  | { kind: "busy-quit"; plugins: BusyPlugin[] };
+  | { kind: "busy-quit"; plugins: BusyPlugin[] }
+  | { kind: "discard-changes" };
 
-/** Staff's answers to the pending dialog: **Keep open**, or **Close anyway** / **Quit anyway**. */
+/**
+ * Staff's answers to the pending dialog: **Keep open**, or **Close anyway** / **Quit anyway**, to
+ * a Busy dialog; **Keep editing** or **Discard** to the Discard dialog.
+ */
 export const DIALOG_ANSWERS = [
   "keep-open",
   "close-anyway",
   "quit-anyway",
+  "keep-editing",
+  "discard",
 ] as const;
 export type DialogAnswer = (typeof DIALOG_ANSWERS)[number];
 
