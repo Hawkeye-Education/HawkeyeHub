@@ -1,11 +1,12 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseManifest } from "@hawkeye-hub/plugin-format";
+import { parseManifest, PluginId } from "@hawkeye-hub/plugin-format";
 import { beforeAll, expect, test } from "vitest";
 import { parseAbsolutePath } from "./ids";
 import { pluginIconUrl, servePluginIcons } from "./plugin-icons";
 
+const CLASS_TIMER = PluginId.parse("class-timer");
 const ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"/>';
 
 let serve: (request: Request) => Promise<Response>;
@@ -37,7 +38,7 @@ beforeAll(() => {
 });
 
 test("an installed Plugin's icon URL serves its icon.svg as SVG, readable cross-origin", async () => {
-  const response = await serve(new Request(pluginIconUrl("class-timer")));
+  const response = await serve(new Request(pluginIconUrl(CLASS_TIMER)));
 
   expect(response.status).toBe(200);
   expect(response.headers.get("content-type")).toBe("image/svg+xml");
@@ -65,7 +66,7 @@ test.each([
 
 test("refuses anything but GET", async () => {
   const response = await serve(
-    new Request(pluginIconUrl("class-timer"), { method: "POST", body: "x" }),
+    new Request(pluginIconUrl(CLASS_TIMER), { method: "POST", body: "x" }),
   );
 
   expect(response.status).toBe(404);

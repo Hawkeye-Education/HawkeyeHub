@@ -3,6 +3,8 @@
 // snapshot, so a reloaded Hub Chrome redraws the same state by fetching it again.
 // Types and constants only: the preload is sandboxed and the Hub Chrome has no Node.
 
+import type { PluginId } from "@hawkeye-hub/plugin-format";
+
 /** The languages the Hub draws in (ADR 0007): adding one is a Hub release. */
 export type DisplayLanguage = "en-HK" | "zh-HK";
 
@@ -20,7 +22,7 @@ export type PluginAccess =
   { kind: "openable" } | { kind: "blocked"; reason: BlockedReason };
 
 export interface SwitcherPlugin {
-  id: string;
+  id: PluginId;
   /** Already in the Display Language. */
   name: string;
   /** The Plugin's `icon.svg`, served to the Hub Chrome only as a CSS mask (spec #44 story 53). */
@@ -33,31 +35,37 @@ export interface HubChromeSnapshot {
   /** Every installed Plugin, sorted by name. */
   plugins: SwitcherPlugin[];
   /** The ids of the open Plugins, most recently foregrounded first. */
-  open: string[];
+  open: PluginId[];
   /** The ids of the Plugins closed but not yet gone, which cannot be reopened until they are. */
-  closing: string[];
+  closing: PluginId[];
   /** The Plugin in front. Null when none is: the Hub Chrome then draws the empty state. */
-  foreground: string | null;
+  foreground: PluginId | null;
   /** The Hub Chrome dialog waiting for an answer, drawn on the dialog overlay. Null when none is. */
   dialog: HubChromeDialog | null;
 }
 
 /** A Busy Plugin, by its name in the Display Language and its own reason. */
 export interface BusyPlugin {
+  id: PluginId;
   name: string;
   reason: string;
 }
 
 /**
- * A Hub Chrome dialog. Its Busy reasons are those at the time it was asked: a Plugin clearing
- * Busy leaves the dialog as it is (spec #44).
+ * A Hub Chrome dialog. Its Busy reasons are those at the time it was asked: a Plugin clearing or
+ * changing Busy leaves the dialog as it is (spec #44). A Plugin that closes leaves it.
  */
 export type HubChromeDialog =
-  | { kind: "busy-close"; id: string; plugin: BusyPlugin }
+  | { kind: "busy-close"; plugin: BusyPlugin }
   | { kind: "busy-quit"; plugins: BusyPlugin[] };
 
-/** Staff's answer to the pending dialog: **Keep open**, or **Close anyway** / **Quit anyway**. */
-export type DialogAnswer = "keep-open" | "close-anyway" | "quit-anyway";
+/** Staff's answers to the pending dialog: **Keep open**, or **Close anyway** / **Quit anyway**. */
+export const DIALOG_ANSWERS = [
+  "keep-open",
+  "close-anyway",
+  "quit-anyway",
+] as const;
+export type DialogAnswer = (typeof DIALOG_ANSWERS)[number];
 
 /** What the Hub Chrome preload exposes as `window.hubChrome`. */
 export interface HubChromeApi {
@@ -67,9 +75,9 @@ export interface HubChromeApi {
    */
   subscribe(listener: (snapshot: HubChromeSnapshot) => void): void;
   /** Opens a closed Plugin, or brings an open one forward. */
-  open(id: string): void;
+  open(id: PluginId): void;
   /** Closes an open Plugin, asking first if it is Busy. */
-  close(id: string): void;
+  close(id: PluginId): void;
   /** Answers the pending dialog. */
   answer(answer: DialogAnswer): void;
 }

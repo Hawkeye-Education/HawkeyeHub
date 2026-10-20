@@ -4,20 +4,20 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseManifest, type Manifest } from "@hawkeye-hub/plugin-format";
+import {
+  parseManifest,
+  PluginId,
+  PluginVersion,
+  type Manifest,
+} from "@hawkeye-hub/plugin-format";
 import { z } from "zod";
 import type { PluginLeftOutReason, PluginRef } from "./diagnostics";
-import {
-  parseAbsolutePath,
-  parsePluginId,
-  parsePluginVersion,
-  type AbsolutePath,
-} from "./ids";
+import { parseAbsolutePath, type AbsolutePath } from "./ids";
 
 export const RECORD_FILE = "installed-plugins.json";
 
 const InstalledRecord = z.array(
-  z.strictObject({ id: z.string(), version: z.string() }),
+  z.strictObject({ id: PluginId, version: PluginVersion }),
 );
 
 export interface InstalledPlugin {
@@ -47,10 +47,7 @@ export function loadInstalledPlugins(dataDir: AbsolutePath): {
   }
   const entries = InstalledRecord.parse(
     JSON.parse(readFileSync(recordPath, "utf8")),
-  ).map((entry): PluginRef => ({
-    id: parsePluginId(entry.id),
-    version: parsePluginVersion(entry.version),
-  }));
+  );
   const ids = new Set(entries.map((entry) => entry.id));
   if (ids.size !== entries.length) {
     throw new Error(`${RECORD_FILE} names a Plugin id twice`);
@@ -93,8 +90,7 @@ function loadEntry(
   if (parsed.kind === "invalid") {
     return { kind: "left-out", reason: "manifest-invalid" };
   }
-  // Widened to string: the Manifest's zod brands and the Hub's brands are distinct types.
-  const said: { id: string; version: string } = parsed.manifest;
+  const said = parsed.manifest;
   if (said.id !== id || said.version !== version) {
     return { kind: "left-out", reason: "manifest-disagrees" };
   }

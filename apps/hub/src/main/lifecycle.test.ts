@@ -1,4 +1,8 @@
-import { parseManifest, type Manifest } from "@hawkeye-hub/plugin-format";
+import {
+  parseManifest,
+  PluginId,
+  type Manifest,
+} from "@hawkeye-hub/plugin-format";
 import { expect, test } from "vitest";
 import { parseAbsolutePath, parseHubApiVersion } from "./ids";
 import { accessOf, createLifecycle, type Lifecycle } from "./lifecycle";
@@ -25,6 +29,8 @@ function installed(
   const manifest: Manifest = parsed.manifest;
   return { folder: parseAbsolutePath(`/plugins/${id}@1.0.0`), manifest };
 }
+
+const id = (raw: string): PluginId => PluginId.parse(raw);
 
 const plugins = [
   installed("class-timer", { "en-HK": "Timer", "zh-HK": "計時器" }),
@@ -80,14 +86,14 @@ test("opening Plugins brings each forward, and opening an open one brings it for
   const lifecycle = createLifecycle("en-HK", plugins);
   expect(openAndForeground(lifecycle)).toEqual({ open: [], foreground: null });
 
-  lifecycle.open("class-timer");
-  lifecycle.open("attendance");
+  lifecycle.open(id("class-timer"));
+  lifecycle.open(id("attendance"));
   expect(openAndForeground(lifecycle)).toEqual({
     open: ["attendance", "class-timer"],
     foreground: "attendance",
   });
 
-  lifecycle.open("class-timer");
+  lifecycle.open(id("class-timer"));
   expect(openAndForeground(lifecycle)).toEqual({
     open: ["class-timer", "attendance"],
     foreground: "class-timer",
@@ -96,25 +102,25 @@ test("opening Plugins brings each forward, and opening an open one brings it for
 
 test("closing the foreground Plugin brings forward the most recently foregrounded one, then nothing", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("class-timer");
-  lifecycle.open("seating-plan");
-  lifecycle.open("attendance");
-  lifecycle.open("class-timer");
+  lifecycle.open(id("class-timer"));
+  lifecycle.open(id("seating-plan"));
+  lifecycle.open(id("attendance"));
+  lifecycle.open(id("class-timer"));
 
-  lifecycle.close("class-timer");
+  lifecycle.close(id("class-timer"));
   expect(lifecycle.snapshot().foreground).toBe("attendance");
-  lifecycle.close("attendance");
+  lifecycle.close(id("attendance"));
   expect(lifecycle.snapshot().foreground).toBe("seating-plan");
-  lifecycle.close("seating-plan");
+  lifecycle.close(id("seating-plan"));
   expect(openAndForeground(lifecycle)).toEqual({ open: [], foreground: null });
 });
 
 test("closing a background Plugin leaves the foreground one in front", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("class-timer");
-  lifecycle.open("attendance");
+  lifecycle.open(id("class-timer"));
+  lifecycle.open(id("attendance"));
 
-  lifecycle.close("class-timer");
+  lifecycle.close(id("class-timer"));
   expect(openAndForeground(lifecycle)).toEqual({
     open: ["attendance"],
     foreground: "attendance",
@@ -128,50 +134,50 @@ test("every change is announced", () => {
     seen.push(lifecycle.snapshot().foreground);
   });
 
-  lifecycle.open("class-timer");
-  lifecycle.open("attendance");
-  lifecycle.close("attendance");
+  lifecycle.open(id("class-timer"));
+  lifecycle.open(id("attendance"));
+  lifecycle.close(id("attendance"));
 
   expect(seen).toEqual(["class-timer", "attendance", "class-timer"]);
 });
 
 test("a closed Plugin is closing until its close finishes, cannot be reopened until then, and then reopens", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("class-timer");
-  lifecycle.open("attendance");
+  lifecycle.open(id("class-timer"));
+  lifecycle.open(id("attendance"));
 
-  lifecycle.close("attendance");
+  lifecycle.close(id("attendance"));
   expect(lifecycle.snapshot()).toMatchObject({
     open: ["class-timer"],
     closing: ["attendance"],
     foreground: "class-timer",
   });
   expect(() => {
-    lifecycle.open("attendance");
+    lifecycle.open(id("attendance"));
   }).toThrow();
 
-  lifecycle.closed("attendance");
+  lifecycle.closed(id("attendance"));
   expect(lifecycle.snapshot()).toMatchObject({
     open: ["class-timer"],
     closing: [],
   });
-  lifecycle.open("attendance");
+  lifecycle.open(id("attendance"));
   expect(lifecycle.snapshot().foreground).toBe("attendance");
 });
 
 test("finishing the close of a Plugin that is not closing throws", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("attendance");
+  lifecycle.open(id("attendance"));
   expect(() => {
-    lifecycle.closed("attendance");
+    lifecycle.closed(id("attendance"));
   }).toThrow();
 });
 
 test("a staff close of a Plugin that is not Busy closes it without asking", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("attendance");
+  lifecycle.open(id("attendance"));
 
-  lifecycle.requestClose("attendance");
+  lifecycle.requestClose(id("attendance"));
   expect(lifecycle.snapshot()).toMatchObject({
     open: [],
     closing: ["attendance"],
@@ -181,17 +187,16 @@ test("a staff close of a Plugin that is not Busy closes it without asking", () =
 
 test("a staff close of a Busy Plugin asks with its latest reason; Keep open leaves it open", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("class-timer");
-  lifecycle.setBusy("class-timer", "Timing a test");
-  lifecycle.setBusy("class-timer", "Timing an exam");
+  lifecycle.open(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), "Timing a test");
+  lifecycle.setBusy(id("class-timer"), "Timing an exam");
 
-  lifecycle.requestClose("class-timer");
+  lifecycle.requestClose(id("class-timer"));
   expect(lifecycle.snapshot()).toMatchObject({
     open: ["class-timer"],
     dialog: {
       kind: "busy-close",
-      id: "class-timer",
-      plugin: { name: "Timer", reason: "Timing an exam" },
+      plugin: { id: "class-timer", name: "Timer", reason: "Timing an exam" },
     },
   });
 
@@ -205,9 +210,9 @@ test("a staff close of a Busy Plugin asks with its latest reason; Keep open leav
 
 test("Close anyway closes the Busy Plugin, and closing clears its Busy", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("class-timer");
-  lifecycle.setBusy("class-timer", "Timing an exam");
-  lifecycle.requestClose("class-timer");
+  lifecycle.open(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.requestClose(id("class-timer"));
 
   lifecycle.answer("close-anyway");
   expect(lifecycle.snapshot()).toMatchObject({
@@ -216,27 +221,27 @@ test("Close anyway closes the Busy Plugin, and closing clears its Busy", () => {
     dialog: null,
   });
 
-  lifecycle.closed("class-timer");
-  lifecycle.open("class-timer");
-  lifecycle.requestClose("class-timer");
+  lifecycle.closed(id("class-timer"));
+  lifecycle.open(id("class-timer"));
+  lifecycle.requestClose(id("class-timer"));
   expect(lifecycle.snapshot()).toMatchObject({ open: [], dialog: null });
 });
 
 test("a Plugin that clears Busy closes without asking, but a dialog already up stays", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("class-timer");
-  lifecycle.open("attendance");
-  lifecycle.setBusy("class-timer", "Timing an exam");
-  lifecycle.setBusy("attendance", "Taking the register");
-  lifecycle.setBusy("attendance", null);
-  lifecycle.requestClose("attendance");
+  lifecycle.open(id("class-timer"));
+  lifecycle.open(id("attendance"));
+  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.setBusy(id("attendance"), "Taking the register");
+  lifecycle.setBusy(id("attendance"), null);
+  lifecycle.requestClose(id("attendance"));
   expect(lifecycle.snapshot()).toMatchObject({
     open: ["class-timer"],
     dialog: null,
   });
 
-  lifecycle.requestClose("class-timer");
-  lifecycle.setBusy("class-timer", null);
+  lifecycle.requestClose(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), null);
   expect(lifecycle.snapshot().dialog).toMatchObject({
     kind: "busy-close",
     plugin: { reason: "Timing an exam" },
@@ -245,32 +250,65 @@ test("a Plugin that clears Busy closes without asking, but a dialog already up s
 
 test("a Busy Plugin that closes abnormally while its dialog is up takes the dialog with it", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("class-timer");
-  lifecycle.setBusy("class-timer", "Timing an exam");
-  lifecycle.requestClose("class-timer");
+  lifecycle.open(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.requestClose(id("class-timer"));
 
-  lifecycle.close("class-timer");
+  lifecycle.close(id("class-timer"));
   expect(lifecycle.snapshot()).toMatchObject({
     closing: ["class-timer"],
     dialog: null,
   });
 });
 
+test("a Busy Plugin that closes abnormally while the quit dialog is up leaves its list, and the last one takes the dialog with it", () => {
+  const lifecycle = createLifecycle("en-HK", plugins);
+  lifecycle.open(id("class-timer"));
+  lifecycle.open(id("attendance"));
+  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.setBusy(id("attendance"), "Taking the register");
+  let quits = 0;
+  lifecycle.requestQuit(() => {
+    quits += 1;
+  });
+
+  lifecycle.close(id("attendance"));
+  expect(lifecycle.snapshot().dialog).toEqual({
+    kind: "busy-quit",
+    plugins: [{ id: "class-timer", name: "Timer", reason: "Timing an exam" }],
+  });
+  lifecycle.close(id("class-timer"));
+  expect(lifecycle.snapshot().dialog).toBeNull();
+  expect(quits).toBe(0);
+});
+
+test("a Busy reason that changes while its dialog is up leaves the dialog as it was asked", () => {
+  const lifecycle = createLifecycle("en-HK", plugins);
+  lifecycle.open(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), "Timing a test");
+  lifecycle.requestQuit(() => undefined);
+
+  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  expect(lifecycle.snapshot().dialog).toMatchObject({
+    plugins: [{ reason: "Timing a test" }],
+  });
+});
+
 test("Busy from a Plugin that is not open is ignored: it arrived as the Plugin closed", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("class-timer");
-  lifecycle.close("class-timer");
-  lifecycle.setBusy("class-timer", "Timing an exam");
-  lifecycle.closed("class-timer");
+  lifecycle.open(id("class-timer"));
+  lifecycle.close(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.closed(id("class-timer"));
 
-  lifecycle.open("class-timer");
-  lifecycle.requestClose("class-timer");
+  lifecycle.open(id("class-timer"));
+  lifecycle.requestClose(id("class-timer"));
   expect(lifecycle.snapshot().dialog).toBeNull();
 });
 
 test("a quit with no Busy Plugin goes ahead without asking", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("class-timer");
+  lifecycle.open(id("class-timer"));
   let quits = 0;
 
   lifecycle.requestQuit(() => {
@@ -282,11 +320,11 @@ test("a quit with no Busy Plugin goes ahead without asking", () => {
 
 test("a quit with Busy Plugins asks once, listing each by name; Keep open stays, Quit anyway quits", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("class-timer");
-  lifecycle.open("attendance");
-  lifecycle.open("seating-plan");
-  lifecycle.setBusy("class-timer", "Timing an exam");
-  lifecycle.setBusy("attendance", "Taking the register");
+  lifecycle.open(id("class-timer"));
+  lifecycle.open(id("attendance"));
+  lifecycle.open(id("seating-plan"));
+  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.setBusy(id("attendance"), "Taking the register");
   let quits = 0;
   const quit = () => {
     quits += 1;
@@ -296,8 +334,8 @@ test("a quit with Busy Plugins asks once, listing each by name; Keep open stays,
   expect(lifecycle.snapshot().dialog).toEqual({
     kind: "busy-quit",
     plugins: [
-      { name: "Attendance", reason: "Taking the register" },
-      { name: "Timer", reason: "Timing an exam" },
+      { id: "attendance", name: "Attendance", reason: "Taking the register" },
+      { id: "class-timer", name: "Timer", reason: "Timing an exam" },
     ],
   });
   lifecycle.answer("keep-open");
@@ -315,9 +353,9 @@ test("a quit with Busy Plugins asks once, listing each by name; Keep open stays,
 
 test("a quit while a Busy close is asking asks about the quit instead", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
-  lifecycle.open("class-timer");
-  lifecycle.setBusy("class-timer", "Timing an exam");
-  lifecycle.requestClose("class-timer");
+  lifecycle.open(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.requestClose(id("class-timer"));
 
   lifecycle.requestQuit(() => undefined);
   expect(lifecycle.snapshot().dialog).toMatchObject({ kind: "busy-quit" });
@@ -328,9 +366,9 @@ test("an answer that is not one of the pending dialog's buttons, or with no dial
   expect(() => {
     lifecycle.answer("keep-open");
   }).toThrow();
-  lifecycle.open("class-timer");
-  lifecycle.setBusy("class-timer", "Timing an exam");
-  lifecycle.requestClose("class-timer");
+  lifecycle.open(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.requestClose(id("class-timer"));
   expect(() => {
     lifecycle.answer("quit-anyway");
   }).toThrow();
@@ -339,10 +377,10 @@ test("an answer that is not one of the pending dialog's buttons, or with no dial
 test("opening a Plugin that is not installed, or closing one that is not open, throws", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
   expect(() => {
-    lifecycle.open("not-installed");
+    lifecycle.open(id("not-installed"));
   }).toThrow();
   expect(() => {
-    lifecycle.close("attendance");
+    lifecycle.close(id("attendance"));
   }).toThrow();
 });
 
@@ -392,10 +430,10 @@ test("the snapshot marks blocked Plugins, and opening one throws", () => {
     { id: "sign-in", access: { kind: "blocked", reason: "needs-sign-in" } },
   ]);
   expect(() => {
-    lifecycle.open("sign-in");
+    lifecycle.open(id("sign-in"));
   }).toThrow();
   expect(() => {
-    lifecycle.open("future");
+    lifecycle.open(id("future"));
   }).toThrow();
   expect(lifecycle.snapshot().open).toEqual([]);
 });

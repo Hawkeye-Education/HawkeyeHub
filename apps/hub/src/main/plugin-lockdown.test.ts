@@ -1,3 +1,4 @@
+import { PluginId } from "@hawkeye-hub/plugin-format";
 import { expect, test } from "vitest";
 import {
   grantsPermission,
@@ -5,12 +6,14 @@ import {
   staysInPlugin,
 } from "./plugin-lockdown";
 
+const CLASS_TIMER = PluginId.parse("class-timer");
+
 test("a Plugin UI may navigate only within its own hawkeye-plugin origin", () => {
-  expect(staysInPlugin("class-timer", "hawkeye-plugin://class-timer/")).toBe(
+  expect(staysInPlugin(CLASS_TIMER, "hawkeye-plugin://class-timer/")).toBe(
     true,
   );
   expect(
-    staysInPlugin("class-timer", "hawkeye-plugin://class-timer/b.html?x#y"),
+    staysInPlugin(CLASS_TIMER, "hawkeye-plugin://class-timer/b.html?x#y"),
   ).toBe(true);
   for (const url of [
     "hawkeye-plugin://attendance/index.html",
@@ -22,7 +25,7 @@ test("a Plugin UI may navigate only within its own hawkeye-plugin origin", () =>
     "about:blank",
     "not a url",
   ])
-    expect(staysInPlugin("class-timer", url), url).toBe(false);
+    expect(staysInPlugin(CLASS_TIMER, url), url).toBe(false);
 });
 
 test("only an https link opens in the system browser", () => {
@@ -40,13 +43,13 @@ test("only an https link opens in the system browser", () => {
 
 test("only the clipboard is granted, and only to the Plugin's own page", () => {
   const own = "hawkeye-plugin://class-timer/";
-  expect(
-    grantsPermission("class-timer", "clipboard-sanitized-write", own),
-  ).toBe(true);
-  expect(grantsPermission("class-timer", "clipboard-read", own)).toBe(true);
+  expect(grantsPermission(CLASS_TIMER, "clipboard-sanitized-write", own)).toBe(
+    true,
+  );
+  expect(grantsPermission(CLASS_TIMER, "clipboard-read", own)).toBe(true);
   expect(
     grantsPermission(
-      "class-timer",
+      CLASS_TIMER,
       "clipboard-read",
       "hawkeye-plugin://attendance/",
     ),
@@ -60,7 +63,7 @@ test("only the clipboard is granted, and only to the Plugin's own page", () => {
     "openExternal",
     "unknown",
   ])
-    expect(grantsPermission("class-timer", permission, own), permission).toBe(
+    expect(grantsPermission(CLASS_TIMER, permission, own), permission).toBe(
       false,
     );
 });

@@ -110,6 +110,31 @@ test("a Backend that ignores shutdown is killed with its child after the grace p
   }
 });
 
+test("a Backend that exits on shutdown by itself still has the child it left behind killed", async ({
+  dataDir,
+}) => {
+  installFixturePlugins(dataDir, [fixtureInstall("leaving-backend")]);
+  const hub = await launchHub(dataDir);
+  try {
+    const leaving = await openPlugin(hub, "Leaving", "leaving-backend");
+    const { pid, childPid } = await report<StubbornReport>(leaving);
+    const hubChrome = await hub.firstWindow();
+
+    await hubChrome
+      .getByRole("button", { name: /^(Close Leaving|關閉 Leaving)$/ })
+      .click();
+
+    await expect
+      .poll(() => [isRunning(pid), isRunning(childPid)], {
+        timeout: KILLED_WITHIN_MS,
+      })
+      .toEqual([false, false]);
+    expect(errorLines(dataDir)).toEqual([]);
+  } finally {
+    await hub.close();
+  }
+});
+
 test("quitting with two Backend Plugins open leaves neither Backend running and logs Hub closing once", async ({
   dataDir,
 }) => {

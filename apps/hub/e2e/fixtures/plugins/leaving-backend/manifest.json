@@ -1,0 +1,12 @@
+{
+  "id": "leaving-backend",
+  "version": "1.0.0",
+  "hubApi": "^1.0.0",
+  "name": "Leaving",
+  "description": "A smoke-test fixture Plugin whose Backend exits on shutdown and leaves its child.",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "python", "python": "3.12" },
+  "assistant": { "kind": "none" }
+}

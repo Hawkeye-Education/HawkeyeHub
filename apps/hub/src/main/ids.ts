@@ -1,12 +1,15 @@
 // Constrained strings the Hub passes around. Each is only made by its parser, at the boundary.
 
 import { isAbsolute } from "node:path";
+import { KEBAB_CASE } from "@hawkeye-hub/plugin-format";
+
+// A Plugin id and version are the Manifest's own types, parsed with its schemas (plugin-format's
+// `PluginId.parse`, `PluginVersion.parse`), so they are checked by one rule and parsed only once.
+export type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
 
 declare const brand: unique symbol;
 type Branded<T, Name extends string> = T & { readonly [brand]: Name };
 
-export type PluginId = Branded<string, "PluginId">;
-export type PluginVersion = Branded<string, "PluginVersion">;
 export type HubVersion = Branded<string, "HubVersion">;
 export type HubApiVersion = Branded<string, "HubApiVersion">;
 export type PythonVersion = Branded<string, "PythonVersion">;
@@ -15,9 +18,6 @@ export type AiProviderKind = Branded<string, "AiProviderKind">;
 export type RpcErrorReason = Branded<string, "RpcErrorReason">;
 export type AbsolutePath = Branded<string, "AbsolutePath">;
 
-export const KEBAB_CASE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
-// PLUGIN_STANDARD.md "Ids": kebab-case, at most 64 characters.
-const PLUGIN_ID_MAX_LENGTH = 64;
 // semver.org's suggested regex.
 const SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
@@ -27,20 +27,6 @@ const PYTHON_VERSION =
 
 // In every parser below, the check is what makes the string its type; a brand cannot be
 // narrowed to, so the `as` after it is the one place the type is granted.
-
-export function parsePluginId(raw: string): PluginId {
-  if (raw.length > PLUGIN_ID_MAX_LENGTH || !KEBAB_CASE.test(raw)) {
-    throw new Error(`Not a Plugin id: ${JSON.stringify(raw)}`);
-  }
-  return raw as PluginId;
-}
-
-export function parsePluginVersion(raw: string): PluginVersion {
-  if (!SEMVER.test(raw)) {
-    throw new Error(`Not a Plugin version (semver): ${JSON.stringify(raw)}`);
-  }
-  return raw as PluginVersion;
-}
 
 export function parseHubVersion(raw: string): HubVersion {
   if (!SEMVER.test(raw)) {

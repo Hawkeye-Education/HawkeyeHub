@@ -4,11 +4,12 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { PluginId } from "@hawkeye-hub/plugin-format";
 import type { InstalledPlugin } from "./installed-plugins";
 
 export const PLUGIN_ICON_SCHEME = "hawkeye-icon";
 
-export function pluginIconUrl(id: string): string {
+export function pluginIconUrl(id: PluginId): string {
   return `${PLUGIN_ICON_SCHEME}://${id}/icon.svg`;
 }
 

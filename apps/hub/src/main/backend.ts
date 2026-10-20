@@ -3,7 +3,7 @@
 // with its whole process tree killed if it has not exited after a grace period. Each abnormal end
 // closes the Plugin with what went wrong.
 
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -17,14 +17,15 @@ import type {
   ProtocolViolation,
 } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
-import {
-  KEBAB_CASE,
-  parsePluginId,
-  parsePluginVersion,
-  parseRpcErrorReason,
-  type AbsolutePath,
-} from "./ids";
+import { KEBAB_CASE } from "@hawkeye-hub/plugin-format";
+import { parseRpcErrorReason, type AbsolutePath } from "./ids";
 import type { InstalledPlugin } from "./installed-plugins";
+import {
+  killTreeNow,
+  processTree,
+  SPAWN_DETACHED,
+  venvPython,
+} from "./platform";
 
 export interface Backend {
   /** Resolves once `initialize` has succeeded; never, if it does not (the Plugin then closes). */
@@ -46,51 +47,6 @@ export const SHUTDOWN_GRACE_MS = 5_000;
 
 // Every Backend process still running, so a Hub crash can kill them all.
 const running = new Set<ChildProcess>();
-
-/**
- * Kills a Backend and every process it launched: taskkill /T on Windows, which walks the live
- * process tree (the venv's python.exe is a launcher with the real interpreter as its child), and
- * the process group on macOS, where the Backend is spawned detached as its group's leader.
- * Resolves once the whole tree is gone: the Backend itself can exit before taskkill has reached
- * its children.
- */
-function killTree(pid: number): Promise<void> {
-  if (process.platform !== "win32") {
-    killTreeNow(pid);
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => {
-    spawn("taskkill", taskkillArgs(pid), TASKKILL_OPTIONS).once("exit", () => {
-      resolve();
-    });
-  });
-}
-
-// taskkill reports a tree already gone by its exit code, which is not needed here.
-const TASKKILL_OPTIONS = { stdio: "ignore", windowsHide: true } as const;
-function taskkillArgs(pid: number): string[] {
-  return ["/pid", String(pid), "/T", "/F"];
-}
-
-/** `killTree`, waiting for taskkill, for a Hub that is about to exit. */
-function killTreeNow(pid: number): void {
-  if (process.platform === "win32") {
-    spawnSync("taskkill", taskkillArgs(pid), TASKKILL_OPTIONS);
-    return;
-  }
-  try {
-    process.kill(-pid, "SIGKILL");
-  } catch (error) {
-    // The whole group has already exited: there is nothing left to kill.
-    if (!(
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "ESRCH"
-    )) {
-      throw error;
-    }
-  }
-}
 
 /**
  * Kills every running Backend's process tree, synchronously, as the Hub crashes. Best effort: the
@@ -134,15 +90,9 @@ const Request = z.object({
 const FromPreload = z
   .object({ id: z.number(), method: z.string() })
   .or(z.object({ method: z.string() }));
+const PreloadText = z.string();
 // An SDK Backend's error data (PLUGIN_STANDARD.md §5.3). A raw JSON-RPC Backend may send none.
 const RpcData = z.object({ reason: z.string().regex(KEBAB_CASE) });
-
-/** The venv's Python, as install builds it (ADR 0003). */
-function venvPython(backendDir: string): string {
-  return process.platform === "win32"
-    ? join(backendDir, ".venv", "Scripts", "python.exe")
-    : join(backendDir, ".venv", "bin", "python");
-}
 
 /** The Hub's environment minus the locale: a Backend never relies on it (PLUGIN_STANDARD.md §5.5). */
 function backendEnv(): NodeJS.ProcessEnv {
@@ -161,10 +111,7 @@ export function startBackend(
   /** Closes the whole Plugin, while it is still open: the Backend broke or failed to start. */
   closePlugin: (crash: PluginCrash) => void,
 ): Backend {
-  const plugin = {
-    id: parsePluginId(manifest.id),
-    version: parsePluginVersion(manifest.version),
-  };
+  const plugin = { id: manifest.id, version: manifest.version };
   // Keyed by id, never version, so they survive updates (ADR 0008).
   const dataDir = join(hubDataDir, "plugin-data", manifest.id);
   const stores = Object.fromEntries(
@@ -180,16 +127,12 @@ export function startBackend(
     env: backendEnv(),
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
-    // Its own process group on macOS, so the whole tree can be killed. Not on Windows, where
-    // detached opens a console; taskkill /T finds the tree there.
-    detached: process.platform === "darwin",
+    detached: SPAWN_DETACHED,
   });
   diagnostics.recordHubEvent({ kind: "backend-spawned", plugin });
   running.add(child);
   let shuttingDown = false;
   let isInitialized = false;
-  // Set while the grace period after `shutdown` runs. Null before `shutdown`, and once it ends.
-  let graceKill: NodeJS.Timeout | null = null;
 
   const initializeTimeout = setTimeout(() => {
     diagnostics.recordHubEvent({
@@ -204,7 +147,6 @@ export function startBackend(
     child.once("close", (code, signal) => {
       clearTimeout(initializeTimeout);
       running.delete(child);
-      if (graceKill !== null) clearTimeout(graceKill);
       const exit: BackendExit =
         code !== null
           ? { kind: "code", code }
@@ -219,16 +161,27 @@ export function startBackend(
       resolve();
     });
   });
-  // The Backend could not be spawned at all, such as a missing venv: the Plugin cannot run. Its
-  // close follows, but a Backend that never ran has no exit worth reporting.
-  child.once("error", () => {
-    if (child.pid === undefined) {
-      closePlugin({ cause: "failed-to-start", exit: { kind: "no-exit" } });
+  // Node emits a child's `error` when it cannot be spawned, killed, sent an IPC message, or is
+  // aborted (https://nodejs.org/docs/latest-v22.x/api/child_process.html#event-error). The Hub
+  // never kills it through Node, gives it no IPC channel and no abort signal, so only a failed
+  // spawn, such as a missing venv, can happen: the Plugin cannot run. Its close follows, but a
+  // Backend that never ran has no exit worth reporting. Anything else is a Hub bug, and throws.
+  child.once("error", (error) => {
+    if (child.pid !== undefined) throw error;
+    closePlugin({ cause: "failed-to-start", exit: { kind: "no-exit" } });
+  });
+  // A write to a Backend that has already exited fails: EPIPE on macOS
+  // (https://nodejs.org/docs/latest-v22.x/api/errors.html#common-system-errors), EOF on Windows
+  // (probed on Node 22.17, writing to a child as it exits). The exit itself is the close
+  // listener's to handle, so those are dropped; any other stdin error is a Hub bug, and throws.
+  child.stdin.on("error", (error) => {
+    if (!(
+      "code" in error &&
+      (error.code === "EPIPE" || error.code === "EOF")
+    )) {
+      throw error;
     }
   });
-  // A write to a Backend that has already exited fails with EPIPE. That is not a Hub error: the
-  // exit itself is handled by the close listener above.
-  child.stdin.on("error", () => undefined);
   child.stderr.on("data", (chunk: Buffer) => {
     pluginSession.recordStderr(chunk);
   });
@@ -237,13 +190,17 @@ export function startBackend(
     child.stdin.write(`${line}\n`);
   };
 
-  let resolveInitialized: () => void = () => undefined;
-  const initialized = new Promise<void>((resolve) => {
-    resolveInitialized = resolve;
-  });
+  const initialized = Promise.withResolvers<undefined>();
   // The relayed requests still waiting for an answer, by id: an error answer is logged with its method.
   const pending = new Map<number | string, string>();
-  let toPreload: MessagePortMain | null = null;
+  // The Plugin preload's port, once relayed. Until then, what the Backend sends waits here: it may
+  // notify as soon as it has answered `initialize`, before the port is handed over.
+  let toPreload:
+    | { kind: "waiting"; queued: z.infer<typeof FromBackend>[] }
+    | { kind: "relayed"; port: MessagePortMain } = {
+    kind: "waiting",
+    queued: [],
+  };
   const violated = (violation: ProtocolViolation): void => {
     closePlugin({
       cause: "crashed",
@@ -273,7 +230,7 @@ export function startBackend(
           closePlugin({ cause: "failed-to-start", exit: { kind: "no-exit" } });
         } else {
           isInitialized = true;
-          resolveInitialized();
+          initialized.resolve(undefined);
         }
         return;
       }
@@ -294,7 +251,8 @@ export function startBackend(
           });
         }
       }
-      toPreload?.postMessage(message);
+      if (toPreload.kind === "waiting") toPreload.queued.push(message);
+      else toPreload.port.postMessage(message);
     },
   );
 
@@ -308,35 +266,60 @@ export function startBackend(
   );
 
   return {
-    initialized,
+    initialized: initialized.promise,
     relay(port) {
-      toPreload = port;
-      // The preload sends each message as JSON text, already serialised from the page's values.
-      port.on("message", ({ data }) => {
-        if (typeof data !== "string") {
-          throw new Error("The Plugin preload sends JSON text");
+      if (toPreload.kind === "relayed") {
+        throw new Error("A Backend is relayed to one port per open");
+      }
+      for (const message of toPreload.queued) port.postMessage(message);
+      toPreload = { kind: "relayed", port };
+      // The preload sends each message as JSON text, serialised from the page's values. One that
+      // is not a request or notification is the Plugin's mistake: it breaks the protocol, and the
+      // Plugin closes.
+      port.on("message", ({ data }: { data: unknown }) => {
+        const text = PreloadText.safeParse(data);
+        const message = text.success
+          ? FromPreload.safeParse(parseJson(text.data))
+          : text;
+        if (!text.success || !message.success) {
+          violated("ui-not-json-rpc");
+          return;
         }
-        const message = FromPreload.parse(JSON.parse(data));
-        if ("id" in message) pending.set(message.id, message.method);
-        send(data);
+        if ("id" in message.data) {
+          pending.set(message.data.id, message.data.method);
+        }
+        send(text.data);
       });
       port.start();
     },
-    shutdown() {
+    async shutdown() {
       shuttingDown = true;
       clearTimeout(initializeTimeout);
-      toPreload?.close();
-      send(JSON.stringify({ jsonrpc: "2.0", method: "shutdown" }));
-      // Resolved at once unless the grace period runs out and the tree is killed.
-      let killed = Promise.resolve();
-      // A Backend that exited on its own, or never spawned, has no tree left to kill.
-      if (running.has(child) && child.pid !== undefined) {
-        const { pid } = child;
-        graceKill = setTimeout(() => {
-          killed = killTree(pid);
-        }, SHUTDOWN_GRACE_MS);
+      if (toPreload.kind === "relayed") toPreload.port.close();
+      const { pid } = child;
+      // ponytail: a Backend that already exited, or never spawned, is not killed: on Windows its
+      // leftover children cannot be found any more. Remember the tree at `initialize` too if
+      // Backends that crash leaving children turn up.
+      if (!running.has(child) || pid === undefined) {
+        await exited;
+        return;
       }
-      return exited.then(() => killed);
+      // Noted before `shutdown` is sent, while the Backend surely runs.
+      const tree = processTree(pid);
+      await tree.remember();
+      send(JSON.stringify({ jsonrpc: "2.0", method: "shutdown" }));
+      // Until the Backend exits, or the grace period runs out.
+      await new Promise<void>((resolve) => {
+        const graceTimer = setTimeout(resolve, SHUTDOWN_GRACE_MS);
+        void exited.then(() => {
+          clearTimeout(graceTimer);
+          resolve();
+        });
+      });
+      // Whether the Backend exited by itself or the grace period ran out, nothing it launched
+      // outlives it (spec #44 story 42).
+      await tree.kill();
+      await exited;
     },
   };
 }
