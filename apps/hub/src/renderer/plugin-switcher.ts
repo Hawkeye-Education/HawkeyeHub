@@ -5,11 +5,9 @@
 // (ADR 0006).
 
 import { LitElement, css, html, nothing } from "lit";
-import type {
-  BlockedReason,
-  HubChromeApi,
-  SwitcherPlugin,
-} from "../shared/hub-chrome-ipc";
+import type { PluginId } from "@hawkeye-hub/plugin-format";
+import type { HubChromeApi, SwitcherPlugin } from "../shared/hub-chrome-ipc";
+import type { Strings } from "./strings";
 
 /**
  * Hands the icon URL to the `li::before` mask. Bound as the `.style` property, which sets it
@@ -77,10 +75,7 @@ export class PluginSwitcher extends LitElement {
   `;
 
   static override properties = {
-    label: { attribute: false },
-    closeLabel: { attribute: false },
-    closingLabel: { attribute: false },
-    blockedReasons: { attribute: false },
+    strings: { attribute: false },
     plugins: { attribute: false },
     open: { attribute: false },
     closing: { attribute: false },
@@ -89,23 +84,17 @@ export class PluginSwitcher extends LitElement {
   };
   // `declare`: a class field would shadow Lit's reactive accessor. The Hub Chrome sets them all
   // through its template before the first render.
-  /** The navigation landmark's accessible name, in the Display Language. */
-  declare label: string;
-  /** The close control's accessible name for a Plugin, in the Display Language. */
-  declare closeLabel: (name: string) => string;
-  /** What a closing Plugin is marked with, in the Display Language. */
-  declare closingLabel: string;
-  /** Why a Plugin cannot be opened, in the Display Language. */
-  declare blockedReasons: Record<BlockedReason, string>;
+  declare strings: Strings;
   declare plugins: SwitcherPlugin[];
-  declare open: string[];
-  declare closing: string[];
+  declare open: PluginId[];
+  declare closing: PluginId[];
   /** Null when no Plugin is in front. */
-  declare foreground: string | null;
+  declare foreground: PluginId | null;
   declare hub: HubChromeApi;
 
   override render() {
-    return html`<nav aria-label=${this.label}>
+    const { strings } = this;
+    return html`<nav aria-label=${strings.plugins}>
       <ul>
         ${this.plugins.map(
           (plugin) =>
@@ -115,7 +104,7 @@ export class PluginSwitcher extends LitElement {
                   ? html`<span class="name blocked">
                       ${plugin.name}
                       <span class="reason">
-                        ${this.blockedReasons[plugin.access.reason]}
+                        ${strings.blocked[plugin.access.reason]}
                       </span>
                     </span>`
                   : html`<button
@@ -132,7 +121,7 @@ export class PluginSwitcher extends LitElement {
               ${
                 this.open.includes(plugin.id)
                   ? html`<button
-                      aria-label=${this.closeLabel(plugin.name)}
+                      aria-label=${strings.close(plugin.name)}
                       @click=${() => {
                         this.hub.close(plugin.id);
                       }}
@@ -143,7 +132,7 @@ export class PluginSwitcher extends LitElement {
               }
               ${
                 this.closing.includes(plugin.id)
-                  ? html`<span class="closing">${this.closingLabel}</span>`
+                  ? html`<span class="closing">${strings.closing}</span>`
                   : nothing
               }
             </li>`,

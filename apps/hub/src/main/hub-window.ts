@@ -24,10 +24,10 @@ import {
 } from "../shared/hub-chrome-ipc";
 import { z } from "zod";
 import type { Diagnostics } from "./diagnostics";
+import { errorCode } from "./error-code";
 import type { AbsolutePath } from "./ids";
-import type { InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
-import { createPluginViews } from "./plugin-views";
+import { contentAreaOf, createPluginViews } from "./plugin-views";
 import {
   countHubChromeCrashes,
   HUB_CHROME_CRASH_WINDOW_SECONDS,
@@ -60,12 +60,8 @@ const STOPPED_UNEXPECTEDLY = {
 const DialogAnswer = z.enum(DIALOG_ANSWERS);
 
 function isCutShort(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    typeof error.code === "string" &&
-    CUT_SHORT_LOAD_CODES.has(error.code)
-  );
+  const code = errorCode(error);
+  return code !== undefined && CUT_SHORT_LOAD_CODES.has(code);
 }
 
 // These are Electron's defaults; they are spelled out because no Hub Chrome view may ever have
@@ -103,7 +99,6 @@ export function openHubWindow(
   diagnostics: Diagnostics,
   now: () => Date,
   lifecycle: Lifecycle,
-  installed: readonly InstalledPlugin[],
   hubDataDir: AbsolutePath,
 ): BaseWindow {
   const { displayLanguage } = lifecycle.snapshot();
@@ -118,11 +113,6 @@ export function openHubWindow(
     // A BaseWindow does not take its title from the page.
     title: "Hawkeye Hub",
   });
-  const fullContentArea = () => {
-    // getContentBounds() is in screen coordinates; only its size applies to a child view.
-    const { width, height } = window.getContentBounds();
-    return { x: 0, y: 0, width, height };
-  };
 
   const hubChrome = hubChromeView();
   window.contentView.addChildView(hubChrome);
@@ -130,7 +120,6 @@ export function openHubWindow(
   const pluginViews = createPluginViews(
     window,
     diagnostics,
-    installed,
     displayLanguage,
     hubDataDir,
     lifecycle,
@@ -142,7 +131,7 @@ export function openHubWindow(
     if (pending !== null && overlay === null) {
       const view = hubChromeView();
       view.setBackgroundColor("#00000000");
-      view.setBounds(fullContentArea());
+      view.setBounds(contentAreaOf(window));
       // Added last, so above every Plugin UI.
       window.contentView.addChildView(view);
       // ponytail: a crashed overlay reloads without counting towards giving up; count it with
@@ -253,8 +242,8 @@ export function openHubWindow(
   );
 
   const fillContentArea = (): void => {
-    hubChrome.setBounds(fullContentArea());
-    overlay?.setBounds(fullContentArea());
+    hubChrome.setBounds(contentAreaOf(window));
+    overlay?.setBounds(contentAreaOf(window));
     pluginViews.layout();
   };
   fillContentArea();

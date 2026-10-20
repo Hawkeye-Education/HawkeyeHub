@@ -85,6 +85,8 @@ export function lockDown(
     const path = dialog.showSaveDialogSync(window, {
       defaultPath: join(app.getPath("downloads"), item.getFilename()),
     });
+    // Staff cancelling returns an empty string: checked in the installed Electron 44's API docs,
+    // `dialog.showSaveDialogSync` in node_modules/electron/electron.d.ts.
     if (path === "") {
       event.preventDefault();
       return;

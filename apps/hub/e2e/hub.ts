@@ -20,6 +20,7 @@ import {
   type ElectronApplication,
   type Page,
 } from "@playwright/test";
+import { errorCode } from "../src/main/error-code";
 
 // The package directory, so Electron reads package.json's `main` and `productName`.
 export const HUB_DIR = join(import.meta.dirname, "..");
@@ -282,7 +283,8 @@ export function isRunning(pid: number): boolean {
     // Signal 0 only checks that the process exists.
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (error) {
+    if (errorCode(error) !== "ESRCH") throw error;
     return false;
   }
 }

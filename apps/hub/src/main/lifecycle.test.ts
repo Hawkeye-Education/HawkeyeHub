@@ -5,7 +5,13 @@ import {
 } from "@hawkeye-hub/plugin-format";
 import { expect, test } from "vitest";
 import { parseAbsolutePath, parseHubApiVersion } from "./ids";
-import { accessOf, createLifecycle, type Lifecycle } from "./lifecycle";
+import type { BusyReason } from "../shared/hub-chrome-ipc";
+import {
+  accessOf,
+  createLifecycle,
+  type Busy,
+  type Lifecycle,
+} from "./lifecycle";
 
 function installed(
   id: string,
@@ -31,6 +37,11 @@ function installed(
 }
 
 const id = (raw: string): PluginId => PluginId.parse(raw);
+const busy = (reason: string): Busy => ({
+  kind: "busy",
+  reason: reason as BusyReason,
+});
+const NOT_BUSY: Busy = { kind: "not-busy" };
 
 const plugins = [
   installed("class-timer", { "en-HK": "Timer", "zh-HK": "計時器" }),
@@ -188,8 +199,8 @@ test("a staff close of a Plugin that is not Busy closes it without asking", () =
 test("a staff close of a Busy Plugin asks with its latest reason; Keep open leaves it open", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
   lifecycle.open(id("class-timer"));
-  lifecycle.setBusy(id("class-timer"), "Timing a test");
-  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
 
   lifecycle.requestClose(id("class-timer"));
   expect(lifecycle.snapshot()).toMatchObject({
@@ -211,7 +222,7 @@ test("a staff close of a Busy Plugin asks with its latest reason; Keep open leav
 test("Close anyway closes the Busy Plugin, and closing clears its Busy", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
   lifecycle.open(id("class-timer"));
-  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
   lifecycle.requestClose(id("class-timer"));
 
   lifecycle.answer("close-anyway");
@@ -231,9 +242,9 @@ test("a Plugin that clears Busy closes without asking, but a dialog already up s
   const lifecycle = createLifecycle("en-HK", plugins);
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
-  lifecycle.setBusy(id("class-timer"), "Timing an exam");
-  lifecycle.setBusy(id("attendance"), "Taking the register");
-  lifecycle.setBusy(id("attendance"), null);
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
+  lifecycle.setBusy(id("attendance"), busy("Taking the register"));
+  lifecycle.setBusy(id("attendance"), NOT_BUSY);
   lifecycle.requestClose(id("attendance"));
   expect(lifecycle.snapshot()).toMatchObject({
     open: ["class-timer"],
@@ -241,7 +252,7 @@ test("a Plugin that clears Busy closes without asking, but a dialog already up s
   });
 
   lifecycle.requestClose(id("class-timer"));
-  lifecycle.setBusy(id("class-timer"), null);
+  lifecycle.setBusy(id("class-timer"), NOT_BUSY);
   expect(lifecycle.snapshot().dialog).toMatchObject({
     kind: "busy-close",
     plugin: { reason: "Timing an exam" },
@@ -251,7 +262,7 @@ test("a Plugin that clears Busy closes without asking, but a dialog already up s
 test("a Busy Plugin that closes abnormally while its dialog is up takes the dialog with it", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
   lifecycle.open(id("class-timer"));
-  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
   lifecycle.requestClose(id("class-timer"));
 
   lifecycle.close(id("class-timer"));
@@ -265,8 +276,8 @@ test("a Busy Plugin that closes abnormally while the quit dialog is up leaves it
   const lifecycle = createLifecycle("en-HK", plugins);
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
-  lifecycle.setBusy(id("class-timer"), "Timing an exam");
-  lifecycle.setBusy(id("attendance"), "Taking the register");
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
+  lifecycle.setBusy(id("attendance"), busy("Taking the register"));
   let quits = 0;
   lifecycle.requestQuit(() => {
     quits += 1;
@@ -285,10 +296,10 @@ test("a Busy Plugin that closes abnormally while the quit dialog is up leaves it
 test("a Busy reason that changes while its dialog is up leaves the dialog as it was asked", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
   lifecycle.open(id("class-timer"));
-  lifecycle.setBusy(id("class-timer"), "Timing a test");
+  lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
   lifecycle.requestQuit(() => undefined);
 
-  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
   expect(lifecycle.snapshot().dialog).toMatchObject({
     plugins: [{ reason: "Timing a test" }],
   });
@@ -298,7 +309,7 @@ test("Busy from a Plugin that is not open is ignored: it arrived as the Plugin c
   const lifecycle = createLifecycle("en-HK", plugins);
   lifecycle.open(id("class-timer"));
   lifecycle.close(id("class-timer"));
-  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
   lifecycle.closed(id("class-timer"));
 
   lifecycle.open(id("class-timer"));
@@ -323,8 +334,8 @@ test("a quit with Busy Plugins asks once, listing each by name; Keep open stays,
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
   lifecycle.open(id("seating-plan"));
-  lifecycle.setBusy(id("class-timer"), "Timing an exam");
-  lifecycle.setBusy(id("attendance"), "Taking the register");
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
+  lifecycle.setBusy(id("attendance"), busy("Taking the register"));
   let quits = 0;
   const quit = () => {
     quits += 1;
@@ -354,7 +365,7 @@ test("a quit with Busy Plugins asks once, listing each by name; Keep open stays,
 test("a quit while a Busy close is asking asks about the quit instead", () => {
   const lifecycle = createLifecycle("en-HK", plugins);
   lifecycle.open(id("class-timer"));
-  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
   lifecycle.requestClose(id("class-timer"));
 
   lifecycle.requestQuit(() => undefined);
@@ -367,7 +378,7 @@ test("an answer that is not one of the pending dialog's buttons, or with no dial
     lifecycle.answer("keep-open");
   }).toThrow();
   lifecycle.open(id("class-timer"));
-  lifecycle.setBusy(id("class-timer"), "Timing an exam");
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
   lifecycle.requestClose(id("class-timer"));
   expect(() => {
     lifecycle.answer("quit-anyway");
@@ -436,4 +447,10 @@ test("the snapshot marks blocked Plugins, and opening one throws", () => {
     lifecycle.open(id("future"));
   }).toThrow();
   expect(lifecycle.snapshot().open).toEqual([]);
+});
+
+test("installed answers the installed Plugin with an id, and throws for one that is not installed", () => {
+  const lifecycle = createLifecycle("en-HK", plugins);
+  expect(lifecycle.installed(id("attendance"))).toBe(plugins[1]);
+  expect(() => lifecycle.installed(id("not-installed"))).toThrow();
 });

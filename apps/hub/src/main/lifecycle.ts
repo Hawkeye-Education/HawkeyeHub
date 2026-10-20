@@ -11,6 +11,7 @@ import type {
 import semver from "semver";
 import type {
   BusyPlugin,
+  BusyReason,
   DialogAnswer,
   DisplayLanguage,
   HubChromeDialog,
@@ -22,8 +23,13 @@ import type { HubApiVersion } from "./ids";
 import type { InstalledPlugin } from "./installed-plugins";
 import { pluginIconUrl } from "./plugin-icons";
 
+/** An open Plugin's Busy, as its page last set it. */
+export type Busy = { kind: "busy"; reason: BusyReason } | { kind: "not-busy" };
+
 export interface Lifecycle {
   snapshot(): HubChromeSnapshot;
+  /** The installed Plugin with `id`. Throws if none is. */
+  installed(id: PluginId): InstalledPlugin;
   /** `listener` runs after every change to the state, to push a new snapshot. */
   onChange(listener: () => void): void;
   /**
@@ -45,12 +51,12 @@ export interface Lifecycle {
   /** A staff close: `close`, or, if the Plugin is Busy, the dialog asking first. */
   requestClose(id: PluginId): void;
   /**
-   * Sets an open Plugin's Busy reason, or clears it with null. Ignored once the Plugin is not
+   * Sets or clears an open Plugin's Busy. Ignored once the Plugin is not
    * open: its page can still say so as it closes. A dialog already up keeps the reasons it was
    * asked with (spec #44: "If Busy clears while it is up, the dialog stays"), so the snapshot does
    * not change and nothing is announced.
    */
-  setBusy(id: PluginId, reason: string | null): void;
+  setBusy(id: PluginId, busy: Busy): void;
   /**
    * A normal quit (spec #44 "Quitting"): calls `quit`, or, if any Plugin is Busy, shows the one
    * dialog listing them all and calls `quit` on **Quit anyway**.
@@ -114,19 +120,19 @@ export function createLifecycle(
 ): Lifecycle {
   const byName = new Intl.Collator(displayLanguage).compare;
   const plugins = installed
-    .map(({ manifest }) => ({
-      manifest,
+    .map((plugin) => ({
+      plugin,
       listed: {
-        id: manifest.id,
-        name: displayTextIn(manifest.name, displayLanguage),
-        iconUrl: pluginIconUrl(manifest.id),
-        access: accessOf(manifest, HUB_API_VERSION),
+        id: plugin.manifest.id,
+        name: displayTextIn(plugin.manifest.name, displayLanguage),
+        iconUrl: pluginIconUrl(plugin.manifest.id),
+        access: accessOf(plugin.manifest, HUB_API_VERSION),
       },
     }))
     .sort((a, b) => byName(a.listed.name, b.listed.name));
   const listed = plugins.map((plugin) => plugin.listed);
   const installedPlugin = (id: PluginId) => {
-    const plugin = plugins.find(({ manifest }) => manifest.id === id);
+    const plugin = plugins.find(({ listed }) => listed.id === id);
     if (plugin === undefined) {
       throw new Error(`No installed Plugin has the id ${JSON.stringify(id)}`);
     }
@@ -140,12 +146,12 @@ export function createLifecycle(
   let closing: PluginId[] = [];
   let asking: Asking | null = null;
   // The latest Busy reason of each open Plugin that is Busy.
-  const busy = new Map<PluginId, string>();
+  const busyReasons = new Map<PluginId, BusyReason>();
   const listeners: (() => void)[] = [];
   const changed = (): void => {
     for (const listener of listeners) listener();
   };
-  const busyPlugin = (id: PluginId, reason: string): BusyPlugin => ({
+  const busyPlugin = (id: PluginId, reason: BusyReason): BusyPlugin => ({
     id,
     name: installedPlugin(id).listed.name,
     reason,
@@ -170,7 +176,7 @@ export function createLifecycle(
     }
     open = open.filter((other) => other !== id);
     closing = [...closing, id];
-    busy.delete(id);
+    busyReasons.delete(id);
     asking = askingWithout(id);
     changed();
   };
@@ -183,12 +189,16 @@ export function createLifecycle(
       foreground: open[0] ?? null,
       dialog: dialogOf(asking),
     }),
+    installed: (id) => installedPlugin(id).plugin,
     onChange: (listener) => {
       listeners.push(listener);
     },
     open: (id) => {
       // The gates run again at open, not only when the list was built (spec #44).
-      const access = accessOf(installedPlugin(id).manifest, HUB_API_VERSION);
+      const access = accessOf(
+        installedPlugin(id).plugin.manifest,
+        HUB_API_VERSION,
+      );
       if (access.kind === "blocked") {
         throw new Error(
           `The Plugin ${JSON.stringify(id)} cannot be opened: ${access.reason}`,
@@ -209,7 +219,7 @@ export function createLifecycle(
       changed();
     },
     requestClose: (id) => {
-      const reason = busy.get(id);
+      const reason = busyReasons.get(id);
       if (reason === undefined) {
         close(id);
         return;
@@ -217,15 +227,23 @@ export function createLifecycle(
       asking = { kind: "busy-close", plugin: busyPlugin(id, reason) };
       changed();
     },
-    setBusy: (id, reason) => {
+    setBusy: (id, busy) => {
       if (!open.includes(id)) return;
-      if (reason === null) busy.delete(id);
-      else busy.set(id, reason);
+      switch (busy.kind) {
+        case "busy":
+          busyReasons.set(id, busy.reason);
+          return;
+        case "not-busy":
+          busyReasons.delete(id);
+          return;
+        default:
+          return busy satisfies never;
+      }
     },
     requestQuit: (quit) => {
       // In the Plugin Switcher's order.
       const busyPlugins = listed.flatMap(({ id }) => {
-        const reason = busy.get(id);
+        const reason = busyReasons.get(id);
         return reason === undefined ? [] : [busyPlugin(id, reason)];
       });
       if (busyPlugins.length === 0) {

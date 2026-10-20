@@ -73,10 +73,7 @@ export class HubChrome extends LitElement {
     return html`<aside>
         <h1>Hawkeye Hub</h1>
         <plugin-switcher
-          .label=${strings.plugins}
-          .closeLabel=${strings.close}
-          .closingLabel=${strings.closing}
-          .blockedReasons=${strings.blocked}
+          .strings=${strings}
           .plugins=${this.snapshot.plugins}
           .open=${this.snapshot.open}
           .closing=${this.snapshot.closing}

@@ -2,6 +2,7 @@
 
 import { isAbsolute } from "node:path";
 import { KEBAB_CASE } from "@hawkeye-hub/plugin-format";
+import { z } from "zod";
 
 // A Plugin id and version are the Manifest's own types, parsed with its schemas (plugin-format's
 // `PluginId.parse`, `PluginVersion.parse`), so they are checked by one rule and parsed only once.
@@ -64,13 +65,15 @@ export function parseAiProviderKind(raw: string): AiProviderKind {
   return raw as AiProviderKind;
 }
 
-/** `error.data.reason` of a JSON-RPC error: the kebab-case code every SDK Backend sends. */
-export function parseRpcErrorReason(raw: string): RpcErrorReason {
-  if (!KEBAB_CASE.test(raw)) {
-    throw new Error(`Not a JSON-RPC error reason: ${JSON.stringify(raw)}`);
-  }
-  return raw as RpcErrorReason;
-}
+/**
+ * `error.data.reason` of a JSON-RPC error: the kebab-case code every SDK Backend sends. A schema,
+ * not a parser, as it is read inside the Backend's error data, which zod parses whole. As above,
+ * the regex makes it the type, and the `as` after it grants the brand.
+ */
+export const RpcErrorReason = z
+  .string()
+  .regex(KEBAB_CASE)
+  .transform((raw) => raw as RpcErrorReason);
 
 export function parseAbsolutePath(raw: string): AbsolutePath {
   if (!isAbsolute(raw)) {

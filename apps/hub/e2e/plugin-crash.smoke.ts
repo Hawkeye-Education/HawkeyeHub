@@ -245,6 +245,53 @@ test("a Plugin UI whose renderer goes away writes a crashed record, and the Plug
   }
 });
 
+test("a Plugin UI whose renderer goes away while it is still loading writes a crashed record, not a failed load", async ({
+  dataDir,
+}) => {
+  installFixturePlugins(dataDir, [fixtureInstall("crashing-backend")]);
+  const hub = await launchHub(dataDir);
+  const hubChrome = await hub.firstWindow();
+  await displayLanguageOf(hubChrome);
+  // Crashes the Plugin UI as its page commits, before it has finished loading.
+  await hub.evaluate(({ app }) => {
+    app.on("web-contents-created", (_event, contents) => {
+      contents.once("did-navigate", (_navigated, url) => {
+        if (url.startsWith("hawkeye-plugin:"))
+          contents.forcefullyCrashRenderer();
+      });
+    });
+  });
+
+  try {
+    await hubChrome
+      .getByRole("button", { name: "Crashing", exact: true })
+      .click();
+
+    await expect
+      .poll(() => crashSummaries(dataDir, "crashing-backend"))
+      .toEqual([
+        expect.stringMatching(
+          /^Plugin closed abnormally: crashed \(Plugin UI gone: /,
+        ),
+      ]);
+    await expect(closeButton(hubChrome, "Crashing")).toHaveCount(0);
+  } finally {
+    await hub.close();
+  }
+  // The Hub itself never crashed: quitting waits for the Backend, so all of it is logged by now.
+  expect(
+    hubLogLines(dataDir).filter(
+      (line) =>
+        typeof line === "object" &&
+        line !== null &&
+        "pluginId" in line &&
+        line.pluginId === null &&
+        "level" in line &&
+        line.level === "error",
+    ),
+  ).toEqual([]);
+});
+
 test("closing a Plugin while it is still loading records nothing", async ({
   dataDir,
 }) => {

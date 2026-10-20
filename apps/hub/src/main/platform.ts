@@ -4,6 +4,7 @@
 import { execFile, spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { errorCode } from "./error-code";
 
 const WINDOWS = process.platform === "win32";
 
@@ -28,7 +29,7 @@ export interface ProcessEntry {
   created: bigint;
 }
 
-const same = (a: ProcessEntry) => (b: ProcessEntry) =>
+const sameProcess = (a: ProcessEntry) => (b: ProcessEntry) =>
   a.pid === b.pid && a.created === b.created;
 
 /**
@@ -47,7 +48,7 @@ export function treeOf(
       if (
         each.parent === parent.pid &&
         each.created >= parent.created &&
-        !tree.some(same(each))
+        !tree.some(sameProcess(each))
       ) {
         tree.push(each);
       }
@@ -100,13 +101,7 @@ function killGroup(pid: number): void {
   try {
     process.kill(-pid, "SIGKILL");
   } catch (error) {
-    if (!(
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "ESRCH"
-    )) {
-      throw error;
-    }
+    if (errorCode(error) !== "ESRCH") throw error;
   }
 }
 

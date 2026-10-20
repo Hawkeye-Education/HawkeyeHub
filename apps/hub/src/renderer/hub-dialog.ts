@@ -1,7 +1,7 @@
 // A Hub Chrome dialog, drawn on the dialog overlay: a modal <dialog> over a dimmed window. Its
 // first button is **Keep open**, focused, so Enter picks it, and Esc picks it too.
 
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, type TemplateResult } from "lit";
 import type {
   DialogAnswer,
   HubChromeApi,
@@ -51,31 +51,45 @@ export class HubDialog extends LitElement {
     this.renderRoot.querySelector("dialog")?.showModal();
   }
 
-  private answer(answer: DialogAnswer): void {
-    this.hub.answer(answer);
+  /** The dialog's heading, its body, and its second button: what it says and what it answers. */
+  private content(): {
+    heading: string;
+    body: TemplateResult;
+    anyway: { answer: DialogAnswer; label: string };
+  } {
+    const { dialog, strings } = this;
+    switch (dialog.kind) {
+      case "busy-close":
+        return {
+          heading: strings.closeQuestion(dialog.plugin.name),
+          body: html`<p>${dialog.plugin.reason}</p>`,
+          anyway: { answer: "close-anyway", label: strings.closeAnyway },
+        };
+      case "busy-quit":
+        return {
+          heading: strings.quitQuestion,
+          body: html`<p>${strings.busyPlugins}</p>
+            <ul>
+              ${dialog.plugins.map(
+                ({ name, reason }) => html`<li><b>${name}</b>: ${reason}</li>`,
+              )}
+            </ul>`,
+          anyway: { answer: "quit-anyway", label: strings.quitAnyway },
+        };
+      default:
+        return dialog satisfies never;
+    }
   }
 
   override render() {
-    const { dialog, strings } = this;
-    const closing = dialog.kind === "busy-close";
-    const heading = closing
-      ? strings.closeQuestion(dialog.plugin.name)
-      : strings.quitQuestion;
-    const body = closing
-      ? html`<p>${dialog.plugin.reason}</p>`
-      : html`<p>${strings.busyPlugins}</p>
-          <ul>
-            ${dialog.plugins.map(
-              ({ name, reason }) => html`<li><b>${name}</b>: ${reason}</li>`,
-            )}
-          </ul>`;
-    const anyway: DialogAnswer = closing ? "close-anyway" : "quit-anyway";
+    const { strings, hub } = this;
+    const { heading, body, anyway } = this.content();
     // Esc cancels the <dialog>: that is Keep open. Main then takes the overlay away.
     return html`<dialog
       aria-labelledby="heading"
       @cancel=${(event: Event) => {
         event.preventDefault();
-        this.answer("keep-open");
+        hub.answer("keep-open");
       }}
     >
       <h2 id="heading">${heading}</h2>
@@ -84,17 +98,17 @@ export class HubDialog extends LitElement {
         <button
           autofocus
           @click=${() => {
-            this.answer("keep-open");
+            hub.answer("keep-open");
           }}
         >
           ${strings.keepOpen}
         </button>
         <button
           @click=${() => {
-            this.answer(anyway);
+            hub.answer(anyway.answer);
           }}
         >
-          ${closing ? strings.closeAnyway : strings.quitAnyway}
+          ${anyway.label}
         </button>
       </div>
     </dialog>`;

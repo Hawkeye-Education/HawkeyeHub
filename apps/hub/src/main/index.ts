@@ -119,13 +119,7 @@ function runHub(): void {
       displayLanguageFor(app.getPreferredSystemLanguages()),
       installed.loaded,
     );
-    return openHubWindow(
-      diagnostics,
-      now,
-      lifecycle,
-      installed.loaded,
-      hubDataDir,
-    );
+    return openHubWindow(diagnostics, now, lifecycle, hubDataDir);
   });
 
   // Registered now, not once the window is open, so a launch during startup is not missed: it
