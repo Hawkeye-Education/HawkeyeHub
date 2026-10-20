@@ -7,7 +7,7 @@ import { killBackendsNow } from "./backend";
 import { openDiagnostics } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
 import { openHubWindow } from "./hub-window";
-import { parseAbsolutePath } from "./ids";
+import { parseAbsolutePath, parseHubVersion } from "./ids";
 import { loadInstalledPlugins } from "./installed-plugins";
 import { createLifecycle } from "./lifecycle";
 import { PLUGIN_ICON_SCHEME, servePluginIcons } from "./plugin-icons";
@@ -116,6 +116,8 @@ function runHub(): void {
       servePluginIcons(installed.loaded),
     );
     const lifecycle = createLifecycle(
+      // package.json's `version`: without one Electron would answer its own version.
+      parseHubVersion(app.getVersion()),
       displayLanguageFor(app.getPreferredSystemLanguages()),
       installed.loaded,
     );

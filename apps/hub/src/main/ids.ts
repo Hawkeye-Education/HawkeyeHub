@@ -7,11 +7,13 @@ import { z } from "zod";
 // A Plugin id and version are the Manifest's own types, parsed with its schemas (plugin-format's
 // `PluginId.parse`, `PluginVersion.parse`), so they are checked by one rule and parsed only once.
 export type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
+// Shared with the Hub Chrome, which shows it in About.
+import type { HubVersion } from "../shared/hub-chrome-ipc";
+export type { HubVersion };
 
 declare const brand: unique symbol;
 type Branded<T, Name extends string> = T & { readonly [brand]: Name };
 
-export type HubVersion = Branded<string, "HubVersion">;
 export type HubApiVersion = Branded<string, "HubApiVersion">;
 export type PythonVersion = Branded<string, "PythonVersion">;
 export type AiProviderLabel = Branded<string, "AiProviderLabel">;

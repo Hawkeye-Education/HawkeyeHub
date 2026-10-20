@@ -30,6 +30,16 @@ export interface SwitcherPlugin {
   access: PluginAccess;
 }
 
+declare const hubVersion: unique symbol;
+/** The Hub's own version (semver), as main parses it. */
+export type HubVersion = string & { readonly [hubVersion]: true };
+
+/**
+ * What the content area shows: the front Plugin's UI (or the empty state when none is open), or
+ * Hub Settings, with the open Plugins still running hidden behind them.
+ */
+export type HubChromeContent = { kind: "plugin" } | { kind: "settings" };
+
 export interface HubChromeSnapshot {
   displayLanguage: DisplayLanguage;
   /** Every installed Plugin, sorted by name. */
@@ -40,8 +50,10 @@ export interface HubChromeSnapshot {
   closing: PluginId[];
   /** The Plugin in front. Null when none is: the Hub Chrome then draws the empty state. */
   foreground: PluginId | null;
+  content: HubChromeContent;
   /** The Hub Chrome dialog waiting for an answer, drawn on the dialog overlay. Null when none is. */
   dialog: HubChromeDialog | null;
+  hubVersion: HubVersion;
 }
 
 declare const busyReason: unique symbol;
@@ -84,6 +96,10 @@ export interface HubChromeApi {
   close(id: PluginId): void;
   /** Answers the pending dialog. */
   answer(answer: DialogAnswer): void;
+  /** Shows Hub Settings in the content area. */
+  showSettings(): void;
+  /** Exports a Diagnostics Bundle to where staff choose in a native save dialog. */
+  exportDiagnostics(): void;
 }
 
 /** Hub Chrome → main, `invoke`: answers the current snapshot. */
@@ -96,3 +112,7 @@ export const OPEN_PLUGIN = "hub-chrome:open-plugin";
 export const CLOSE_PLUGIN = "hub-chrome:close-plugin";
 /** Hub Chrome → main, `invoke`: the `DialogAnswer` to the pending dialog. */
 export const ANSWER_DIALOG = "hub-chrome:answer-dialog";
+/** Hub Chrome → main, `invoke`: shows Hub Settings. */
+export const SHOW_SETTINGS = "hub-chrome:show-settings";
+/** Hub Chrome → main, `invoke`: exports a Diagnostics Bundle through a native save dialog. */
+export const EXPORT_DIAGNOSTICS = "hub-chrome:export-diagnostics";

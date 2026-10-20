@@ -16,16 +16,19 @@ import {
   ANSWER_DIALOG,
   CLOSE_PLUGIN,
   DIALOG_ANSWERS,
+  EXPORT_DIAGNOSTICS,
   GET_SNAPSHOT,
   OPEN_PLUGIN,
+  SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
   type DisplayLanguage,
   type HubChromeDialog,
 } from "../shared/hub-chrome-ipc";
 import { z } from "zod";
-import type { Diagnostics } from "./diagnostics";
+import { bundleFileName, type Diagnostics } from "./diagnostics";
 import { errorCode } from "./error-code";
-import type { AbsolutePath } from "./ids";
+import { parseAbsolutePath, type AbsolutePath } from "./ids";
+import { pluginRefOf } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
 import { contentAreaOf, createPluginViews } from "./plugin-views";
 import {
@@ -172,6 +175,37 @@ export function openHubWindow(
   ipcMain.handle(ANSWER_DIALOG, (event, answer: unknown) => {
     fromHubChrome(ANSWER_DIALOG, event.sender);
     lifecycle.answer(DialogAnswer.parse(answer));
+  });
+  ipcMain.handle(SHOW_SETTINGS, (event) => {
+    fromHubChrome(SHOW_SETTINGS, event.sender);
+    lifecycle.showSettings();
+  });
+  ipcMain.handle(EXPORT_DIAGNOSTICS, async (event) => {
+    fromHubChrome(EXPORT_DIAGNOSTICS, event.sender);
+    const { canceled, filePath } = await dialog.showSaveDialog(window, {
+      defaultPath: join(app.getPath("downloads"), bundleFileName(now())),
+    });
+    if (canceled) return;
+    const snapshot = lifecycle.snapshot();
+    diagnostics.exportBundle(parseAbsolutePath(filePath), {
+      hubVersion: snapshot.hubVersion,
+      os: {
+        name: process.platform,
+        version: process.getSystemVersion(),
+        arch: process.arch,
+      },
+      displayLanguage: snapshot.displayLanguage,
+      // ponytail: the first-launch Hub Settings, until the Theme and Colour Scheme are stored (#71).
+      theme: "hawkeye",
+      colourScheme: "system",
+      plugins: snapshot.plugins.map(({ id }) =>
+        pluginRefOf(lifecycle.installed(id)),
+      ),
+      // The Hub downloads no Python interpreter and has no AI Provider or Auth Provider yet.
+      pythonVersions: [],
+      aiProviders: [],
+      authProvider: { kind: "none" },
+    });
   });
   // Quitting (a window close, or app.quit as Cmd+Q does, which closes the window) asks first if any
   // Plugin is Busy, and **Keep open** cancels it. Then every open Plugin closes, in parallel. Their

@@ -10,8 +10,9 @@ import {
   type HubChromeSnapshot,
 } from "../shared/hub-chrome-ipc";
 import "./hub-dialog";
+import "./hub-settings";
 import "./plugin-switcher";
-import { STRINGS } from "./strings";
+import { STRINGS, type Strings } from "./strings";
 
 const IS_OVERLAY = location.hash === "#dialog";
 
@@ -24,7 +25,13 @@ export class HubChrome extends LitElement {
       font-family: system-ui, sans-serif;
     }
     aside {
+      display: flex;
+      flex-direction: column;
       border-right: 1px solid #ccc;
+      min-height: 0;
+    }
+    plugin-switcher {
+      flex: 1;
       overflow-y: auto;
     }
     h1 {
@@ -32,9 +39,26 @@ export class HubChrome extends LitElement {
       padding: 16px;
       font-size: 20px;
     }
+    .gear {
+      font: inherit;
+      border: none;
+      border-top: 1px solid #ccc;
+      background: none;
+      padding: 12px 16px;
+      text-align: start;
+      cursor: pointer;
+    }
+    .gear[aria-current="page"] {
+      font-weight: bold;
+    }
     main {
+      min-height: 0;
+    }
+    .empty {
       display: grid;
       place-items: center;
+      height: 100%;
+      margin: 0;
       color: #666;
     }
   `;
@@ -70,6 +94,8 @@ export class HubChrome extends LitElement {
             .hub=${window.hubChrome}
           ></hub-dialog>`;
     }
+    const { content, foreground } = this.snapshot;
+    const settingsShowing = content.kind === "settings";
     return html`<aside>
         <h1>Hawkeye Hub</h1>
         <plugin-switcher
@@ -77,17 +103,41 @@ export class HubChrome extends LitElement {
           .plugins=${this.snapshot.plugins}
           .open=${this.snapshot.open}
           .closing=${this.snapshot.closing}
-          .foreground=${this.snapshot.foreground}
+          .foreground=${settingsShowing ? null : foreground}
           .hub=${window.hubChrome}
         ></plugin-switcher>
+        <button
+          class="gear"
+          aria-current=${settingsShowing ? "page" : nothing}
+          @click=${() => {
+            window.hubChrome.showSettings();
+          }}
+        >
+          <span aria-hidden="true">⚙</span> ${strings.settings}
+        </button>
       </aside>
-      <main>
-        ${
-          this.snapshot.foreground === null
-            ? html`<p>${strings.noPluginOpen}</p>`
-            : nothing
-        }
-      </main>`;
+      <main>${this.renderContent(strings)}</main>`;
+  }
+
+  // The front Plugin's UI is a view main lays over the content area, so with one in front this
+  // draws nothing.
+  private renderContent(strings: Strings) {
+    if (this.snapshot === null) return nothing;
+    const { content } = this.snapshot;
+    switch (content.kind) {
+      case "settings":
+        return html`<hub-settings
+          .strings=${strings}
+          .hubVersion=${this.snapshot.hubVersion}
+          .hub=${window.hubChrome}
+        ></hub-settings>`;
+      case "plugin":
+        return this.snapshot.foreground === null
+          ? html`<p class="empty">${strings.noPluginOpen}</p>`
+          : nothing;
+      default:
+        return content satisfies never;
+    }
   }
 }
 
