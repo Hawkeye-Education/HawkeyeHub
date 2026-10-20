@@ -171,6 +171,31 @@ test("closing a Plugin that is not Busy asks nothing", async ({ dataDir }) => {
   }
 });
 
+test("an empty Busy reason is refused: the call rejects, and closing asks nothing", async ({
+  dataDir,
+}) => {
+  const { hub, hubChrome, words } = await hubWith(dataDir, ["class-timer"]);
+  try {
+    await hubChrome
+      .getByRole("button", { name: words.timer, exact: true })
+      .click();
+    const timer = await pluginPage(() => hub.windows(), "class-timer");
+
+    await expect(
+      timer.evaluate(() => window.hub.busy.set("")),
+    ).rejects.toThrow();
+
+    const closeTimer = hubChrome.getByRole("button", {
+      name: words.closeTimer,
+    });
+    await closeTimer.click();
+    await expect(closeTimer).toHaveCount(0);
+    expect(overlayShowing(hub)).toBe(false);
+  } finally {
+    await hub.close();
+  }
+});
+
 test("quitting with two Busy Plugins asks once, listing both; Keep open keeps the Hub running and Quit anyway quits", async ({
   dataDir,
 }) => {

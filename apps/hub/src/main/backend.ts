@@ -17,9 +17,9 @@ import type {
   ProtocolViolation,
 } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
-import { KEBAB_CASE } from "@hawkeye-hub/plugin-format";
-import { parseRpcErrorReason, type AbsolutePath } from "./ids";
-import type { InstalledPlugin } from "./installed-plugins";
+import { errorCode } from "./error-code";
+import { RpcErrorReason, type AbsolutePath } from "./ids";
+import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import {
   killTreeNow,
   processTree,
@@ -82,7 +82,7 @@ const FromBackend = z.union([
   }),
 ]);
 // A request on the Backend's stdout: a protocol violation of its own kind.
-const Request = z.object({
+const BackendRequest = z.object({
   jsonrpc: z.literal("2.0"),
   id: Id,
   method: z.string(),
@@ -93,7 +93,7 @@ const FromPreload = z
   .or(z.object({ method: z.string() }));
 const PreloadText = z.string();
 // An SDK Backend's error data (PLUGIN_STANDARD.md §5.3). A raw JSON-RPC Backend may send none.
-const RpcData = z.object({ reason: z.string().regex(KEBAB_CASE) });
+const RpcData = z.object({ reason: RpcErrorReason });
 
 /** The Hub's environment minus the locale: a Backend never relies on it (PLUGIN_STANDARD.md §5.5). */
 function backendEnv(): NodeJS.ProcessEnv {
@@ -105,14 +105,15 @@ function backendEnv(): NodeJS.ProcessEnv {
 }
 
 export function startBackend(
-  { folder, manifest }: InstalledPlugin,
+  installed: InstalledPlugin,
   hubDataDir: AbsolutePath,
   diagnostics: Diagnostics,
   pluginSession: PluginSession,
   /** Closes the whole Plugin, while it is still open: the Backend broke or failed to start. */
   closePlugin: (crash: PluginCrash) => void,
 ): Backend {
-  const plugin = { id: manifest.id, version: manifest.version };
+  const { folder, manifest } = installed;
+  const plugin = pluginRefOf(installed);
   // Keyed by id, never version, so they survive updates (ADR 0008).
   const dataDir = join(hubDataDir, "plugin-data", manifest.id);
   const stores = Object.fromEntries(
@@ -182,12 +183,8 @@ export function startBackend(
   // (probed on Node 22.17, writing to a child as it exits). The exit itself is the close
   // listener's to handle, so those are dropped; any other stdin error is a Hub bug, and throws.
   child.stdin.on("error", (error) => {
-    if (!(
-      "code" in error &&
-      (error.code === "EPIPE" || error.code === "EOF")
-    )) {
-      throw error;
-    }
+    const code = errorCode(error);
+    if (code !== "EPIPE" && code !== "EOF") throw error;
   });
   child.stderr.on("data", (chunk: Buffer) => {
     pluginSession.recordStderr(chunk);
@@ -222,7 +219,9 @@ export function startBackend(
       const parsed = FromBackend.safeParse(json);
       // A line that is not a response or notification breaks the protocol: the Plugin closes.
       if (!parsed.success) {
-        violated(Request.safeParse(json).success ? "request" : "not-json-rpc");
+        violated(
+          BackendRequest.safeParse(json).success ? "request" : "not-json-rpc",
+        );
         return;
       }
       const message = parsed.data;
@@ -258,7 +257,7 @@ export function startBackend(
           const data = RpcData.safeParse(message.error.data);
           pluginSession.recordRpcError({
             method,
-            reason: data.success ? parseRpcErrorReason(data.data.reason) : null,
+            reason: data.success ? data.data.reason : null,
             message: message.error.message,
           });
         }

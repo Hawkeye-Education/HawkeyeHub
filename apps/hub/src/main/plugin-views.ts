@@ -11,9 +11,11 @@ import {
   session,
   WebContentsView,
   type BaseWindow,
+  type Rectangle,
 } from "electron";
 import {
   SWITCHER_WIDTH_PX,
+  type BusyReason,
   type DisplayLanguage,
   type HubChromeSnapshot,
 } from "../shared/hub-chrome-ipc";
@@ -25,14 +27,25 @@ import {
 } from "../shared/plugin-preload";
 import { startBackend } from "./backend";
 import type { Diagnostics, NetErrorCode, PluginCrash } from "./diagnostics";
+import { errorCode } from "./error-code";
 import type { AbsolutePath } from "./ids";
-import type { InstalledPlugin } from "./installed-plugins";
+import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
 
-// What the preload sends on `BUSY`: a reason, or null to clear.
-const BusyReason = z.string().nullable();
+// What the preload sends on `BUSY`. An empty reason would show staff nothing, so it is refused. A
+// brand cannot be narrowed to, so the `as` after the check is where the type is granted.
+const BusyMessage = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("busy"),
+    reason: z
+      .string()
+      .min(1)
+      .transform((raw) => raw as BusyReason),
+  }),
+  z.strictObject({ kind: z.literal("not-busy") }),
+]);
 
 export interface PluginViews {
   /** Creates, shows, hides and destroys views until they match `snapshot`. */
@@ -47,24 +60,31 @@ interface OpenPlugin {
   closed: Promise<void>;
 }
 
+/** The window's whole content area, in its own coordinates. */
+export function contentAreaOf(window: BaseWindow): Rectangle {
+  // getContentBounds() is in screen coordinates; only its size applies to a child view.
+  const { width, height } = window.getContentBounds();
+  return { x: 0, y: 0, width, height };
+}
+
 export function createPluginViews(
   window: BaseWindow,
   diagnostics: Diagnostics,
-  installed: readonly InstalledPlugin[],
   displayLanguage: DisplayLanguage,
   hubDataDir: AbsolutePath,
   /**
    * Told when a Plugin's crash is recorded (`close`: its UI crashed or failed to load, or its
    * Backend broke or failed to start, and the whole Plugin closes), when a closed Plugin is gone
-   * (`closed`: its page destroyed and its Backend, if any, exited), and of its page's Busy.
+   * (`closed`: its page destroyed and its Backend, if any, exited), and of its page's Busy. Asked
+   * for each installed Plugin it opens.
    */
-  lifecycle: Pick<Lifecycle, "close" | "closed" | "setBusy">,
+  lifecycle: Pick<Lifecycle, "installed" | "close" | "closed" | "setBusy">,
 ): PluginViews {
   const opened = new Map<PluginId, OpenPlugin>();
 
-  const contentArea = () => {
-    // getContentBounds() is in screen coordinates; only its size applies to a child view.
-    const { width, height } = window.getContentBounds();
+  // Beside the Plugin Switcher.
+  const contentArea = (): Rectangle => {
+    const { width, height } = contentAreaOf(window);
     return {
       x: SWITCHER_WIDTH_PX,
       y: 0,
@@ -96,10 +116,7 @@ export function createPluginViews(
       },
     });
     lockDown(view, window, id);
-    const pluginSession = diagnostics.startPluginSession({
-      id,
-      version: manifest.version,
-    });
+    const pluginSession = diagnostics.startPluginSession(pluginRefOf(plugin));
     // Records the crash and closes the Plugin, only if this open is still the open one: once it is
     // closing, nothing that follows is a crash, and nothing restarts.
     const crashed = (crash: PluginCrash): void => {
@@ -119,11 +136,11 @@ export function createPluginViews(
     view.webContents.on("console-message", ({ level, message }) => {
       pluginSession.recordConsoleMessage(level, message);
     });
-    // `hub.busy`: a reason, or null to clear. Anything else is the Plugin's mistake, and rejects
-    // back to its own call.
+    // `hub.busy`: set with a reason, or cleared. Anything else, an empty reason included, is the
+    // Plugin's mistake, and rejects back to its own call.
     view.webContents.ipc.handle(BUSY, (_event, raw: unknown) => {
-      const reason = BusyReason.parse(raw);
-      if (opened.get(id)?.view === view) lifecycle.setBusy(id, reason);
+      const busy = BusyMessage.parse(raw);
+      if (opened.get(id)?.view === view) lifecycle.setBusy(id, busy);
     });
     // A Plugin's beforeunload never holds a close (ADR 0009): Busy is how it asks to stay open.
     view.webContents.on("will-prevent-unload", (event) => {
@@ -197,10 +214,7 @@ export function createPluginViews(
         if (!openIds.includes(id)) close(id, plugin);
       }
       for (const id of openIds) {
-        const plugin = installed.find(({ manifest }) => manifest.id === id);
-        if (plugin === undefined)
-          throw new Error(`${id} is open but not installed`);
-        const openPlugin = opened.get(id) ?? open(plugin);
+        const openPlugin = opened.get(id) ?? open(lifecycle.installed(id));
         opened.set(id, openPlugin);
         // A hidden view stays alive; Chromium throttles it and the page sees visibilitychange.
         openPlugin.view.setVisible(id === foreground);
@@ -214,14 +228,8 @@ export function createPluginViews(
 
 /** The net error a rejected `loadURL` carries: Electron's rejection is an Error with its `code`. */
 function netErrorCodeOf(error: unknown): NetErrorCode {
-  if (
-    error instanceof Error &&
-    "code" in error &&
-    typeof error.code === "string" &&
-    isNetErrorCode(error.code)
-  ) {
-    return error.code;
-  }
+  const code = errorCode(error);
+  if (code !== undefined && isNetErrorCode(code)) return code;
   throw new Error("A Plugin UI load failed without a net error code", {
     cause: error,
   });

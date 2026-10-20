@@ -26,6 +26,11 @@ export interface InstalledPlugin {
   manifest: Manifest;
 }
 
+/** The Plugin as Diagnostics names it. */
+export function pluginRefOf({ manifest }: InstalledPlugin): PluginRef {
+  return { id: manifest.id, version: manifest.version };
+}
+
 export interface LeftOutPlugin {
   plugin: PluginRef;
   reason: PluginLeftOutReason;
@@ -90,9 +95,9 @@ function loadEntry(
   if (parsed.kind === "invalid") {
     return { kind: "left-out", reason: "manifest-invalid" };
   }
-  const said = parsed.manifest;
-  if (said.id !== id || said.version !== version) {
+  const { manifest } = parsed;
+  if (manifest.id !== id || manifest.version !== version) {
     return { kind: "left-out", reason: "manifest-disagrees" };
   }
-  return { kind: "loaded", plugin: { folder, manifest: parsed.manifest } };
+  return { kind: "loaded", plugin: { folder, manifest } };
 }

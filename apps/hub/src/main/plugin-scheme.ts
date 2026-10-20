@@ -3,6 +3,7 @@
 
 import { relative, resolve, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { PluginId } from "@hawkeye-hub/plugin-format";
 import { net, type Session } from "electron";
 
 /** Its privileges are granted in index.ts, in the Hub's one registerSchemesAsPrivileged call. */
@@ -14,7 +15,7 @@ export const PLUGIN_SCHEME = "hawkeye-plugin";
  */
 export function uiFileFor(
   uiDir: string,
-  id: string,
+  id: PluginId,
   url: string,
 ): string | null {
   const parsed = new URL(url);
@@ -31,7 +32,7 @@ export function uiFileFor(
 /** Serves `uiDir` as `hawkeye-plugin://<id>/` on `session`, once per session per Hub run. */
 export function servePluginUi(
   session: Session,
-  id: string,
+  id: PluginId,
   uiDir: string,
 ): void {
   // The partition's session outlives a close, so a reopen finds the scheme already handled.

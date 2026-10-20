@@ -1,4 +1,5 @@
-// What main tells the Plugin preload, shared by both. Constants only: the preload is sandboxed.
+// What main and the Plugin preload tell each other, shared by both. Types and constants only: the
+// preload is sandboxed.
 
 /** Prefix of the `additionalArguments` entry that carries the Display Language to the preload. */
 export const DISPLAY_LANGUAGE_ARG = "--hawkeye-hub-display-language=";
@@ -12,5 +13,9 @@ export const HAS_BACKEND_ARG = "--hawkeye-hub-has-backend";
  */
 export const BACKEND_PORT = "hub:backend-port";
 
-/** The preload invokes this with a Busy reason, or with null to clear Busy (`window.hub.busy`). */
+/** The preload invokes this with a `BusyMessage`, from `window.hub.busy`. */
 export const BUSY = "hub:busy";
+
+/** The page's Busy: set, with the reason the page gave, or cleared. Main refuses an empty reason. */
+export type BusyMessage =
+  { kind: "busy"; reason: string } | { kind: "not-busy" };

@@ -16,7 +16,7 @@ import {
   parseAiProviderLabel,
   parseHubVersion,
   parsePythonVersion,
-  parseRpcErrorReason,
+  RpcErrorReason,
   type AbsolutePath,
 } from "./ids";
 
@@ -493,7 +493,7 @@ test("a JSON-RPC error response is written as its method, data.reason and messag
   );
   const response = {
     method: "markEssays",
-    reason: parseRpcErrorReason("same-folder"),
+    reason: RpcErrorReason.parse("same-folder"),
     message: "Input and output are the same folder",
     // What the relay also has to hand; none of it may reach the log.
     params: { folder: "C:/Users/staff/essays" },
@@ -789,6 +789,6 @@ test("constrained strings are parsed, not taken as bare strings", () => {
   expect(parsePythonVersion("3.14.0rc1")).toBe("3.14.0rc1");
   expect(() => parseAiProviderLabel(" ")).toThrow();
   expect(() => parseAiProviderKind("Azure OpenAI")).toThrow();
-  expect(() => parseRpcErrorReason("Same folder")).toThrow();
+  expect(() => RpcErrorReason.parse("Same folder")).toThrow();
   expect(() => parseAbsolutePath("logs")).toThrow();
 });

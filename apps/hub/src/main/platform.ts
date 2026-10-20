@@ -4,6 +4,7 @@
 import { execFile, spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { errorCode } from "./error-code";
 
 const WINDOWS = process.platform === "win32";
 
@@ -100,13 +101,7 @@ function killGroup(pid: number): void {
   try {
     process.kill(-pid, "SIGKILL");
   } catch (error) {
-    if (!(
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "ESRCH"
-    )) {
-      throw error;
-    }
+    if (errorCode(error) !== "ESRCH") throw error;
   }
 }
 

@@ -14,6 +14,7 @@ import {
   BUSY,
   DISPLAY_LANGUAGE_ARG,
   HAS_BACKEND_ARG,
+  type BusyMessage,
 } from "../shared/plugin-preload";
 
 /** A JSON-RPC response or notification from the Backend, as main relays it. */
@@ -34,10 +35,12 @@ if (displayLanguage === undefined) {
 // `hub.busy`: main keeps the latest reason and shows it when staff close the Plugin or quit.
 const busy: HubBusy = {
   set: async (reason) => {
-    await ipcRenderer.invoke(BUSY, reason);
+    const message: BusyMessage = { kind: "busy", reason };
+    await ipcRenderer.invoke(BUSY, message);
   },
   clear: async () => {
-    await ipcRenderer.invoke(BUSY, null);
+    const message: BusyMessage = { kind: "not-busy" };
+    await ipcRenderer.invoke(BUSY, message);
   },
 };
 

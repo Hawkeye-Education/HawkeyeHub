@@ -16,6 +16,7 @@ import {
   test,
   type DisplayLanguage,
 } from "./hub";
+import { SWITCHER_WIDTH_PX } from "../src/shared/hub-chrome-ipc";
 
 // What the Hub Chrome says, in each Display Language; the Hub follows the OS's.
 const WORDS = {
@@ -107,18 +108,19 @@ test("a UI-only Plugin opens beside the Plugin Switcher with window.hub and <htm
       "page",
     );
     await expect(hubChrome.getByText(words.noPluginOpen)).toBeHidden();
-    // The Plugin UI fills the content area beside the 240 px Plugin Switcher.
+    // The Plugin UI fills the content area beside the Plugin Switcher.
     const [contentArea] = await hub.evaluate(({ BaseWindow }) =>
       BaseWindow.getAllWindows().map((window) => window.getContentBounds()),
     );
+    if (contentArea === undefined) throw new Error("The Hub has no window");
     expect(
       await timer.evaluate(() => ({
         width: window.innerWidth,
         height: window.innerHeight,
       })),
     ).toEqual({
-      width: (contentArea?.width ?? 0) - 240,
-      height: contentArea?.height,
+      width: contentArea.width - SWITCHER_WIDTH_PX,
+      height: contentArea.height,
     });
   } finally {
     await hub.close();

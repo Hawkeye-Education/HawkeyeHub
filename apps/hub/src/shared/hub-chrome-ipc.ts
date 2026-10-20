@@ -44,11 +44,15 @@ export interface HubChromeSnapshot {
   dialog: HubChromeDialog | null;
 }
 
+declare const busyReason: unique symbol;
+/** A Plugin's own Busy reason, in the Display Language. Never empty: main parses it so. */
+export type BusyReason = string & { readonly [busyReason]: true };
+
 /** A Busy Plugin, by its name in the Display Language and its own reason. */
 export interface BusyPlugin {
   id: PluginId;
   name: string;
-  reason: string;
+  reason: BusyReason;
 }
 
 /**
@@ -86,9 +90,9 @@ export interface HubChromeApi {
 export const GET_SNAPSHOT = "hub-chrome:get-snapshot";
 /** Main → Hub Chrome, `send`: a new snapshot, on every change. */
 export const SNAPSHOT_CHANGED = "hub-chrome:snapshot-changed";
-/** Hub Chrome → main, `send`: the id of a Plugin to open or bring forward. */
+/** Hub Chrome → main, `invoke`: the id of a Plugin to open or bring forward. */
 export const OPEN_PLUGIN = "hub-chrome:open-plugin";
-/** Hub Chrome → main, `send`: the id of an open Plugin to close. */
+/** Hub Chrome → main, `invoke`: the id of an open Plugin to close. */
 export const CLOSE_PLUGIN = "hub-chrome:close-plugin";
 /** Hub Chrome → main, `invoke`: the `DialogAnswer` to the pending dialog. */
 export const ANSWER_DIALOG = "hub-chrome:answer-dialog";
