@@ -90,6 +90,10 @@ _Avoid_: Bundle, build, release
 The company-wide settings every Hub installation shares, such as its Auth Provider, Role Mapping and Sign-in Lifetime; it holds no secrets.
 _Avoid_: Hub config, settings, tenant config
 
+**Hub Settings**:
+The choices staff make on one Hub installation, such as Theme, Colour Scheme and Display Language; they belong to the OS user rather than to a Staff Identity, never leave the machine, and override the Company Configuration where both apply.
+_Avoid_: Preferences, options, config
+
 ### AI
 
 **AI Provider**:
