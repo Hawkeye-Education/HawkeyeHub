@@ -102,3 +102,31 @@ test("a settings file that is not JSON is logged and replaced, and the Hub start
   });
   await hub.close();
 });
+
+test("a stored Theme this Hub does not have shows Hawkeye, is logged once, and stays stored", async ({
+  dataDir,
+}) => {
+  const file = join(dataDir, "hub-settings.json");
+  const stored = {
+    theme: { kind: "chosen", name: "aurora" },
+    colourScheme: "system",
+    displayLanguage: { kind: "system" },
+  };
+  writeFileSync(file, JSON.stringify(stored));
+  const hub = await launchHub(dataDir);
+  const hubChrome = await hub.firstWindow();
+  const words = WORDS[await displayLanguageOf(hubChrome)];
+
+  await hubChrome.getByRole("button", { name: words.settings }).click();
+  await expect(hubChrome.getByRole("radio", { name: "Hawkeye" })).toBeChecked();
+  const unknownTheme = "Theme aurora unknown to this Hub, using hawkeye";
+  const lines = hubLogLines(dataDir);
+  expect(lines).toContainEqual(
+    expect.objectContaining({ level: "warn", message: unknownTheme }),
+  );
+  expect(
+    lines.filter((line) => JSON.stringify(line).includes(unknownTheme)),
+  ).toHaveLength(1);
+  expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(stored);
+  await hub.close();
+});

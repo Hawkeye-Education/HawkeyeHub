@@ -5,7 +5,11 @@ import {
 } from "@hawkeye-hub/plugin-format";
 import { expect, test } from "vitest";
 import { parseAbsolutePath, parseHubApiVersion, parseHubVersion } from "./ids";
-import type { BusyReason, HubSettings } from "../shared/hub-chrome-ipc";
+import type {
+  BusyReason,
+  HubSettings,
+  ThemeName,
+} from "../shared/hub-chrome-ipc";
 import { FIRST_LAUNCH_SETTINGS } from "./hub-settings";
 import {
   accessOf,
@@ -47,6 +51,9 @@ const HUB_VERSION = parseHubVersion("1.4.2");
 const ignoreSave = (): void => {
   // Most tests never save.
 };
+const ignoreUnknownTheme = (): void => {
+  // Most tests store only Themes this Hub has.
+};
 
 const plugins = [
   installed("class-timer", { "en-HK": "Timer", "zh-HK": "計時器" }),
@@ -62,6 +69,7 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
       plugins,
       FIRST_LAUNCH_SETTINGS,
       ignoreSave,
+      ignoreUnknownTheme,
     ).snapshot(),
   ).toEqual({
     displayLanguage: "en-HK",
@@ -91,6 +99,8 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
     content: { kind: "plugin" },
     dialog: null,
     hubVersion: "1.4.2",
+    theme: "hawkeye",
+    themes: ["hawkeye"],
   });
 });
 
@@ -102,6 +112,7 @@ test("in zh-HK the snapshot uses zh-HK names, falls back to English, and sorts b
       plugins,
       FIRST_LAUNCH_SETTINGS,
       ignoreSave,
+      ignoreUnknownTheme,
     )
       .snapshot()
       .plugins.map(({ name }) => name),
@@ -116,6 +127,7 @@ test("showing settings keeps open Plugins open with the front one still in front
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -143,6 +155,7 @@ const LIGHT: HubSettings = { ...FIRST_LAUNCH_SETTINGS, colourScheme: "light" };
 /** A Lifecycle showing settings, starting from `stored`, and the settings each Save saved. */
 function inSettings(stored: HubSettings) {
   const saved: HubSettings[] = [];
+  const unknownThemes: string[] = [];
   const lifecycle = createLifecycle(
     HUB_VERSION,
     "en-HK",
@@ -151,10 +164,54 @@ function inSettings(stored: HubSettings) {
     (settings) => {
       saved.push(settings);
     },
+    (name) => {
+      unknownThemes.push(name);
+    },
   );
   lifecycle.showSettings();
-  return { lifecycle, saved };
+  return { lifecycle, saved, unknownThemes };
 }
+
+const themeNamed = (name: string): HubSettings["theme"] => ({
+  kind: "chosen",
+  name: name as ThemeName,
+});
+
+test("on first launch the company's Theme, Hawkeye until the Company Configuration is fetched, is the Theme", () => {
+  const { lifecycle, unknownThemes } = inSettings(FIRST_LAUNCH_SETTINGS);
+  expect(lifecycle.snapshot()).toMatchObject({
+    theme: "hawkeye",
+    themes: ["hawkeye"],
+    content: { stored: { theme: { kind: "company" } } },
+  });
+  expect(unknownThemes).toEqual([]);
+});
+
+test("saving a chosen Theme stores it by name and makes it the Theme", () => {
+  const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
+  const chosen = { ...FIRST_LAUNCH_SETTINGS, theme: themeNamed("hawkeye") };
+  lifecycle.editSettings(chosen);
+  lifecycle.saveSettings();
+  expect(saved).toEqual([chosen]);
+  expect(lifecycle.snapshot()).toMatchObject({
+    theme: "hawkeye",
+    content: { stored: { theme: { kind: "chosen", name: "hawkeye" } } },
+  });
+});
+
+test("a stored Theme this Hub does not have resolves to Hawkeye, is reported once, and stays stored", () => {
+  const stored = { ...FIRST_LAUNCH_SETTINGS, theme: themeNamed("aurora") };
+  const { lifecycle, saved, unknownThemes } = inSettings(stored);
+  expect(lifecycle.snapshot().theme).toBe("hawkeye");
+
+  lifecycle.editSettings({ ...stored, colourScheme: "dark" });
+  lifecycle.saveSettings();
+  lifecycle.snapshot();
+  expect(unknownThemes).toEqual(["aurora"]);
+  expect(saved).toEqual([{ ...stored, colourScheme: "dark" }]);
+  expect(lifecycle.storedSettings().theme).toEqual(themeNamed("aurora"));
+  expect(lifecycle.snapshot().theme).toBe("hawkeye");
+});
 
 test("settings show what is stored", () => {
   const { lifecycle } = inSettings(DARK);
@@ -238,6 +295,7 @@ test("picking a Plugin while settings show leaves them and brings that Plugin fo
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -258,6 +316,7 @@ test("settings stay showing while the Plugins behind them close", () => {
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("attendance"));
   lifecycle.showSettings();
@@ -276,6 +335,7 @@ test("editing, saving or cancelling while settings are not showing throws", () =
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   expect(() => {
     lifecycle.editSettings(DARK);
@@ -300,6 +360,7 @@ test("opening Plugins brings each forward, and opening an open one brings it for
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   expect(openAndForeground(lifecycle)).toEqual({ open: [], foreground: null });
 
@@ -324,6 +385,7 @@ test("closing the foreground Plugin brings forward the most recently foregrounde
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("seating-plan"));
@@ -345,6 +407,7 @@ test("closing a background Plugin leaves the foreground one in front", () => {
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -363,6 +426,7 @@ test("every change is announced", () => {
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   const seen: (string | null)[] = [];
   lifecycle.onChange(() => {
@@ -383,6 +447,7 @@ test("a closed Plugin is closing until its close finishes, cannot be reopened un
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -413,6 +478,7 @@ test("finishing the close of a Plugin that is not closing throws", () => {
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("attendance"));
   expect(() => {
@@ -427,6 +493,7 @@ test("a staff close of a Plugin that is not Busy closes it without asking", () =
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("attendance"));
 
@@ -445,6 +512,7 @@ test("a staff close of a Busy Plugin asks with its latest reason; Keep open leav
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
@@ -474,6 +542,7 @@ test("Close anyway closes the Busy Plugin, and closing clears its Busy", () => {
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
@@ -499,6 +568,7 @@ test("a Plugin that clears Busy closes without asking, but a dialog already up s
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -526,6 +596,7 @@ test("a Busy Plugin that closes abnormally while its dialog is up takes the dial
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
@@ -545,6 +616,7 @@ test("a Busy Plugin that closes abnormally while the quit dialog is up leaves it
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -572,6 +644,7 @@ test("a Busy reason that changes while its dialog is up leaves the dialog as it 
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
@@ -590,6 +663,7 @@ test("Busy from a Plugin that is not open is ignored: it arrived as the Plugin c
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.close(id("class-timer"));
@@ -608,6 +682,7 @@ test("a quit with no Busy Plugin goes ahead without asking", () => {
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   let quits = 0;
@@ -626,6 +701,7 @@ test("a quit with Busy Plugins asks once, listing each by name; Keep open stays,
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -665,6 +741,7 @@ test("a quit while a Busy close is asking asks about the quit instead", () => {
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
@@ -681,6 +758,7 @@ test("an answer that is not one of the pending dialog's buttons, or with no dial
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   expect(() => {
     lifecycle.answer("keep-open");
@@ -700,6 +778,7 @@ test("opening a Plugin that is not installed, or closing one that is not open, t
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   expect(() => {
     lifecycle.open(id("not-installed"));
@@ -750,6 +829,7 @@ test("the snapshot marks blocked Plugins, and opening one throws", () => {
     ],
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   expect(
     lifecycle.snapshot().plugins.map(({ id, access }) => ({ id, access })),
@@ -776,6 +856,7 @@ test("installed answers the installed Plugin with an id, and throws for one that
     plugins,
     FIRST_LAUNCH_SETTINGS,
     ignoreSave,
+    ignoreUnknownTheme,
   );
   expect(lifecycle.installed(id("attendance"))).toBe(plugins[1]);
   expect(() => lifecycle.installed(id("not-installed"))).toThrow();
