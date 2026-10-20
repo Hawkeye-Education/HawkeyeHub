@@ -67,7 +67,8 @@ export function parseAiProviderKind(raw: string): AiProviderKind {
 
 /**
  * `error.data.reason` of a JSON-RPC error: the kebab-case code every SDK Backend sends. A schema,
- * not a parser, as it is read inside the Backend's error data, which zod parses whole.
+ * not a parser, as it is read inside the Backend's error data, which zod parses whole. As above,
+ * the regex makes it the type, and the `as` after it grants the brand.
  */
 export const RpcErrorReason = z
   .string()

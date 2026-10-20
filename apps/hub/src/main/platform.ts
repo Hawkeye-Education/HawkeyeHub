@@ -29,7 +29,7 @@ export interface ProcessEntry {
   created: bigint;
 }
 
-const same = (a: ProcessEntry) => (b: ProcessEntry) =>
+const sameProcess = (a: ProcessEntry) => (b: ProcessEntry) =>
   a.pid === b.pid && a.created === b.created;
 
 /**
@@ -48,7 +48,7 @@ export function treeOf(
       if (
         each.parent === parent.pid &&
         each.created >= parent.created &&
-        !tree.some(same(each))
+        !tree.some(sameProcess(each))
       ) {
         tree.push(each);
       }

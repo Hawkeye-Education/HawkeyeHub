@@ -146,7 +146,7 @@ export function createLifecycle(
   let closing: PluginId[] = [];
   let asking: Asking | null = null;
   // The latest Busy reason of each open Plugin that is Busy.
-  const busy = new Map<PluginId, BusyReason>();
+  const busyReasons = new Map<PluginId, BusyReason>();
   const listeners: (() => void)[] = [];
   const changed = (): void => {
     for (const listener of listeners) listener();
@@ -176,7 +176,7 @@ export function createLifecycle(
     }
     open = open.filter((other) => other !== id);
     closing = [...closing, id];
-    busy.delete(id);
+    busyReasons.delete(id);
     asking = askingWithout(id);
     changed();
   };
@@ -219,7 +219,7 @@ export function createLifecycle(
       changed();
     },
     requestClose: (id) => {
-      const reason = busy.get(id);
+      const reason = busyReasons.get(id);
       if (reason === undefined) {
         close(id);
         return;
@@ -227,23 +227,23 @@ export function createLifecycle(
       asking = { kind: "busy-close", plugin: busyPlugin(id, reason) };
       changed();
     },
-    setBusy: (id, set) => {
+    setBusy: (id, busy) => {
       if (!open.includes(id)) return;
-      switch (set.kind) {
+      switch (busy.kind) {
         case "busy":
-          busy.set(id, set.reason);
+          busyReasons.set(id, busy.reason);
           return;
         case "not-busy":
-          busy.delete(id);
+          busyReasons.delete(id);
           return;
         default:
-          return set satisfies never;
+          return busy satisfies never;
       }
     },
     requestQuit: (quit) => {
       // In the Plugin Switcher's order.
       const busyPlugins = listed.flatMap(({ id }) => {
-        const reason = busy.get(id);
+        const reason = busyReasons.get(id);
         return reason === undefined ? [] : [busyPlugin(id, reason)];
       });
       if (busyPlugins.length === 0) {

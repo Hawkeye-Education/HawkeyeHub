@@ -113,7 +113,6 @@ export function openHubWindow(
     // A BaseWindow does not take its title from the page.
     title: "Hawkeye Hub",
   });
-  const fullContentArea = () => contentAreaOf(window);
 
   const hubChrome = hubChromeView();
   window.contentView.addChildView(hubChrome);
@@ -132,7 +131,7 @@ export function openHubWindow(
     if (pending !== null && overlay === null) {
       const view = hubChromeView();
       view.setBackgroundColor("#00000000");
-      view.setBounds(fullContentArea());
+      view.setBounds(contentAreaOf(window));
       // Added last, so above every Plugin UI.
       window.contentView.addChildView(view);
       // ponytail: a crashed overlay reloads without counting towards giving up; count it with
@@ -243,8 +242,8 @@ export function openHubWindow(
   );
 
   const fillContentArea = (): void => {
-    hubChrome.setBounds(fullContentArea());
-    overlay?.setBounds(fullContentArea());
+    hubChrome.setBounds(contentAreaOf(window));
+    overlay?.setBounds(contentAreaOf(window));
     pluginViews.layout();
   };
   fillContentArea();
