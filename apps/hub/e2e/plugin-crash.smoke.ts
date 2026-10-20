@@ -18,7 +18,10 @@ import {
 // `hubChrome`.
 declare const window: {
   hub: {
-    backend: { request(method: string, params: unknown): Promise<unknown> };
+    backend: {
+      request(method: string, params: unknown): Promise<unknown>;
+      notify(method: unknown, params: unknown): Promise<void>;
+    };
   };
   hubChrome: { open(id: string): void; close(id: string): void };
 };
@@ -112,6 +115,39 @@ test("a Backend that writes a line that is not JSON-RPC writes a crashed record 
       .toEqual([
         "Plugin closed abnormally: crashed (protocol violation: a stdout line that is not JSON-RPC)",
       ]);
+  } finally {
+    await hub.close();
+  }
+});
+
+test("a Plugin UI message that is not JSON-RPC writes a crashed record naming a protocol violation, and the Plugin closes while the Hub runs on", async ({
+  dataDir,
+}) => {
+  const { hub, hubChrome } = await openFixture(
+    dataDir,
+    "crashing-backend",
+    "Crashing",
+  );
+  try {
+    const page = await pluginPage(() => hub.windows(), "crashing-backend");
+    await expect(closeButton(hubChrome, "Crashing")).toBeVisible();
+
+    // A method must be a string: the page's own mistake, which the preload passes on.
+    await page.evaluate(() => {
+      void window.hub.backend.notify(42, {});
+    });
+
+    await expect(closeButton(hubChrome, "Crashing")).toHaveCount(0);
+    await expect
+      .poll(() => crashSummaries(dataDir, "crashing-backend"))
+      .toEqual([
+        "Plugin closed abnormally: crashed (protocol violation: a Plugin UI message that is not JSON-RPC)",
+      ]);
+    // The Hub is still running: the Plugin reopens.
+    await hubChrome
+      .getByRole("button", { name: "Crashing", exact: true })
+      .click();
+    await expect(closeButton(hubChrome, "Crashing")).toBeVisible();
   } finally {
     await hub.close();
   }

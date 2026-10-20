@@ -25,7 +25,12 @@ import {
 
 // The fixture Plugin UI's and the page's globals, for code evaluated in its page.
 declare const window: {
-  observed: { pongs: unknown[]; answer: unknown; error: unknown };
+  observed: {
+    hellos: unknown[];
+    pongs: unknown[];
+    answer: unknown;
+    error: unknown;
+  };
   hub: {
     backend: { request(method: string, params: unknown): Promise<unknown> };
   };
@@ -91,7 +96,7 @@ test("the Backend starts in its backend folder, without LANG or LC_*, and gets i
   }
 });
 
-test("requests sent at page load are answered, a JSON-RPC error rejects with backend-error, and Backend notifications reach onNotification", async ({
+test("requests sent at page load are answered, a JSON-RPC error rejects with backend-error, and Backend notifications reach onNotification, even one sent before the page's port", async ({
   dataDir,
 }) => {
   const { hub, echo } = await openEchoBackend(dataDir);
@@ -99,6 +104,7 @@ test("requests sent at page load are answered, a JSON-RPC error rejects with bac
     await expect
       .poll(() => echo.evaluate(() => window.observed))
       .toEqual({
+        hellos: [{ early: true }],
         pongs: [{ n: 1 }],
         answer: { n: 1 },
         error: {

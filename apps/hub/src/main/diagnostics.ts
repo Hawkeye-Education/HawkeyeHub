@@ -84,19 +84,25 @@ interface NoExit {
   kind: "no-exit";
 }
 
-/** How a Backend broke the wire protocol (ADR 0009). Never the offending line: it may hold anything. */
+/**
+ * How a Backend, or the Plugin UI talking to it, broke the wire protocol (ADR 0009). Never the
+ * offending message: it may hold anything.
+ */
 export type ProtocolViolation =
   // A stdout line that is not a JSON-RPC response or notification.
   | "not-json-rpc"
   // Only the Plugin UI sends requests.
   | "request"
   // A response whose id no relayed request had.
-  | "unknown-response";
+  | "unknown-response"
+  // A message from the Plugin UI that is not a JSON-RPC request or notification.
+  | "ui-not-json-rpc";
 
 const PROTOCOL_VIOLATIONS = {
   "not-json-rpc": "a stdout line that is not JSON-RPC",
   request: "a request from the Backend",
   "unknown-response": "an answer to no request",
+  "ui-not-json-rpc": "a Plugin UI message that is not JSON-RPC",
 } satisfies Record<ProtocolViolation, string>;
 
 interface ProtocolViolated {

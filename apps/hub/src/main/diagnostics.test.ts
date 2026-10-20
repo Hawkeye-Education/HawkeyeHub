@@ -281,6 +281,14 @@ const crashes: [string, PluginCrash, string][] = [
     "Plugin closed abnormally: crashed (protocol violation: an answer to no request)",
   ],
   [
+    "Plugin UI broke the protocol with a message that is not JSON-RPC",
+    {
+      cause: "crashed",
+      exit: { kind: "protocol-violation", violation: "ui-not-json-rpc" },
+    },
+    "Plugin closed abnormally: crashed (protocol violation: a Plugin UI message that is not JSON-RPC)",
+  ],
+  [
     "Plugin UI failed to load",
     {
       cause: "failed-to-start",

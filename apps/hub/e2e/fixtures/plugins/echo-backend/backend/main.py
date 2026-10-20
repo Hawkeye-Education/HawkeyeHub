@@ -1,7 +1,8 @@
 """A fixture Backend: standard-library Python speaking raw newline-delimited JSON-RPC on stdio.
 
-It answers `report` with what it saw at start, `ping` with a `pong` notification and then its
-params, and `fail` with a JSON-RPC error. It logs `shutdown` to stderr and exits, and exits when
+It sends a `hello` notification right after answering `initialize`, before the Plugin UI can
+have its port. It answers `report` with what it saw at start, `ping` with a `pong` notification
+and then its params, and `fail` with a JSON-RPC error. It logs `shutdown` to stderr and exits, and exits when
 stdin closes.
 """
 
@@ -47,6 +48,7 @@ for line in sys.stdin:
             "pid": os.getpid(),
         }
         send({"jsonrpc": "2.0", "id": message["id"], "result": {}})
+        send({"jsonrpc": "2.0", "method": "hello", "params": {"early": True}})
     elif method == "report":
         send({"jsonrpc": "2.0", "id": message["id"], "result": started})
     elif method == "ping":

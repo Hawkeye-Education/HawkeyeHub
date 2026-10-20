@@ -13,7 +13,7 @@
     "isolatedModules": true,
 
     "target": "ES2023",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "ES2024.Promise"],
     "module": "preserve",
     "moduleResolution": "bundler",
     "noEmit": true,

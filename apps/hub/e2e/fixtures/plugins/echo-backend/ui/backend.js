@@ -2,7 +2,11 @@
 // Calls the Backend while the page is still parsing, before `initialize` can have answered, and
 // keeps what comes back on `window.observed` for the smoke test to read.
 
-window.observed = { pongs: [], answer: null, error: null };
+window.observed = { hellos: [], pongs: [], answer: null, error: null };
+
+window.hub.backend.onNotification("hello", (params) => {
+  window.observed.hellos.push(params);
+});
 
 window.hub.backend.onNotification("pong", (params) => {
   window.observed.pongs.push(params);
