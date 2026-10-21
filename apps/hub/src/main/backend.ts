@@ -12,7 +12,7 @@ import { z } from "zod";
 import type {
   BackendExit,
   Diagnostics,
-  PluginCrash,
+  MessagedCrash,
   PluginSession,
   ProtocolViolation,
 } from "./diagnostics";
@@ -110,7 +110,7 @@ export function startBackend(
   diagnostics: Diagnostics,
   pluginSession: PluginSession,
   /** Closes the whole Plugin, while it is still open: the Backend broke or failed to start. */
-  closePlugin: (crash: PluginCrash) => void,
+  closePlugin: (crash: MessagedCrash) => void,
 ): Backend {
   const { folder, manifest } = installed;
   const plugin = pluginRefOf(installed);

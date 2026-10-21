@@ -18,6 +18,7 @@ import {
   test as base,
   expect,
   type ElectronApplication,
+  type Locator,
   type Page,
 } from "@playwright/test";
 import { unzipSync } from "fflate";
@@ -267,6 +268,34 @@ export function pluginPages(pages: Page[], id: string): Page[] {
   return pages.filter((page) =>
     page.url().startsWith(`hawkeye-plugin://${id}/`),
   );
+}
+
+/** The dialog overlay's page, once it is showing. */
+export async function overlay(hub: ElectronApplication): Promise<Page> {
+  let page: Page | undefined;
+  await expect
+    .poll(() => {
+      page = hub.windows().find((each) => each.url().endsWith("#dialog"));
+      return page !== undefined;
+    })
+    .toBe(true);
+  if (page === undefined) throw new Error("unreachable: polled for above");
+  return page;
+}
+
+/** Whether the dialog overlay is showing. */
+export function overlayShowing(hub: ElectronApplication): boolean {
+  return hub.windows().some((page) => page.url().endsWith("#dialog"));
+}
+
+/**
+ * Presses a dialog button with Enter going down only. An answer can take the overlay away, so a
+ * mouse click can lose its page before the mouseup that fired it is acknowledged (seen on macOS
+ * CI); the key answers as it goes down.
+ */
+export async function press(button: Locator): Promise<void> {
+  await button.focus();
+  await button.page().keyboard.down("Enter");
 }
 
 /** The messages in a Plugin's log, oldest first, or none if it has no log yet. */

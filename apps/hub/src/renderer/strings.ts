@@ -3,6 +3,7 @@
 import type {
   BlockedReason,
   ColourScheme,
+  CrashCause,
   DisplayLanguage,
 } from "../shared/hub-chrome-ipc";
 
@@ -21,6 +22,12 @@ export const STRINGS = {
     discardQuestion: "Discard unsaved changes?",
     keepEditing: "Keep editing",
     discard: "Discard",
+    stoppedUnexpectedly: (name: string) => `${name} stopped unexpectedly`,
+    crashCauses: {
+      crashed: "It crashed.",
+      "failed-to-start": "It failed to start.",
+    } satisfies Record<CrashCause, string>,
+    ok: "OK",
     settings: "Settings",
     appearance: "Appearance",
     theme: "Theme",
@@ -58,6 +65,12 @@ export const STRINGS = {
     discardQuestion: "捨棄未儲存的變更？",
     keepEditing: "繼續編輯",
     discard: "捨棄",
+    stoppedUnexpectedly: (name: string) => `${name} 意外停止運作`,
+    crashCauses: {
+      crashed: "它當機了。",
+      "failed-to-start": "它無法啟動。",
+    } satisfies Record<CrashCause, string>,
+    ok: "確定",
     settings: "設定",
     appearance: "外觀",
     theme: "主題",

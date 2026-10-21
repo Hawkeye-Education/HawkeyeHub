@@ -13,7 +13,11 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
-import type { DisplayLanguage, ThemeName } from "../shared/hub-chrome-ipc";
+import type {
+  CrashCause,
+  DisplayLanguage,
+  ThemeName,
+} from "../shared/hub-chrome-ipc";
 import { HAWKEYE } from "./lifecycle";
 import type {
   AbsolutePath,
@@ -140,6 +144,9 @@ export type PluginCrash =
   | { cause: "stopped-responding" };
 
 export type PluginCrashCause = PluginCrash["cause"];
+
+/** The crashes the Hub Chrome has a crash message for: those whose cause it has words for. */
+export type MessagedCrash = Extract<PluginCrash, { cause: CrashCause }>;
 
 /**
  * Everything callers may write to hub.log. ADR 0012's privacy rule lives here: no variant has a
