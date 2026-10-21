@@ -48,7 +48,8 @@ export interface Lifecycle {
   /**
    * Starts closing an open Plugin, without asking: it is `closing`, and cannot be reopened, until
    * `closed`. Its Busy is cleared, and it leaves any dialog about it (spec #44 "Busy"): a dialog
-   * about it alone goes away. Throws if it is not open.
+   * about it alone goes away, and a quit dialog about it alone goes ahead with the quit. Throws if
+   * it is not open.
    */
   close(id: PluginId): void;
   /**
@@ -151,16 +152,28 @@ type Asking =
   | Extract<HubChromeDialog, { kind: "busy-close" }>
   | (Extract<HubChromeDialog, { kind: "busy-quit" }> & { quit: () => void })
   | { kind: "discard-changes"; proceed: () => void };
-type CrashMessage = Extract<HubChromeDialog, { kind: "plugin-crashed" }>;
+// A crash message keeps the Plugin's id, not its name: it is named when drawn, so a queued one
+// follows a Save that changes the Display Language.
+interface CrashMessage {
+  kind: "plugin-crashed";
+  id: PluginId;
+  cause: CrashCause;
+}
 
 function dialogOf(
   asking: Asking | CrashMessage | null,
+  nameOf: (id: PluginId) => string,
 ): HubChromeDialog | null {
   if (asking === null) return null;
   switch (asking.kind) {
     case "busy-close":
-    case "plugin-crashed":
       return asking;
+    case "plugin-crashed":
+      return {
+        kind: "plugin-crashed",
+        plugin: { id: asking.id, name: nameOf(asking.id) },
+        cause: asking.cause,
+      };
     case "busy-quit":
       return { kind: "busy-quit", plugins: asking.plugins };
     case "discard-changes":
@@ -297,11 +310,16 @@ export function createLifecycle({
     open = open.filter((other) => other !== id);
     closing = [...closing, id];
     busyReasons.delete(id);
+    const quitAsked = asking?.kind === "busy-quit" ? asking.quit : null;
     asking = askingWithout(id);
     if (open.length === 0 && content.kind === "settings") {
       content = { kind: "settings", languageNoteShowing: false };
     }
     changed();
+    // The last Busy Plugin a quit asked about has gone, so nothing Busy is left to ask about: the
+    // quit goes ahead, as `requestQuit` does when nothing is Busy. Its crash message, if any, is
+    // not shown, since the Hub is quitting; the crash is in the log.
+    if (quitAsked !== null && asking === null) quitAsked();
   };
   return {
     snapshot: () => ({
@@ -311,7 +329,10 @@ export function createLifecycle({
       closing: [...closing],
       foreground: open[0] ?? null,
       content: content.kind === "settings" ? { ...content, form } : content,
-      dialog: dialogOf(pendingDialog()),
+      dialog: dialogOf(
+        pendingDialog(),
+        (id) => installedPlugin(id).listed.name,
+      ),
       hubVersion,
       theme,
       themes: [...THEMES],
@@ -343,14 +364,7 @@ export function createLifecycle({
     close,
     crashed: (id, cause) => {
       close(id);
-      crashMessages = [
-        ...crashMessages,
-        {
-          kind: "plugin-crashed",
-          plugin: { id, name: installedPlugin(id).listed.name },
-          cause,
-        },
-      ];
+      crashMessages = [...crashMessages, { kind: "plugin-crashed", id, cause }];
       changed();
     },
     closed: (id) => {

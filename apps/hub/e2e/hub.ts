@@ -217,6 +217,31 @@ export async function switcherNames(hubChrome: Page): Promise<string[]> {
 
 export type DisplayLanguage = "en-HK" | "zh-HK";
 
+/** The Hub's "Export diagnostics" button and box button, in each Display Language. */
+export const EXPORT_DIAGNOSTICS_WORDS = {
+  "en-HK": "Export diagnostics",
+  "zh-HK": "匯出診斷資料",
+} satisfies Record<DisplayLanguage, string>;
+
+/**
+ * The globals of a fixture Plugin UI with a Backend, for code evaluated in its page. Each file
+ * declares `window` with it: an imported binding would be renamed inside the serialized callback.
+ */
+export interface BackendFixtureWindow {
+  hub: {
+    backend: { request(method: string, params: unknown): Promise<unknown> };
+  };
+}
+
+/** A log's lines in a Diagnostics Bundle, parsed. Throws if the bundle has no such log. */
+export function linesOf(log: string | undefined): unknown[] {
+  if (log === undefined) throw new Error("The bundle has no such log");
+  return log
+    .trimEnd()
+    .split("\n")
+    .map((line): unknown => JSON.parse(line));
+}
+
 /**
  * The Display Language the Hub took from the OS, as the Hub Chrome's `<html lang>` says. The Hub
  * follows the OS, so tests of what it says pick their expected words with this.

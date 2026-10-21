@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ElectronApplication } from "@playwright/test";
 import {
+  EXPORT_DIAGNOSTICS_WORDS,
   bundleEntries,
   crashHubChrome,
   displayLanguageOf,
@@ -166,13 +167,13 @@ const STOPPED_UNEXPECTEDLY = {
   "en-HK": {
     message: "Hawkeye Hub stopped unexpectedly",
     detail: "Its window kept crashing.",
-    buttons: ["Export diagnostics", "Quit"],
+    buttons: [EXPORT_DIAGNOSTICS_WORDS["en-HK"], "Quit"],
     cancelId: 1,
   },
   "zh-HK": {
     message: "Hawkeye Hub 意外停止運作",
     detail: "其視窗不斷當機。",
-    buttons: ["匯出診斷資料", "結束"],
+    buttons: [EXPORT_DIAGNOSTICS_WORDS["zh-HK"], "結束"],
     cancelId: 1,
   },
 };

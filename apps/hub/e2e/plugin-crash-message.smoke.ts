@@ -9,16 +9,19 @@ import {
   bundleEntries,
   crashSummaries,
   displayLanguageOf,
+  EXPORT_DIAGNOSTICS_WORDS,
   expect,
   fixtureInstall,
   installFixturePlugins,
   launchHub,
+  linesOf,
   overlay,
   overlayShowing,
   pluginPage,
   press,
   stubSaveDialog,
   test,
+  type BackendFixtureWindow,
   type DisplayLanguage,
 } from "./hub";
 
@@ -28,24 +31,19 @@ const WORDS = {
     stopped: (name: string) => `${name} stopped unexpectedly`,
     crashed: "It crashed.",
     failedToStart: "It failed to start.",
-    export: "Export diagnostics",
+    export: EXPORT_DIAGNOSTICS_WORDS["en-HK"],
     ok: "OK",
   },
   "zh-HK": {
     stopped: (name: string) => `${name} 意外停止運作`,
     crashed: "它當機了。",
     failedToStart: "它無法啟動。",
-    export: "匯出診斷資料",
+    export: EXPORT_DIAGNOSTICS_WORDS["zh-HK"],
     ok: "確定",
   },
 } satisfies Record<DisplayLanguage, unknown>;
 
-// The fixture Plugin UI's globals, for code evaluated in its page.
-declare const window: {
-  hub: {
-    backend: { request(method: string, params: unknown): Promise<unknown> };
-  };
-};
+declare const window: BackendFixtureWindow;
 declare const console: Record<
   "debug" | "log" | "info" | "warn" | "error",
   (message: string) => void
@@ -68,14 +66,6 @@ async function hubWith(
 /** The crash message on the dialog overlay, once it is showing. */
 async function crashMessage(hub: ElectronApplication): Promise<Locator> {
   return (await overlay(hub)).getByRole("dialog");
-}
-
-/** A Plugin log's lines, parsed. */
-function linesOf(log: string | undefined): unknown[] {
-  return (log ?? "")
-    .trimEnd()
-    .split("\n")
-    .map((line): unknown => JSON.parse(line));
 }
 
 test("a Backend that exits mid-request shows the crashed message, whose Export diagnostics saves the Plugin's UI and Backend lines and no debug line, and OK dismisses it", async ({

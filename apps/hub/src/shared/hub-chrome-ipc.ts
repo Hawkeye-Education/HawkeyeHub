@@ -99,7 +99,7 @@ export interface BusyPlugin {
  */
 export type CrashCause = "crashed" | "failed-to-start" | "stopped-responding";
 
-/** A Plugin that closed abnormally, by its name in the Display Language when it did. */
+/** A Plugin that closed abnormally, by its name in the Display Language. */
 export interface CrashedPlugin {
   id: PluginId;
   name: string;

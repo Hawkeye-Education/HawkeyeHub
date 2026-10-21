@@ -26,7 +26,7 @@ import {
   HAS_BACKEND_ARG,
 } from "../shared/plugin-preload";
 import { startBackend } from "./backend";
-import type { Diagnostics, MessagedCrash, NetErrorCode } from "./diagnostics";
+import type { Diagnostics, PluginCrash, NetErrorCode } from "./diagnostics";
 import { errorCode } from "./error-code";
 import type { AbsolutePath } from "./ids";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
@@ -81,10 +81,9 @@ export function createPluginViews(
   hubDataDir: AbsolutePath,
   /**
    * Told when a Plugin's crash is recorded (`crashed`: its UI crashed, failed to load or stopped
-   * responding, or its
-   * Backend broke or failed to start, and the whole Plugin closes), when a closed Plugin is gone
-   * (`closed`: its page destroyed and its Backend, if any, exited), and of its page's Busy. Asked
-   * for each installed Plugin it opens.
+   * responding, or its Backend broke or failed to start, and the whole Plugin closes), when a
+   * closed Plugin is gone (`closed`: its page destroyed and its Backend, if any, exited), and of
+   * its page's Busy. Asked for each installed Plugin it opens.
    */
   lifecycle: Pick<Lifecycle, "installed" | "crashed" | "closed" | "setBusy">,
 ): PluginViews {
@@ -131,7 +130,7 @@ export function createPluginViews(
     const pluginSession = diagnostics.startPluginSession(pluginRefOf(plugin));
     // Records the crash and closes the Plugin, only if this open is still the open one: once it is
     // closing, nothing that follows is a crash, and nothing restarts.
-    const crashed = (crash: MessagedCrash): void => {
+    const crashed = (crash: PluginCrash): void => {
       if (opened.get(id)?.view !== view) return;
       pluginSession.recordCrash(crash);
       lifecycle.crashed(id, crash.cause);

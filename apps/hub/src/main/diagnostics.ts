@@ -13,11 +13,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
-import type {
-  CrashCause,
-  DisplayLanguage,
-  ThemeName,
-} from "../shared/hub-chrome-ipc";
+import type { DisplayLanguage, ThemeName } from "../shared/hub-chrome-ipc";
 import { HAWKEYE } from "./lifecycle";
 import type {
   AbsolutePath,
@@ -133,7 +129,10 @@ interface PluginUiLoadFailed {
   error: NetErrorCode;
 }
 
-/** A Plugin closing abnormally (ADR 0012), with what each cause can report about the exit. */
+/**
+ * A Plugin closing abnormally (ADR 0012), with what each cause can report about the exit. Its
+ * causes are the Hub Chrome's `CrashCause`s, which `Lifecycle.crashed` takes.
+ */
 export type PluginCrash =
   | { cause: "crashed"; exit: PluginUiGone | BackendExited | ProtocolViolated }
   | {
@@ -142,11 +141,6 @@ export type PluginCrash =
     }
   // The Plugin UI is hung, not gone, and the Backend has done nothing wrong.
   | { cause: "stopped-responding" };
-
-export type PluginCrashCause = PluginCrash["cause"];
-
-/** The crashes the Hub Chrome has a crash message for: those whose cause it has words for. */
-export type MessagedCrash = Extract<PluginCrash, { cause: CrashCause }>;
 
 /**
  * Everything callers may write to hub.log. ADR 0012's privacy rule lives here: no variant has a

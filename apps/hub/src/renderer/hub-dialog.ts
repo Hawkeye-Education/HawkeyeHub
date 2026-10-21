@@ -11,7 +11,7 @@ import {
 } from "../shared/hub-chrome-ipc";
 import type { Strings } from "./strings";
 
-/** A dialog's other button: its label and what it does. */
+/** A dialog's secondary button: its label and what it does. */
 interface Button {
   label: string;
   press: () => void;
@@ -60,14 +60,14 @@ export class HubDialog extends LitElement {
   }
 
   /**
-   * The dialog's heading, its body, its first button's label, and its other button: what it says
-   * and what it does. The first button answers `KEEP_ANSWERS`, as main expects.
+   * The dialog's heading, its body, its first button's label, and its secondary button: what it
+   * says and what it does. The first button answers `KEEP_ANSWERS`, as main expects.
    */
   private content(): {
     heading: string;
     body: TemplateResult | typeof nothing;
     keepLabel: string;
-    other: Button;
+    secondary: Button;
   } {
     const { dialog, strings, hub } = this;
     const answering = (answer: DialogAnswer, label: string): Button => ({
@@ -82,7 +82,7 @@ export class HubDialog extends LitElement {
           heading: strings.closeQuestion(dialog.plugin.name),
           body: html`<p>${dialog.plugin.reason}</p>`,
           keepLabel: strings.keepOpen,
-          other: answering("close-anyway", strings.closeAnyway),
+          secondary: answering("close-anyway", strings.closeAnyway),
         };
       case "busy-quit":
         return {
@@ -94,14 +94,14 @@ export class HubDialog extends LitElement {
               )}
             </ul>`,
           keepLabel: strings.keepOpen,
-          other: answering("quit-anyway", strings.quitAnyway),
+          secondary: answering("quit-anyway", strings.quitAnyway),
         };
       case "discard-changes":
         return {
           heading: strings.discardQuestion,
           body: nothing,
           keepLabel: strings.keepEditing,
-          other: answering("discard", strings.discard),
+          secondary: answering("discard", strings.discard),
         };
       case "plugin-crashed":
         // Exporting leaves the message up: only **OK** dismisses it.
@@ -109,7 +109,7 @@ export class HubDialog extends LitElement {
           heading: strings.stoppedUnexpectedly(dialog.plugin.name),
           body: html`<p>${strings.crashCauses[dialog.cause]}</p>`,
           keepLabel: strings.ok,
-          other: {
+          secondary: {
             label: strings.exportDiagnostics,
             press: () => {
               hub.exportDiagnostics();
@@ -123,7 +123,7 @@ export class HubDialog extends LitElement {
 
   override render() {
     const { hub } = this;
-    const { heading, body, keepLabel, other } = this.content();
+    const { heading, body, keepLabel, secondary } = this.content();
     const keep = KEEP_ANSWERS[this.dialog.kind];
     // Esc cancels the <dialog>: that is the first button. Main then takes the overlay away.
     return html`<dialog
@@ -144,7 +144,7 @@ export class HubDialog extends LitElement {
         >
           ${keepLabel}
         </button>
-        <button @click=${other.press}>${other.label}</button>
+        <button @click=${secondary.press}>${secondary.label}</button>
       </div>
     </dialog>`;
   }
