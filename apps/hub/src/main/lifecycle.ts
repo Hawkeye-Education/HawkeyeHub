@@ -10,22 +10,23 @@ import type {
 } from "@hawkeye-hub/plugin-format";
 import { isDeepStrictEqual } from "node:util";
 import semver from "semver";
-import type {
-  BusyPlugin,
-  BusyReason,
-  DialogAnswer,
-  DisplayLanguage,
-  HubChromeContent,
-  HubChromeDialog,
-  HubChromeSnapshot,
-  HubSettings,
-  HubVersion,
-  PluginAccess,
-  ThemeName,
+import {
+  KEEP_ANSWERS,
+  type BusyPlugin,
+  type BusyReason,
+  type DialogAnswer,
+  type DisplayLanguage,
+  type HubChromeDialog,
+  type HubChromeSnapshot,
+  type HubSettings,
+  type HubVersion,
+  type PluginAccess,
+  type ThemeName,
 } from "../shared/hub-chrome-ipc";
+import type { SystemDescription } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
 import type { HubApiVersion } from "./ids";
-import type { InstalledPlugin } from "./installed-plugins";
+import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import { pluginIconUrl } from "./plugin-icons";
 
 /** An open Plugin's Busy, as its page last set it. */
@@ -84,6 +85,20 @@ export interface Lifecycle {
   cancelSettings(): void;
   /** The Hub Settings as last saved, whatever the form holds. */
   storedSettings(): HubSettings;
+  /** The installation as a Diagnostics Bundle describes it, on the OS `os`. */
+  systemDescription(os: SystemDescription["os"]): SystemDescription;
+}
+
+export interface LifecycleDeps {
+  hubVersion: HubVersion;
+  /** The OS's Display Language (`displayLanguageFor`), which a `system` Display Language follows. */
+  systemLanguage: DisplayLanguage;
+  installed: readonly InstalledPlugin[];
+  storedAtStart: HubSettings;
+  /** Writes saved Hub Settings and applies them; called only when they changed. */
+  save: (settings: HubSettings) => void;
+  /** Logs a stored or company Theme this Hub does not have; called once per name. */
+  unknownTheme: (name: ThemeName) => void;
 }
 
 /** Display text in `language`, falling back to English (ADR 0007). */
@@ -145,17 +160,14 @@ function dialogOf(asking: Asking | null): HubChromeDialog | null {
   }
 }
 
-export function createLifecycle(
-  hubVersion: HubVersion,
-  /** The OS's Display Language (`displayLanguageFor`), which a `system` Display Language follows. */
-  systemLanguage: DisplayLanguage,
-  installed: readonly InstalledPlugin[],
-  storedAtStart: HubSettings,
-  /** Writes saved Hub Settings and applies them; called only when they changed. */
-  save: (settings: HubSettings) => void,
-  /** Logs a stored or company Theme this Hub does not have; called once per name. */
-  unknownTheme: (name: ThemeName) => void,
-): Lifecycle {
+export function createLifecycle({
+  hubVersion,
+  systemLanguage,
+  installed,
+  storedAtStart,
+  save,
+  unknownTheme,
+}: LifecycleDeps): Lifecycle {
   const languageOf = ({ displayLanguage }: HubSettings): DisplayLanguage => {
     switch (displayLanguage.kind) {
       case "system":
@@ -166,10 +178,10 @@ export function createLifecycle(
         return displayLanguage satisfies never;
     }
   };
-  // The installed Plugins, named and sorted in `language`.
-  const listIn = (language: DisplayLanguage) => {
+  // The Display Language and the installed Plugins named and sorted in it.
+  const listingIn = (language: DisplayLanguage) => {
     const byName = new Intl.Collator(language).compare;
-    return installed
+    const plugins = installed
       .map((plugin) => ({
         plugin,
         listed: {
@@ -180,13 +192,12 @@ export function createLifecycle(
         },
       }))
       .sort((a, b) => byName(a.listed.name, b.listed.name));
+    return { language, plugins, listed: plugins.map(({ listed }) => listed) };
   };
   // Re-derived when a Save changes the Display Language; open Plugin UIs keep theirs (ADR 0007).
-  let displayLanguage = languageOf(storedAtStart);
-  let plugins = listIn(displayLanguage);
-  let listed = plugins.map((plugin) => plugin.listed);
+  let listing = listingIn(languageOf(storedAtStart));
   const installedPlugin = (id: PluginId) => {
-    const plugin = plugins.find(({ listed }) => listed.id === id);
+    const plugin = listing.plugins.find(({ listed }) => listed.id === id);
     if (plugin === undefined) {
       throw new Error(`No installed Plugin has the id ${JSON.stringify(id)}`);
     }
@@ -199,8 +210,13 @@ export function createLifecycle(
   // folder (ADR 0008), so a closing Plugin cannot be reopened.
   let closing: PluginId[] = [];
   let asking: Asking | null = null;
-  // Plugins closing behind Hub Settings leave them showing.
-  let content: HubChromeContent["kind"] = "plugin";
+  // Plugins closing behind Hub Settings leave them showing. The language note says open Plugins
+  // switch language when reopened, from a Save that changed it while any was open, until staff
+  // leave settings or the last open Plugin closes.
+  let content:
+    { kind: "plugin" } | { kind: "settings"; languageNoteShowing: boolean } = {
+    kind: "plugin",
+  };
   let stored = storedAtStart;
   // The unsaved form: what is stored until staff edit it.
   let form = storedAtStart;
@@ -214,9 +230,6 @@ export function createLifecycle(
     asking = { kind: "discard-changes", proceed };
     changed();
   };
-  // Says open Plugins switch language when reopened, from a Save that changed it while any was
-  // open, until staff leave settings.
-  let languageNoteShowing = false;
   // The stored Theme resolved: a name this Hub has no Theme for draws in Hawkeye, and is kept.
   const reported = new Set<ThemeName>();
   const resolveTheme = (setting: HubSettings["theme"]): ThemeName => {
@@ -229,10 +242,11 @@ export function createLifecycle(
     return HAWKEYE;
   };
   let theme = resolveTheme(stored.theme);
-  const settingsShowing = (operation: string): void => {
-    if (content !== "settings") {
+  const settingsShowing = (operation: string) => {
+    if (content.kind !== "settings") {
       throw new Error(`${operation} needs Hub Settings showing`);
     }
+    return content;
   };
   // The latest Busy reason of each open Plugin that is Busy.
   const busyReasons = new Map<PluginId, BusyReason>();
@@ -269,19 +283,19 @@ export function createLifecycle(
     closing = [...closing, id];
     busyReasons.delete(id);
     asking = askingWithout(id);
+    if (open.length === 0 && content.kind === "settings") {
+      content = { kind: "settings", languageNoteShowing: false };
+    }
     changed();
   };
   return {
     snapshot: () => ({
-      displayLanguage,
-      plugins: listed,
+      displayLanguage: listing.language,
+      plugins: listing.listed,
       open: [...open],
       closing: [...closing],
       foreground: open[0] ?? null,
-      content:
-        content === "settings"
-          ? { kind: "settings", stored, form, languageNoteShowing }
-          : { kind: "plugin" },
+      content: content.kind === "settings" ? { ...content, form } : content,
       dialog: dialogOf(asking),
       hubVersion,
       theme,
@@ -307,8 +321,7 @@ export function createLifecycle(
       }
       discardingEditsFirst(() => {
         open = [id, ...open.filter((other) => other !== id)];
-        content = "plugin";
-        languageNoteShowing = false;
+        content = { kind: "plugin" };
         changed();
       });
     },
@@ -345,7 +358,7 @@ export function createLifecycle(
     requestQuit: (quit) => {
       discardingEditsFirst(() => {
         // In the Plugin Switcher's order.
-        const busyPlugins = listed.flatMap(({ id }) => {
+        const busyPlugins = listing.listed.flatMap(({ id }) => {
           const reason = busyReasons.get(id);
           return reason === undefined ? [] : [busyPlugin(id, reason)];
         });
@@ -358,7 +371,9 @@ export function createLifecycle(
       });
     },
     showSettings: () => {
-      content = "settings";
+      if (content.kind === "plugin") {
+        content = { kind: "settings", languageNoteShowing: false };
+      }
       changed();
     },
     editSettings: (edited) => {
@@ -367,16 +382,16 @@ export function createLifecycle(
       changed();
     },
     saveSettings: () => {
-      settingsShowing("saveSettings");
+      const showing = settingsShowing("saveSettings");
       if (isDeepStrictEqual(form, stored)) return;
       save(form);
       stored = form;
       const language = languageOf(stored);
-      if (language !== displayLanguage) {
-        displayLanguage = language;
-        plugins = listIn(language);
-        listed = plugins.map((plugin) => plugin.listed);
-        if (open.length > 0) languageNoteShowing = true;
+      if (language !== listing.language) {
+        listing = listingIn(language);
+        if (open.length > 0) {
+          content = { ...showing, languageNoteShowing: true };
+        }
       }
       theme = resolveTheme(stored.theme);
       changed();
@@ -387,13 +402,23 @@ export function createLifecycle(
       changed();
     },
     storedSettings: () => stored,
+    systemDescription: (os) => ({
+      hubVersion,
+      os,
+      displayLanguage: listing.language,
+      theme,
+      colourScheme: stored.colourScheme,
+      plugins: listing.plugins.map(({ plugin }) => pluginRefOf(plugin)),
+      // The Hub downloads no Python interpreter and has no AI Provider or Auth Provider yet.
+      pythonVersions: [],
+      aiProviders: [],
+      authProvider: { kind: "none" },
+    }),
     answer: (answer) => {
       const pending = asking;
       if (pending === null)
         throw new Error("No dialog is waiting for an answer");
-      const keep =
-        pending.kind === "discard-changes" ? "keep-editing" : "keep-open";
-      if (answer === keep) {
+      if (answer === KEEP_ANSWERS[pending.kind]) {
         asking = null;
         changed();
         return;

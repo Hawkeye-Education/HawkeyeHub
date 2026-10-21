@@ -10,9 +10,7 @@ export type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
 // Shared with the Hub Chrome, which shows it in About.
 import type { HubVersion } from "../shared/hub-chrome-ipc";
 export type { HubVersion };
-
-declare const brand: unique symbol;
-type Branded<T, Name extends string> = T & { readonly [brand]: Name };
+import type { Branded } from "../shared/branded";
 
 export type HubApiVersion = Branded<string, "HubApiVersion">;
 export type PythonVersion = Branded<string, "PythonVersion">;
