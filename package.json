@@ -8,6 +8,7 @@
     "pnpm": "10.33.0"
   },
   "scripts": {
+    "dev": "pnpm --filter @hawkeye-hub/hub dev -- --plugins-dir ../../plugins",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "pnpm -r typecheck",

@@ -9,15 +9,47 @@ import { displayLanguageFor } from "./display-language";
 import { loadHubSettings, saveHubSettings } from "./hub-settings";
 import { openHubWindow } from "./hub-window";
 import { parseAbsolutePath, parseHubVersion } from "./ids";
-import { loadInstalledPlugins } from "./installed-plugins";
+import { parseHubMode } from "./hub-mode";
+import {
+  loadDevPlugins,
+  loadInstalledPlugins,
+  type InstalledPlugin,
+} from "./installed-plugins";
 import { createLifecycle } from "./lifecycle";
 import type { HubSettings } from "../shared/hub-settings";
 import { PLUGIN_ICON_SCHEME, servePluginIcons } from "./plugin-icons";
 import { PLUGIN_SCHEME } from "./plugin-scheme";
 
+// 0. Installed, or dev mode (PLUGIN_STANDARD §9.4). Dev mode's Plugins are loaded here, so a bad
+// one stops the Hub before it opens, with why printed in the terminal. Nothing is open yet to log
+// to, so the catch prints and exits rather than letting Electron show its error dialog.
+// The Plugins dev mode loaded ride along in its variant.
+let startedAs:
+  { kind: "installed" } | { kind: "dev"; plugins: InstalledPlugin[] };
+try {
+  const hubMode = parseHubMode(
+    process.argv,
+    app.isPackaged,
+    parseAbsolutePath(process.cwd()),
+  );
+  startedAs =
+    hubMode.kind === "dev"
+      ? {
+          kind: "dev",
+          plugins: loadDevPlugins(hubMode.pluginsDir, hubMode.ids),
+        }
+      : hubMode;
+} catch (error) {
+  console.error(
+    `Hawkeye Hub dev mode: ${error instanceof Error ? error.message : String(error)}`,
+  );
+  process.exit(1);
+}
+
 // 1. On-disk location, before anything reads or writes a path. The single-instance lock lives
 // in userData, and getPath("logs") creates the default folder, so both must move first.
-// Absence of the variable is a real state: the Hub then uses Electron's defaults for the OS user.
+// Absence of the variable is a real state: the Hub then uses Electron's defaults for the OS user,
+// or in dev mode its own folder, so dev data never mixes with an installed Hub's.
 const dataDirRaw = process.env["HAWKEYE_HUB_DATA_DIR"];
 if (dataDirRaw !== undefined) {
   const dataDir = parseAbsolutePath(dataDirRaw);
@@ -27,9 +59,14 @@ if (dataDirRaw !== undefined) {
   app.setPath("userData", userData);
   // --user-data-dir alone would leave the logs in ~/Library/Logs on macOS.
   app.setAppLogsPath(join(dataDir, "logs"));
+} else if (startedAs.kind === "dev") {
+  const userData = join(app.getPath("appData"), "Hawkeye Hub Dev");
+  mkdirSync(userData, { recursive: true });
+  app.setPath("userData", userData);
+  app.setAppLogsPath(join(userData, "logs"));
 }
 // The Hub's data folder: installed Plugins now, Plugin Data and Shared Stores later. With no
-// variable it is Electron's userData for the OS user.
+// variable it is Electron's userData, as moved above.
 const hubDataDir = parseAbsolutePath(dataDirRaw ?? app.getPath("userData"));
 
 // Privileges are granted once, before `ready`, for every scheme the Hub serves: a second call
@@ -107,8 +144,12 @@ function runHub(): void {
         : null,
     );
     // Here, not before `ready`: a record that does not parse throws, and a throw in this callback
-    // is an unhandled rejection, which the listener above logs as a Hub crash.
-    const installed = loadInstalledPlugins(hubDataDir);
+    // is an unhandled rejection, which the listener above logs as a Hub crash. Dev mode never
+    // reads or writes the record.
+    const installed =
+      startedAs.kind === "dev"
+        ? { loaded: startedAs.plugins, leftOut: [] }
+        : loadInstalledPlugins(hubDataDir);
     for (const { plugin, reason } of installed.leftOut) {
       diagnostics.recordHubEvent({ kind: "plugin-left-out", plugin, reason });
     }

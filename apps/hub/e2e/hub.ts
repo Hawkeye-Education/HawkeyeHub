@@ -152,7 +152,7 @@ export function hubLogLines(dataDir: string): unknown[] {
     .map((line): unknown => JSON.parse(line));
 }
 
-const FIXTURE_PLUGINS = join(import.meta.dirname, "fixtures", "plugins");
+export const FIXTURE_PLUGINS = join(import.meta.dirname, "fixtures", "plugins");
 
 /** One entry to write in the record of installed Plugins, and the fixture its folder copies. */
 export interface FixtureInstall {

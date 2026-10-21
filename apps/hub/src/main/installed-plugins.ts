@@ -1,6 +1,7 @@
 // The record of installed Plugins: `installed-plugins.json` in the Hub's data folder, a JSON array of
 // `{id, version}` naming each Plugin's active version, beside one `<id>@<version>` folder per
-// installed version. Install and update write it later; this spec only reads it.
+// installed version. Install and update write it later; this spec only reads it. Dev mode's
+// Plugins load from their own folders through the same Manifest checks, without the record.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -21,7 +22,7 @@ const InstalledRecord = z.array(
 );
 
 export interface InstalledPlugin {
-  /** The `<id>@<version>` folder holding the unpacked Plugin Package. */
+  /** The `<id>@<version>` folder holding the unpacked Plugin Package, or in dev mode `plugins/<id>`. */
   folder: AbsolutePath;
   manifest: Manifest;
 }
@@ -68,13 +69,44 @@ export function loadInstalledPlugins(dataDir: AbsolutePath): {
   return { loaded, leftOut };
 }
 
+/**
+ * Dev mode's Plugins (PLUGIN_STANDARD §9.4): each id's `<pluginsDir>/<id>` folder, whatever version
+ * its Manifest says. Never reads or writes the record. A folder that cannot be loaded throws with
+ * why: a developer must see it, not find the Plugin quietly missing.
+ */
+export function loadDevPlugins(
+  pluginsDir: AbsolutePath,
+  ids: PluginId[],
+): InstalledPlugin[] {
+  return ids.map((id) => {
+    const folder = parseAbsolutePath(join(pluginsDir, id));
+    const result = loadFolder(folder, (manifest) => manifest.id === id);
+    if (result.kind === "left-out") {
+      throw new Error(`Plugin "${id}" (${folder}): ${result.reason}`);
+    }
+    return result.plugin;
+  });
+}
+
 function loadEntry(
   dataDir: AbsolutePath,
   { id, version }: PluginRef,
-):
+): LoadResult {
+  return loadFolder(
+    parseAbsolutePath(join(dataDir, `${id}@${version}`)),
+    (manifest) => manifest.id === id && manifest.version === version,
+  );
+}
+
+type LoadResult =
   | { kind: "loaded"; plugin: InstalledPlugin }
-  | { kind: "left-out"; reason: PluginLeftOutReason } {
-  const folder = parseAbsolutePath(join(dataDir, `${id}@${version}`));
+  | { kind: "left-out"; reason: PluginLeftOutReason };
+
+/** Reads `folder`'s Manifest, which must be the Plugin `agrees` expects. */
+function loadFolder(
+  folder: AbsolutePath,
+  agrees: (manifest: Manifest) => boolean,
+): LoadResult {
   if (!existsSync(folder))
     return { kind: "left-out", reason: "folder-missing" };
   const manifestPath = join(folder, "manifest.json");
@@ -96,7 +128,7 @@ function loadEntry(
     return { kind: "left-out", reason: "manifest-invalid" };
   }
   const { manifest } = parsed;
-  if (manifest.id !== id || manifest.version !== version) {
+  if (!agrees(manifest)) {
     return { kind: "left-out", reason: "manifest-disagrees" };
   }
   return { kind: "loaded", plugin: { folder, manifest } };
