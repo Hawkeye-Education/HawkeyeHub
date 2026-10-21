@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, expect, test } from "vitest";
@@ -90,6 +96,24 @@ test.each([
     ]);
   },
 );
+
+test("a settings path that is a folder is logged, and the Hub starts with the first-launch values", () => {
+  mkdirSync(join(dataDir, "hub-settings.json"));
+  expect(loadHubSettings(dataDir, diagnostics)).toEqual(FIRST_LAUNCH);
+  expect(hubLogMessages()).toEqual([
+    {
+      level: "warn",
+      message: "Hub Settings replaced with first-launch values: unreadable",
+    },
+    {
+      level: "error",
+      // The code renaming onto a folder fails with differs by OS (EISDIR, EPERM).
+      message: expect.stringMatching(
+        /^Hub Settings could not be written: E[A-Z]+$/,
+      ) as unknown,
+    },
+  ]);
+});
 
 test("saved settings load back the same", () => {
   loadHubSettings(dataDir, diagnostics);

@@ -117,7 +117,7 @@ export function accessOf(
 }
 
 // The `as` grants the brand to a literal that is kebab-case, as ThemeName requires.
-const HAWKEYE = "hawkeye" as ThemeName;
+export const HAWKEYE = "hawkeye" as ThemeName;
 /** The Themes built into the Hub (ADR 0006): adding one is a Hub release. */
 export const THEMES: readonly ThemeName[] = [HAWKEYE];
 // ponytail: Hawkeye until the Company Configuration is fetched; the Registry work routes the

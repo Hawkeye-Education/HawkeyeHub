@@ -77,7 +77,15 @@ export function loadHubSettings(
       problem: read.problem,
     });
   }
-  saveHubSettings(dataDir, FIRST_LAUNCH_SETTINGS);
+  // A file that cannot be replaced (its path is a folder, say) is logged, not thrown: the Hub still
+  // starts with the first-launch values, and the next Save tries again (story 40).
+  try {
+    saveHubSettings(dataDir, FIRST_LAUNCH_SETTINGS);
+  } catch (error) {
+    const code = errorCode(error);
+    if (code === undefined) throw error;
+    diagnostics.recordHubEvent({ kind: "hub-settings-unwritable", code });
+  }
   return FIRST_LAUNCH_SETTINGS;
 }
 
