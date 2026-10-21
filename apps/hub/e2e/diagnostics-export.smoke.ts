@@ -9,40 +9,33 @@ import {
   BUNDLE_FILE_NAME,
   bundleEntries,
   displayLanguageOf,
+  EXPORT_DIAGNOSTICS_WORDS,
   expect,
   fixtureInstall,
   installFixturePlugins,
   launchHub,
+  linesOf,
   pluginPage,
   stubSaveDialog,
   test,
+  type BackendFixtureWindow,
   type DisplayLanguage,
 } from "./hub";
 
-// The fixture Plugin UI's globals, for code evaluated in its page.
-declare const window: {
-  hub: {
-    backend: { request(method: string, params: unknown): Promise<unknown> };
-  };
-};
+declare const window: BackendFixtureWindow;
 declare const console: { log(message: string): void };
 
-const WORDS = {
-  "en-HK": { settings: "Settings", export: "Export diagnostics" },
-  "zh-HK": { settings: "設定", export: "匯出診斷資料" },
-} satisfies Record<DisplayLanguage, unknown>;
+const SETTINGS = {
+  "en-HK": "Settings",
+  "zh-HK": "設定",
+} satisfies Record<DisplayLanguage, string>;
 
 async function exportFromSettings(hubChrome: Page): Promise<void> {
-  const words = WORDS[await displayLanguageOf(hubChrome)];
-  await hubChrome.getByRole("button", { name: words.settings }).click();
-  await hubChrome.getByRole("button", { name: words.export }).click();
-}
-
-function linesOf(log: string | undefined): unknown[] {
-  return (log ?? "")
-    .trimEnd()
-    .split("\n")
-    .map((line): unknown => JSON.parse(line));
+  const language = await displayLanguageOf(hubChrome);
+  await hubChrome.getByRole("button", { name: SETTINGS[language] }).click();
+  await hubChrome
+    .getByRole("button", { name: EXPORT_DIAGNOSTICS_WORDS[language] })
+    .click();
 }
 
 function pluginLine(source: "ui" | "backend", message: string): unknown {
