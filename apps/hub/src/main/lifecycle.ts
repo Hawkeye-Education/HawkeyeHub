@@ -14,6 +14,7 @@ import {
   KEEP_ANSWERS,
   type BusyPlugin,
   type BusyReason,
+  type CrashCause,
   type DialogAnswer,
   type DisplayLanguage,
   type HubChromeDialog,
@@ -50,6 +51,11 @@ export interface Lifecycle {
    * about it alone goes away. Throws if it is not open.
    */
   close(id: PluginId): void;
+  /**
+   * A Plugin that closed abnormally: `close`, then its crash message, naming it in the Display
+   * Language. Crash messages queue, one each, behind any other dialog. Throws if it is not open.
+   */
+  crashed(id: PluginId, cause: CrashCause): void;
   /**
    * Finishes closing a Plugin, once its Plugin UI is gone and its Backend, if any, has exited.
    * Throws if it is not closing.
@@ -145,11 +151,15 @@ type Asking =
   | Extract<HubChromeDialog, { kind: "busy-close" }>
   | (Extract<HubChromeDialog, { kind: "busy-quit" }> & { quit: () => void })
   | { kind: "discard-changes"; proceed: () => void };
+type CrashMessage = Extract<HubChromeDialog, { kind: "plugin-crashed" }>;
 
-function dialogOf(asking: Asking | null): HubChromeDialog | null {
+function dialogOf(
+  asking: Asking | CrashMessage | null,
+): HubChromeDialog | null {
   if (asking === null) return null;
   switch (asking.kind) {
     case "busy-close":
+    case "plugin-crashed":
       return asking;
     case "busy-quit":
       return { kind: "busy-quit", plugins: asking.plugins };
@@ -210,6 +220,11 @@ export function createLifecycle({
   // folder (ADR 0008), so a closing Plugin cannot be reopened.
   let closing: PluginId[] = [];
   let asking: Asking | null = null;
+  // The crash messages not yet dismissed, oldest first. Only the first shows, and only while
+  // nothing is asking: a crash never throws away a dialog that is up.
+  let crashMessages: CrashMessage[] = [];
+  const pendingDialog = (): Asking | CrashMessage | null =>
+    asking ?? crashMessages[0] ?? null;
   // Plugins closing behind Hub Settings leave them showing. The language note says open Plugins
   // switch language when reopened, from a Save that changed it while any was open, until staff
   // leave settings or the last open Plugin closes.
@@ -296,7 +311,7 @@ export function createLifecycle({
       closing: [...closing],
       foreground: open[0] ?? null,
       content: content.kind === "settings" ? { ...content, form } : content,
-      dialog: dialogOf(asking),
+      dialog: dialogOf(pendingDialog()),
       hubVersion,
       theme,
       themes: [...THEMES],
@@ -326,6 +341,18 @@ export function createLifecycle({
       });
     },
     close,
+    crashed: (id, cause) => {
+      close(id);
+      crashMessages = [
+        ...crashMessages,
+        {
+          kind: "plugin-crashed",
+          plugin: { id, name: installedPlugin(id).listed.name },
+          cause,
+        },
+      ];
+      changed();
+    },
     closed: (id) => {
       if (!closing.includes(id)) {
         throw new Error(`No closing Plugin has the id ${JSON.stringify(id)}`);
@@ -415,11 +442,15 @@ export function createLifecycle({
       authProvider: { kind: "none" },
     }),
     answer: (answer) => {
-      const pending = asking;
+      const pending = pendingDialog();
       if (pending === null)
         throw new Error("No dialog is waiting for an answer");
       if (answer === KEEP_ANSWERS[pending.kind]) {
-        asking = null;
+        if (pending.kind === "plugin-crashed") {
+          crashMessages = crashMessages.slice(1);
+        } else {
+          asking = null;
+        }
         changed();
         return;
       }

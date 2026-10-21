@@ -94,18 +94,33 @@ export interface BusyPlugin {
 }
 
 /**
+ * Why a Plugin closed abnormally, in the words of its crash message (ADR 0012). Each cause has its
+ * words in the Hub Chrome's strings.
+ */
+export type CrashCause = "crashed" | "failed-to-start";
+
+/** A Plugin that closed abnormally, by its name in the Display Language when it did. */
+export interface CrashedPlugin {
+  id: PluginId;
+  name: string;
+}
+
+/**
  * A Hub Chrome dialog. Its Busy reasons are those at the time it was asked: a Plugin clearing or
  * changing Busy leaves the dialog as it is (spec #44). A Plugin that closes leaves it.
  * `discard-changes` asks before picking a Plugin or quitting drops unsaved Hub Settings edits.
+ * `plugin-crashed` is a crash message: its **Export diagnostics** leaves it up, and **OK**
+ * dismisses it.
  */
 export type HubChromeDialog =
   | { kind: "busy-close"; plugin: BusyPlugin }
   | { kind: "busy-quit"; plugins: BusyPlugin[] }
-  | { kind: "discard-changes" };
+  | { kind: "discard-changes" }
+  | { kind: "plugin-crashed"; plugin: CrashedPlugin; cause: CrashCause };
 
 /**
  * Staff's answers to the pending dialog: **Keep open**, or **Close anyway** / **Quit anyway**, to
- * a Busy dialog; **Keep editing** or **Discard** to the Discard dialog.
+ * a Busy dialog; **Keep editing** or **Discard** to the Discard dialog; **OK** to a crash message.
  */
 export const DIALOG_ANSWERS = [
   "keep-open",
@@ -113,6 +128,7 @@ export const DIALOG_ANSWERS = [
   "quit-anyway",
   "keep-editing",
   "discard",
+  "ok",
 ] as const;
 export type DialogAnswer = (typeof DIALOG_ANSWERS)[number];
 
@@ -121,6 +137,7 @@ export const KEEP_ANSWERS = {
   "busy-close": "keep-open",
   "busy-quit": "keep-open",
   "discard-changes": "keep-editing",
+  "plugin-crashed": "ok",
 } as const satisfies Record<HubChromeDialog["kind"], DialogAnswer>;
 
 /** What the Hub Chrome preload exposes as `window.hubChrome`. */
