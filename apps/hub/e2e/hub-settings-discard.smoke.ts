@@ -3,6 +3,7 @@
 
 import type { ElectronApplication, Page } from "@playwright/test";
 import {
+  answerWithKey,
   displayLanguageOf,
   exitCodeOf,
   expect,
@@ -70,7 +71,7 @@ function overlayShowing(hub: ElectronApplication): boolean {
  */
 async function press(page: Page, name: string): Promise<void> {
   await page.getByRole("dialog").getByRole("button", { name }).focus();
-  await page.keyboard.down("Enter");
+  await answerWithKey(page, "Enter");
 }
 
 test("picking a Plugin with unsaved edits asks first: Keep editing stays, Discard opens it", async ({
@@ -138,8 +139,7 @@ test("quitting with unsaved edits asks first: Esc keeps editing, Discard goes on
   });
   let page = await overlay(hub);
   await expect(page.getByRole("dialog")).toContainText(words.discardQuestion);
-  // Down only: the key answers as it goes down, and the overlay is gone before it comes up.
-  await page.keyboard.down("Escape");
+  await answerWithKey(page, "Escape");
   await expect.poll(() => overlayShowing(hub)).toBe(false);
   await expect(dark).toBeChecked();
 

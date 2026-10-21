@@ -46,6 +46,12 @@ export const INITIALIZE_TIMEOUT_MS = 10_000;
 /** How long a Backend has to exit after `shutdown` before its process tree is killed (ADR 0003). */
 export const SHUTDOWN_GRACE_MS = 5_000;
 
+/**
+ * How long a Plugin UI may stay `unresponsive` before the Plugin closes as stopped responding
+ * (ADR 0012). One that recovers within it is left alone.
+ */
+export const UNRESPONSIVE_GRACE_MS = 30_000;
+
 // Every Backend process still running, so a Hub crash can kill them all.
 const running = new Set<ChildProcess>();
 
