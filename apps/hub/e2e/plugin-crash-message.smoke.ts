@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { ElectronApplication, Locator, Page } from "@playwright/test";
 import {
   bundleEntries,
+  crashSummaries,
   displayLanguageOf,
   EXPORT_DIAGNOSTICS_WORDS,
   expect,
@@ -229,6 +230,18 @@ test("two Plugins crashing together show two messages, one after the other", asy
         }
       }
     });
+
+    // Each renderer's crash arrives on its own, so wait until both are recorded, and so queued,
+    // before answering the first: its OK would otherwise take the overlay away first.
+    await expect
+      .poll(
+        () =>
+          [
+            ...crashSummaries(dataDir, "crashing-backend"),
+            ...crashSummaries(dataDir, "echo-backend"),
+          ].length,
+      )
+      .toBe(2);
 
     // The second message follows the first on the same overlay, so OK on the first is a click;
     // the last one's takes the overlay away, so it is pressed.
