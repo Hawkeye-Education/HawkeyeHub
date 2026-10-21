@@ -26,6 +26,7 @@ export const STRINGS = {
     crashCauses: {
       crashed: "It crashed.",
       "failed-to-start": "It failed to start.",
+      "stopped-responding": "It stopped responding.",
     } satisfies Record<CrashCause, string>,
     ok: "OK",
     settings: "Settings",
@@ -69,6 +70,7 @@ export const STRINGS = {
     crashCauses: {
       crashed: "它當機了。",
       "failed-to-start": "它無法啟動。",
+      "stopped-responding": "它停止回應。",
     } satisfies Record<CrashCause, string>,
     ok: "確定",
     settings: "設定",

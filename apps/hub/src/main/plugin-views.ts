@@ -33,6 +33,7 @@ import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
+import { watchResponsiveness } from "./plugin-ui-responsiveness";
 
 // What the preload sends on `BUSY`. An empty reason would show staff nothing, so it is refused. A
 // brand cannot be narrowed to, so the `as` after the check is where the type is granted.
@@ -79,7 +80,8 @@ export function createPluginViews(
   diagnostics: Diagnostics,
   hubDataDir: AbsolutePath,
   /**
-   * Told when a Plugin's crash is recorded (`crashed`: its UI crashed or failed to load, or its
+   * Told when a Plugin's crash is recorded (`crashed`: its UI crashed, failed to load or stopped
+   * responding, or its
    * Backend broke or failed to start, and the whole Plugin closes), when a closed Plugin is gone
    * (`closed`: its page destroyed and its Backend, if any, exited), and of its page's Busy. Asked
    * for each installed Plugin it opens.
@@ -143,6 +145,9 @@ export function createPluginViews(
         });
       },
     );
+    watchResponsiveness(view.webContents, () => {
+      crashed({ cause: "stopped-responding" });
+    });
     view.webContents.on("console-message", ({ level, message }) => {
       pluginSession.recordConsoleMessage(level, message);
     });

@@ -97,7 +97,7 @@ export interface BusyPlugin {
  * Why a Plugin closed abnormally, in the words of its crash message (ADR 0012). Each cause has its
  * words in the Hub Chrome's strings.
  */
-export type CrashCause = "crashed" | "failed-to-start";
+export type CrashCause = "crashed" | "failed-to-start" | "stopped-responding";
 
 /** A Plugin that closed abnormally, by its name in the Display Language when it did. */
 export interface CrashedPlugin {
