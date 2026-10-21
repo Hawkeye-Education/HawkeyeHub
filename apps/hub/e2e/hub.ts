@@ -154,6 +154,22 @@ export function hubLogLines(dataDir: string): unknown[] {
     .map((line): unknown => JSON.parse(line));
 }
 
+/** The crash summaries hub.log holds for Plugin `id`. */
+export function crashSummaries(dataDir: string, id: string): string[] {
+  return hubLogLines(dataDir).flatMap((line) =>
+    typeof line === "object" &&
+    line !== null &&
+    "pluginId" in line &&
+    line.pluginId === id &&
+    "level" in line &&
+    line.level === "error" &&
+    "message" in line &&
+    typeof line.message === "string"
+      ? [line.message]
+      : [],
+  );
+}
+
 const FIXTURE_PLUGINS = join(import.meta.dirname, "fixtures", "plugins");
 
 /** One entry to write in the record of installed Plugins, and the fixture its folder copies. */
