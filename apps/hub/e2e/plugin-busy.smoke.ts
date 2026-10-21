@@ -2,6 +2,7 @@
 
 import type { ElectronApplication, Page } from "@playwright/test";
 import {
+  answerWithKey,
   displayLanguageOf,
   exitCodeOf,
   expect,
@@ -125,8 +126,7 @@ test("Enter and Esc both pick Keep open", async ({ dataDir }) => {
       await closeTimer.click();
       const page = await overlay(hub);
       await expect(page.getByRole("dialog")).toBeVisible();
-      // Down only: the key answers as it goes down, and the overlay is gone before it comes up.
-      await page.keyboard.down(key);
+      await answerWithKey(page, key);
       await expect.poll(() => overlayShowing(hub)).toBe(false);
       await expect(closeTimer).toBeVisible();
     }

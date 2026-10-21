@@ -330,13 +330,26 @@ export function overlayShowing(hub: ElectronApplication): boolean {
 }
 
 /**
+ * Answers the dialog on the overlay `page` with `key` going down only: the key answers as it goes
+ * down. The answer can take the overlay away before even the keydown is acknowledged (seen on
+ * macOS CI), so a closed page is not an error here; callers check what the answer did.
+ */
+export async function answerWithKey(page: Page, key: string): Promise<void> {
+  try {
+    await page.keyboard.down(key);
+  } catch (error) {
+    if (!page.isClosed()) throw error;
+  }
+}
+
+/**
  * Presses a dialog button with Enter going down only. An answer can take the overlay away, so a
  * mouse click can lose its page before the mouseup that fired it is acknowledged (seen on macOS
- * CI); the key answers as it goes down.
+ * CI).
  */
 export async function press(button: Locator): Promise<void> {
   await button.focus();
-  await button.page().keyboard.down("Enter");
+  await answerWithKey(button.page(), "Enter");
 }
 
 /** The messages in a Plugin's log, oldest first, or none if it has no log yet. */
