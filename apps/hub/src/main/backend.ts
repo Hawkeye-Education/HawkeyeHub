@@ -18,6 +18,7 @@ import type {
 } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
 import { errorCode } from "./error-code";
+import type { HubMode } from "./hub-mode";
 import { RpcErrorReason, type AbsolutePath } from "./ids";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import {
@@ -111,6 +112,8 @@ export function startBackend(
   pluginSession: PluginSession,
   /** Closes the whole Plugin, while it is still open: the Backend broke or failed to start. */
   closePlugin: (crash: PluginCrash) => void,
+  /** Dev mode also copies each stderr line to the terminal, prefixed with the Plugin id. */
+  mode: HubMode["kind"],
 ): Backend {
   const { folder, manifest } = installed;
   const plugin = pluginRefOf(installed);
@@ -189,6 +192,14 @@ export function startBackend(
   child.stderr.on("data", (chunk: Buffer) => {
     pluginSession.recordStderr(chunk);
   });
+  if (mode === "dev") {
+    createInterface({ input: child.stderr, crlfDelay: Infinity }).on(
+      "line",
+      (line) => {
+        process.stderr.write(`[${manifest.id}] ${line}\n`);
+      },
+    );
+  }
 
   const send = (line: string): void => {
     child.stdin.write(`${line}\n`);

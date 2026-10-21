@@ -179,7 +179,13 @@ function runHub(): void {
         diagnostics.recordHubEvent({ kind: "theme-unknown", name });
       },
     });
-    return openHubWindow(diagnostics, now, lifecycle, hubDataDir);
+    return openHubWindow(
+      diagnostics,
+      now,
+      lifecycle,
+      hubDataDir,
+      startedAs.kind,
+    );
   });
 
   // Registered now, not once the window is open, so a launch during startup is not missed: it
