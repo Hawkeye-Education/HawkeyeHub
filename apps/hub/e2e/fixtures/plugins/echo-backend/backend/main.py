@@ -3,7 +3,7 @@
 It sends a `hello` notification right after answering `initialize`, before the Plugin UI can
 have its port. It answers `initialize` only after a pause, so the page has registered its
 handlers by the time the port, and the queued `hello`, reach it. It answers `report` with what it saw at start, `ping` with a `pong` notification
-and then its params, and `fail` with a JSON-RPC error. It logs `shutdown` to stderr and exits, and exits when
+and then its params, `fail` with a JSON-RPC error, and `say` by writing its `text` to stderr. It logs `shutdown` to stderr and exits, and exits when
 stdin closes.
 """
 
@@ -68,6 +68,9 @@ for line in sys.stdin:
             "data": {"reason": "asked-to-fail"},
         }
         send({"jsonrpc": "2.0", "id": message["id"], "error": error})
+    elif method == "say":
+        print(message["params"]["text"], file=sys.stderr, flush=True)
+        send({"jsonrpc": "2.0", "id": message["id"], "result": {}})
     elif method == "shutdown":
         print("got shutdown", file=sys.stderr, flush=True)
         break

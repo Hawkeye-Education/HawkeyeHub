@@ -20,6 +20,7 @@ import {
   type ElectronApplication,
   type Page,
 } from "@playwright/test";
+import { unzipSync } from "fflate";
 import { errorCode } from "../src/main/error-code";
 
 // The package directory, so Electron reads package.json's `main` and `productName`.
@@ -277,6 +278,47 @@ export function pluginLogMessages(dataDir: string, id: string): string[] {
     .split("\n")
     .map((line) => (JSON.parse(line) as { message: string }).message);
 }
+
+/**
+ * Replaces dialog.showSaveDialog in the main process with a stub that answers at once: with
+ * `destination`, or cancelled. Returns the default path of each save dialog shown, read with the
+ * function it resolves to. A global, because each evaluate is serialized and shares no closure.
+ */
+export async function stubSaveDialog(
+  hub: ElectronApplication,
+  answer: { canceled: boolean; filePath: string },
+): Promise<() => Promise<string[]>> {
+  await hub.evaluate(({ dialog }, answer) => {
+    const shown: string[] = [];
+    (globalThis as unknown as { saveDialogsShown: string[] }).saveDialogsShown =
+      shown;
+    dialog.showSaveDialog = (...args: unknown[]) => {
+      // Called as (options) or (window, options).
+      const options = args.at(-1) as { defaultPath: string };
+      shown.push(options.defaultPath);
+      return Promise.resolve(answer);
+    };
+  }, answer);
+  return () =>
+    hub.evaluate(
+      () =>
+        (globalThis as unknown as { saveDialogsShown: string[] })
+          .saveDialogsShown,
+    );
+}
+
+/** A Diagnostics Bundle's entries: each path inside the zip and its text. */
+export function bundleEntries(bundle: string): Record<string, string> {
+  const decoder = new TextDecoder();
+  return Object.fromEntries(
+    Object.entries(unzipSync(readFileSync(bundle))).map(([path, bytes]) => [
+      path,
+      decoder.decode(bytes),
+    ]),
+  );
+}
+
+export const BUNDLE_FILE_NAME = /hawkeye-hub-diagnostics-\d{8}-\d{6}\.zip$/;
 
 export function isRunning(pid: number): boolean {
   try {
