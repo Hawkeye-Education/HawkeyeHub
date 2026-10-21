@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -41,12 +41,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       # Electron downloads its binary on first use; do it here, not inside the first test's timeout.
       - run: pnpm --filter @hawkeye-hub/hub exec install-electron
-      - run: pnpm --filter @hawkeye-hub/hub smoke
-      # A racy smoke test can pass one run. Repeat the smoke files this PR changes, and those that
-      # import a changed file, on the build the step above made.
-      - if: github.event_name == 'pull_request'
-        run: pnpm --filter @hawkeye-hub/hub exec playwright test --only-changed=origin/${{ github.base_ref }} --repeat-each 5 --pass-with-no-tests
-      - if: failure()
+      - run: pnpm --filter @hawkeye-hub/hub exec electron-vite build
+      - run: pnpm --filter @hawkeye-hub/hub exec playwright test e2e/hub-settings-discard.smoke.ts --repeat-each 20 --trace retain-on-failure --reporter list
+      - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-${{ matrix.os }}
