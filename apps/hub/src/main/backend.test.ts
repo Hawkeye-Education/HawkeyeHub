@@ -99,6 +99,7 @@ async function initializedBackend() {
     diagnostics,
     session,
     noop,
+    "installed",
   );
   await vi.advanceTimersByTimeAsync(0);
   fake.answer({ jsonrpc: "2.0", id: "hub-initialize", result: {} });

@@ -1,9 +1,16 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, expect, test } from "vitest";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
-import { loadInstalledPlugins } from "./installed-plugins";
+import { loadDevPlugins, loadInstalledPlugins } from "./installed-plugins";
+import { PluginId } from "@hawkeye-hub/plugin-format";
 
 let dataDir: AbsolutePath;
 
@@ -167,5 +174,53 @@ test("a present record is never rewritten", () => {
 
   expect(readFileSync(join(dataDir, "installed-plugins.json"), "utf8")).toBe(
     "[ ]",
+  );
+});
+
+// Dev mode's Plugins are `<pluginsDir>/<id>` folders, here the data folder.
+
+test("each dev Plugin loads its folder and Manifest, and no record is read or written", () => {
+  writeManifest(
+    "seating-plan",
+    JSON.stringify(manifest("seating-plan", "1.2.0")),
+  );
+  writeManifest(
+    "class-timer",
+    JSON.stringify(manifest("class-timer", "0.1.0")),
+  );
+
+  expect(
+    loadDevPlugins(dataDir, [
+      PluginId.parse("seating-plan"),
+      PluginId.parse("class-timer"),
+    ]),
+  ).toEqual([
+    {
+      folder: join(dataDir, "seating-plan"),
+      manifest: manifest("seating-plan", "1.2.0"),
+    },
+    {
+      folder: join(dataDir, "class-timer"),
+      manifest: manifest("class-timer", "0.1.0"),
+    },
+  ]);
+  expect(existsSync(join(dataDir, "installed-plugins.json"))).toBe(false);
+});
+
+test.each([
+  ["folder is missing", null, "folder-missing"],
+  ["Manifest is invalid", "{", "manifest-invalid"],
+  [
+    "Manifest names another id",
+    JSON.stringify(manifest("class-timer", "1.2.0")),
+    "manifest-disagrees",
+  ],
+])("a dev Plugin whose %s throws with why", (_, json, reason) => {
+  if (json !== null) writeManifest("seating-plan", json);
+
+  expect(() =>
+    loadDevPlugins(dataDir, [PluginId.parse("seating-plan")]),
+  ).toThrow(
+    `Plugin "seating-plan" (${join(dataDir, "seating-plan")}): ${reason}`,
   );
 });

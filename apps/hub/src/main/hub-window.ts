@@ -31,6 +31,7 @@ import { z } from "zod";
 import { bundleFileName, type Diagnostics } from "./diagnostics";
 import { errorCode } from "./error-code";
 import { HubSettingsSchema } from "../shared/hub-settings";
+import type { HubMode } from "./hub-mode";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
 import type { Lifecycle } from "./lifecycle";
 import { contentAreaOf, createPluginViews } from "./plugin-views";
@@ -78,6 +79,9 @@ function hubChromeView(): WebContentsView {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      // Not a default: the Hub Chrome has no DevTools, even in dev mode, which gives them only
+      // to Plugin UIs (#31).
+      devTools: false,
       preload: join(import.meta.dirname, "../preload/hub-chrome.cjs"),
     },
   });
@@ -106,6 +110,7 @@ export function openHubWindow(
   now: () => Date,
   lifecycle: Lifecycle,
   hubDataDir: AbsolutePath,
+  mode: HubMode["kind"],
 ): BaseWindow {
   // Native frame and title bar until the Theme brings the Hub Chrome's own (ADR 0006).
   // Size and position are not remembered.
@@ -127,6 +132,7 @@ export function openHubWindow(
     diagnostics,
     hubDataDir,
     lifecycle,
+    mode,
   );
   // The dialog overlay, while a dialog is showing: the whole window, so nothing beneath takes a
   // click, and transparent but for the dialog it draws. Null while no dialog is showing.

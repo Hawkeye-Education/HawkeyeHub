@@ -28,6 +28,7 @@ import {
 import { startBackend } from "./backend";
 import type { Diagnostics, NetErrorCode, PluginCrash } from "./diagnostics";
 import { errorCode } from "./error-code";
+import type { HubMode } from "./hub-mode";
 import type { AbsolutePath } from "./ids";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
@@ -85,6 +86,8 @@ export function createPluginViews(
    * for each installed Plugin it opens.
    */
   lifecycle: Pick<Lifecycle, "installed" | "close" | "closed" | "setBusy">,
+  /** Dev mode gives each Plugin UI DevTools, and copies each Backend's stderr to the terminal. */
+  mode: HubMode["kind"],
 ): PluginViews {
   const opened = new Map<PluginId, OpenPlugin>();
 
@@ -115,8 +118,7 @@ export function createPluginViews(
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
-        // Dev mode (#31) turns them back on.
-        devTools: false,
+        devTools: mode === "dev",
         partition,
         preload: join(import.meta.dirname, "../preload/plugin.cjs"),
         additionalArguments: [
@@ -126,6 +128,15 @@ export function createPluginViews(
       },
     });
     lockDown(view, window, id);
+    // The Hub has no menu to bind Toggle Developer Tools, so dev mode binds its shortcut itself.
+    if (mode === "dev") {
+      view.webContents.on("before-input-event", (event, input) => {
+        if (isDevToolsShortcut(input)) {
+          event.preventDefault();
+          view.webContents.toggleDevTools();
+        }
+      });
+    }
     const pluginSession = diagnostics.startPluginSession(pluginRefOf(plugin));
     // Records the crash and closes the Plugin, only if this open is still the open one: once it is
     // closing, nothing that follows is a crash, and nothing restarts.
@@ -165,7 +176,14 @@ export function createPluginViews(
 
     // Alongside the Plugin UI load. Null for a UI-only Plugin, which has no Backend.
     const backend = hasBackend
-      ? startBackend(plugin, hubDataDir, diagnostics, pluginSession, crashed)
+      ? startBackend(
+          plugin,
+          hubDataDir,
+          diagnostics,
+          pluginSession,
+          crashed,
+          mode,
+        )
       : null;
     if (backend !== null) {
       // The preload asks for its port as it starts. It gets it once `initialize` has succeeded,
@@ -258,4 +276,16 @@ function netErrorCodeOf(error: unknown): NetErrorCode {
 
 function isNetErrorCode(code: string): code is NetErrorCode {
   return code.startsWith("ERR_");
+}
+
+/**
+ * Ctrl+Shift+I, or Cmd+Option+I on macOS, with no other modifier: by the key's position, as
+ * Option changes the letter.
+ */
+function isDevToolsShortcut(input: Electron.Input): boolean {
+  if (input.type !== "keyDown" || input.code !== "KeyI") return false;
+  const { control, shift, alt, meta } = input;
+  return process.platform === "darwin"
+    ? meta && alt && !control && !shift
+    : control && shift && !alt && !meta;
 }
