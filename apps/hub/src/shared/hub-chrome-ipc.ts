@@ -4,6 +4,10 @@
 // Types and constants only: the preload is sandboxed and the Hub Chrome has no Node.
 
 import type { PluginId } from "@hawkeye-hub/plugin-format";
+import type { Branded } from "./branded";
+import type { HubSettings } from "./hub-settings";
+
+export type { HubSettings };
 
 /** The languages the Hub draws in (ADR 0007): adding one is a Hub release. */
 export const DISPLAY_LANGUAGES = ["en-HK", "zh-HK"] as const;
@@ -31,43 +35,30 @@ export interface SwitcherPlugin {
   access: PluginAccess;
 }
 
-declare const hubVersion: unique symbol;
 /** The Hub's own version (semver), as main parses it. */
-export type HubVersion = string & { readonly [hubVersion]: true };
+export type HubVersion = Branded<string, "HubVersion">;
 
-declare const themeName: unique symbol;
 /** A Theme's name, such as `hawkeye`: kebab-case, and not necessarily one this Hub has. */
-export type ThemeName = string & { readonly [themeName]: true };
+export type ThemeName = Branded<string, "ThemeName">;
 
 /** The Colour Schemes staff choose from (ADR 0006): `system` follows the OS. */
 export const COLOUR_SCHEMES = ["system", "light", "dark"] as const;
 export type ColourScheme = (typeof COLOUR_SCHEMES)[number];
 
 /**
- * Hub Settings (spec #71). Every field always holds a value: following the company or the OS is a
- * value of its own, never an absent field.
- */
-export interface HubSettings {
-  theme: { kind: "company" } | { kind: "chosen"; name: ThemeName };
-  colourScheme: ColourScheme;
-  displayLanguage:
-    { kind: "system" } | { kind: "chosen"; language: DisplayLanguage };
-}
-
-/**
  * What the content area shows: the front Plugin's UI (or the empty state when none is open), or
- * Hub Settings, with the open Plugins still running hidden behind them. Settings carry the stored
- * Hub Settings and the unsaved form, both held in main, so a reloaded Hub Chrome redraws the form.
+ * Hub Settings, with the open Plugins still running hidden behind them. Settings carry the unsaved
+ * form, held in main, so a reloaded Hub Chrome redraws it.
  */
 export type HubChromeContent =
   | { kind: "plugin" }
   | {
       kind: "settings";
-      stored: HubSettings;
       form: HubSettings;
       /**
        * A Save changed the Display Language while a Plugin was open: open Plugin UIs keep the one
-       * they were opened with until reopened (ADR 0007). Cleared on leaving settings.
+       * they were opened with until reopened (ADR 0007). Cleared on leaving settings, or once no
+       * Plugin is open.
        */
       languageNoteShowing: boolean;
     };
@@ -92,9 +83,8 @@ export interface HubChromeSnapshot {
   themes: ThemeName[];
 }
 
-declare const busyReason: unique symbol;
 /** A Plugin's own Busy reason, in the Display Language. Never empty: main parses it so. */
-export type BusyReason = string & { readonly [busyReason]: true };
+export type BusyReason = Branded<string, "BusyReason">;
 
 /** A Busy Plugin, by its name in the Display Language and its own reason. */
 export interface BusyPlugin {
@@ -125,6 +115,13 @@ export const DIALOG_ANSWERS = [
   "discard",
 ] as const;
 export type DialogAnswer = (typeof DIALOG_ANSWERS)[number];
+
+/** Each dialog's first button, which keeps things as they are: Enter and Esc pick it too. */
+export const KEEP_ANSWERS = {
+  "busy-close": "keep-open",
+  "busy-quit": "keep-open",
+  "discard-changes": "keep-editing",
+} as const satisfies Record<HubChromeDialog["kind"], DialogAnswer>;
 
 /** What the Hub Chrome preload exposes as `window.hubChrome`. */
 export interface HubChromeApi {

@@ -14,6 +14,7 @@ import {
 import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
 import type { DisplayLanguage, ThemeName } from "../shared/hub-chrome-ipc";
+import { HAWKEYE } from "./lifecycle";
 import type {
   AbsolutePath,
   AiProviderKind,
@@ -186,6 +187,8 @@ export type HubEvent =
   // The Hub Settings file was damaged and overwritten with the first-launch values. Never its
   // contents, only what was wrong with it.
   | { kind: "hub-settings-replaced"; problem: HubSettingsProblem }
+  // The first-launch values could not be written over the Hub Settings file: the fs error's code.
+  | { kind: "hub-settings-unwritable"; code: string }
   // A stored or company Theme this Hub does not have, so it draws in Hawkeye instead.
   | { kind: "theme-unknown"; name: ThemeName }
   // The Hub stopped reloading a Hub Chrome that crashed this many times this quickly.
@@ -571,10 +574,16 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
         message: `Hub Settings replaced with first-launch values: ${HUB_SETTINGS_PROBLEMS[event.problem]}`,
         subject: NO_PLUGIN,
       };
+    case "hub-settings-unwritable":
+      return {
+        level: "error",
+        message: `Hub Settings could not be written: ${event.code}`,
+        subject: NO_PLUGIN,
+      };
     case "theme-unknown":
       return {
         level: "warn",
-        message: `Theme ${event.name} unknown to this Hub, using hawkeye`,
+        message: `Theme ${event.name} unknown to this Hub, using ${HAWKEYE}`,
         subject: NO_PLUGIN,
       };
     case "hub-chrome-kept-crashing":

@@ -3,10 +3,11 @@
 // picks it, and Esc picks it too.
 
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
-import type {
-  DialogAnswer,
-  HubChromeApi,
-  HubChromeDialog,
+import {
+  KEEP_ANSWERS,
+  type DialogAnswer,
+  type HubChromeApi,
+  type HubChromeDialog,
 } from "../shared/hub-chrome-ipc";
 import type { Strings } from "./strings";
 
@@ -58,21 +59,23 @@ export class HubDialog extends LitElement {
     this.renderRoot.querySelector("dialog")?.showModal();
   }
 
-  /** The dialog's heading, its body, and its two buttons: what it says and what it answers. */
+  /**
+   * The dialog's heading, its body, its first button's label, and its other button: what it says
+   * and what it answers. The first button answers `KEEP_ANSWERS`, as main expects.
+   */
   private content(): {
     heading: string;
     body: TemplateResult | typeof nothing;
-    keep: Button;
+    keepLabel: string;
     anyway: Button;
   } {
     const { dialog, strings } = this;
-    const keepOpen: Button = { answer: "keep-open", label: strings.keepOpen };
     switch (dialog.kind) {
       case "busy-close":
         return {
           heading: strings.closeQuestion(dialog.plugin.name),
           body: html`<p>${dialog.plugin.reason}</p>`,
-          keep: keepOpen,
+          keepLabel: strings.keepOpen,
           anyway: { answer: "close-anyway", label: strings.closeAnyway },
         };
       case "busy-quit":
@@ -84,14 +87,14 @@ export class HubDialog extends LitElement {
                 ({ name, reason }) => html`<li><b>${name}</b>: ${reason}</li>`,
               )}
             </ul>`,
-          keep: keepOpen,
+          keepLabel: strings.keepOpen,
           anyway: { answer: "quit-anyway", label: strings.quitAnyway },
         };
       case "discard-changes":
         return {
           heading: strings.discardQuestion,
           body: nothing,
-          keep: { answer: "keep-editing", label: strings.keepEditing },
+          keepLabel: strings.keepEditing,
           anyway: { answer: "discard", label: strings.discard },
         };
       default:
@@ -101,13 +104,14 @@ export class HubDialog extends LitElement {
 
   override render() {
     const { hub } = this;
-    const { heading, body, keep, anyway } = this.content();
+    const { heading, body, keepLabel, anyway } = this.content();
+    const keep = KEEP_ANSWERS[this.dialog.kind];
     // Esc cancels the <dialog>: that is the first button. Main then takes the overlay away.
     return html`<dialog
       aria-labelledby="heading"
       @cancel=${(event: Event) => {
         event.preventDefault();
-        hub.answer(keep.answer);
+        hub.answer(keep);
       }}
     >
       <h2 id="heading">${heading}</h2>
@@ -116,10 +120,10 @@ export class HubDialog extends LitElement {
         <button
           autofocus
           @click=${() => {
-            hub.answer(keep.answer);
+            hub.answer(keep);
           }}
         >
-          ${keep.label}
+          ${keepLabel}
         </button>
         <button
           @click=${() => {

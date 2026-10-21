@@ -1,5 +1,5 @@
 // Hub Settings, drawn in the content area while the open Plugins run hidden behind them: one
-// scrolling page of sections. No Theme yet (ADR 0006).
+// scrolling page of sections. Its Theme section picks among the Themes this Hub has (ADR 0006).
 
 import { LitElement, css, html, nothing } from "lit";
 import {

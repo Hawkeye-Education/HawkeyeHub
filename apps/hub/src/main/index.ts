@@ -11,6 +11,7 @@ import { openHubWindow } from "./hub-window";
 import { parseAbsolutePath, parseHubVersion } from "./ids";
 import { loadInstalledPlugins } from "./installed-plugins";
 import { createLifecycle } from "./lifecycle";
+import type { HubSettings } from "../shared/hub-settings";
 import { PLUGIN_ICON_SCHEME, servePluginIcons } from "./plugin-icons";
 import { PLUGIN_SCHEME } from "./plugin-scheme";
 
@@ -118,22 +119,25 @@ function runHub(): void {
     );
     // The Colour Scheme drives `prefers-color-scheme` in every view (ADR 0006), so it is applied
     // before the window opens, and again on every Save.
+    const applyColourScheme = ({ colourScheme }: HubSettings): void => {
+      nativeTheme.themeSource = colourScheme;
+    };
     const settings = loadHubSettings(hubDataDir, diagnostics);
-    nativeTheme.themeSource = settings.colourScheme;
-    const lifecycle = createLifecycle(
+    applyColourScheme(settings);
+    const lifecycle = createLifecycle({
       // package.json's `version`: without one Electron would answer its own version.
-      parseHubVersion(app.getVersion()),
-      displayLanguageFor(app.getPreferredSystemLanguages()),
-      installed.loaded,
-      settings,
-      (saved) => {
+      hubVersion: parseHubVersion(app.getVersion()),
+      systemLanguage: displayLanguageFor(app.getPreferredSystemLanguages()),
+      installed: installed.loaded,
+      storedAtStart: settings,
+      save: (saved) => {
         saveHubSettings(hubDataDir, saved);
-        nativeTheme.themeSource = saved.colourScheme;
+        applyColourScheme(saved);
       },
-      (name) => {
+      unknownTheme: (name) => {
         diagnostics.recordHubEvent({ kind: "theme-unknown", name });
       },
-    );
+    });
     return openHubWindow(diagnostics, now, lifecycle, hubDataDir);
   });
 

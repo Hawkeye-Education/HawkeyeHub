@@ -30,9 +30,8 @@ import {
 import { z } from "zod";
 import { bundleFileName, type Diagnostics } from "./diagnostics";
 import { errorCode } from "./error-code";
-import { HubSettingsSchema } from "./hub-settings";
+import { HubSettingsSchema } from "../shared/hub-settings";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
-import { pluginRefOf } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
 import { contentAreaOf, createPluginViews } from "./plugin-views";
 import {
@@ -200,25 +199,14 @@ export function openHubWindow(
       defaultPath: join(app.getPath("downloads"), bundleFileName(now())),
     });
     if (canceled) return;
-    const snapshot = lifecycle.snapshot();
-    diagnostics.exportBundle(parseAbsolutePath(filePath), {
-      hubVersion: snapshot.hubVersion,
-      os: {
+    diagnostics.exportBundle(
+      parseAbsolutePath(filePath),
+      lifecycle.systemDescription({
         name: process.platform,
         version: process.getSystemVersion(),
         arch: process.arch,
-      },
-      displayLanguage: snapshot.displayLanguage,
-      theme: snapshot.theme,
-      colourScheme: lifecycle.storedSettings().colourScheme,
-      plugins: snapshot.plugins.map(({ id }) =>
-        pluginRefOf(lifecycle.installed(id)),
-      ),
-      // The Hub downloads no Python interpreter and has no AI Provider or Auth Provider yet.
-      pythonVersions: [],
-      aiProviders: [],
-      authProvider: { kind: "none" },
-    });
+      }),
+    );
   });
   // Quitting (a window close, or app.quit as Cmd+Q does, which closes the window) asks first if any
   // Plugin is Busy, and **Keep open** cancels it. Then every open Plugin closes, in parallel. Their

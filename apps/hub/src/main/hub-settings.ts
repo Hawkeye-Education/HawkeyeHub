@@ -3,14 +3,7 @@
 
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { KEBAB_CASE } from "@hawkeye-hub/plugin-format";
-import { z } from "zod";
-import {
-  COLOUR_SCHEMES,
-  DISPLAY_LANGUAGES,
-  type HubSettings,
-  type ThemeName,
-} from "../shared/hub-chrome-ipc";
+import { HubSettingsSchema, type HubSettings } from "../shared/hub-settings";
 import type { Diagnostics, HubSettingsProblem } from "./diagnostics";
 import { errorCode } from "./error-code";
 import type { AbsolutePath } from "./ids";
@@ -22,33 +15,6 @@ export const FIRST_LAUNCH_SETTINGS: HubSettings = {
   colourScheme: "system",
   displayLanguage: { kind: "system" },
 };
-
-/**
- * Hub Settings as the file and the Hub Chrome hand them over. Strict throughout: a field this Hub
- * does not know makes the whole value invalid. The regex makes a name a ThemeName, and the `as`
- * after it grants the brand, as in `ids.ts`. The type is the hand-written one in the shared IPC
- * contract, which carries no zod; `satisfies` keeps the two the same shape.
- */
-export const HubSettingsSchema = z.strictObject({
-  theme: z.discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("company") }),
-    z.strictObject({
-      kind: z.literal("chosen"),
-      name: z
-        .string()
-        .regex(KEBAB_CASE)
-        .transform((raw) => raw as ThemeName),
-    }),
-  ]),
-  colourScheme: z.enum(COLOUR_SCHEMES),
-  displayLanguage: z.discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("system") }),
-    z.strictObject({
-      kind: z.literal("chosen"),
-      language: z.enum(DISPLAY_LANGUAGES),
-    }),
-  ]),
-}) satisfies z.ZodType<HubSettings>;
 
 /** Writes the whole file, through a temporary file, so a crash mid-write never leaves half of it. */
 export function saveHubSettings(
@@ -77,7 +43,15 @@ export function loadHubSettings(
       problem: read.problem,
     });
   }
-  saveHubSettings(dataDir, FIRST_LAUNCH_SETTINGS);
+  // A file that cannot be replaced (its path is a folder, say) is logged, not thrown: the Hub still
+  // starts with the first-launch values, and the next Save tries again (story 40).
+  try {
+    saveHubSettings(dataDir, FIRST_LAUNCH_SETTINGS);
+  } catch (error) {
+    const code = errorCode(error);
+    if (code === undefined) throw error;
+    diagnostics.recordHubEvent({ kind: "hub-settings-unwritable", code });
+  }
   return FIRST_LAUNCH_SETTINGS;
 }
 
