@@ -16,7 +16,7 @@ import { basename, dirname, join, relative, sep } from "node:path";
 import type { HubError, StoreChange } from "@hawkeye-hub/hub-api";
 import type { PluginId, StoreName } from "@hawkeye-hub/plugin-format";
 import type { WebContents } from "electron";
-import { z } from "zod";
+import { StoreCall } from "../shared/store-call";
 import {
   STORES,
   STORES_CHANGED,
@@ -40,23 +40,28 @@ export class StoreRefused extends Error {
 const TEMP_SUFFIX = ".hub-tmp";
 
 /**
- * A relative POSIX path's segments, each a plain name: so no `..`, `.` or empty segment (which
- * also rules out a leading `/`), no `\` and no `:` (a Windows drive or stream), and no name that
- * could be a write's temp file.
+ * Whether `path` is relative and POSIX-style with each segment a plain name: so no `..`, `.` or
+ * empty segment (which also rules out a leading `/`), and no `\` or `:` (a Windows drive or
+ * stream). Joined under a folder, it stays inside it.
  */
+export function isPlainPath(path: string): boolean {
+  return path
+    .split("/")
+    .every(
+      (segment) =>
+        segment !== "" &&
+        segment !== "." &&
+        segment !== ".." &&
+        !/[\\:\0]/.test(segment),
+    );
+}
+
+/** A plain path's segments (`isPlainPath`), naming no file that could be a write's temp file. */
 function segmentsOf(path: string): string[] {
-  const segments = path.split("/");
-  const plain = segments.every(
-    (segment) =>
-      segment !== "" &&
-      segment !== "." &&
-      segment !== ".." &&
-      !/[\\:\0]/.test(segment),
-  );
-  if (!plain || isTemp(path)) {
+  if (!isPlainPath(path) || isTemp(path)) {
     throw new StoreRefused({ code: "bad-path", path });
   }
-  return segments;
+  return path.split("/");
 }
 
 /**
@@ -159,9 +164,11 @@ export function createStores(
       const folder = storeFolder(hubDataDir, declaredStore(store));
       let watching = true;
       const watcher = watch(folder, { recursive: true }, (_event, name) => {
-        // Node gives no name only on platforms without one, and every Hub platform has it
-        // (https://nodejs.org/docs/latest-v22.x/api/fs.html#filename-argument).
-        if (name === null) throw new Error("A store watch gave no file name");
+        // No name: on Windows, more changes came at once than its buffer holds, and the OS named
+        // none of them (libuv src/win/fs-event.c; stores.test.ts makes one). Thrown, it would crash
+        // the Hub. ponytail: those changes go unreported; re-list the store and report each file
+        // as changed if a Plugin ever needs every one.
+        if (name === null) return;
         if (isTemp(name)) return;
         const file = join(folder, name);
         const path = posixPathOf(folder, file);
@@ -184,40 +191,6 @@ export function createStores(
   };
 }
 
-// What the Plugin preload sends: the page's own arguments, so the Plugin's mistakes, such as a
-// number for a path, fail its own call.
-const StoreCall = z.discriminatedUnion("call", [
-  z.strictObject({ call: z.literal("list"), store: z.string() }),
-  z.strictObject({
-    call: z.literal("readText"),
-    store: z.string(),
-    path: z.string(),
-  }),
-  z.strictObject({
-    call: z.literal("readBytes"),
-    store: z.string(),
-    path: z.string(),
-  }),
-  z.strictObject({
-    call: z.literal("writeText"),
-    store: z.string(),
-    path: z.string(),
-    text: z.string(),
-  }),
-  z.strictObject({
-    call: z.literal("writeBytes"),
-    store: z.string(),
-    path: z.string(),
-    bytes: z.instanceof(Uint8Array),
-  }),
-  z.strictObject({
-    call: z.literal("watch"),
-    store: z.string(),
-    id: z.number(),
-  }),
-  z.strictObject({ call: z.literal("unwatch"), id: z.number() }),
-]);
-
 /**
  * Serves `hub.stores` to one Plugin UI's page over the Plugin preload's channels, for the stores
  * its Manifest declares, until the page is destroyed.
@@ -230,7 +203,7 @@ export function serveStores(
   const stores = createStores(hubDataDir, declared);
   // Each watch's stop, by the id the preload gave it.
   const watches = new Map<number, () => void>();
-  const answer = async (call: z.infer<typeof StoreCall>): Promise<unknown> => {
+  const answer = async (call: StoreCall): Promise<unknown> => {
     switch (call.call) {
       case "list":
         return stores.list(call.store);

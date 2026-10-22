@@ -6,9 +6,10 @@
 
 import semver from "semver";
 import { rmSync } from "node:fs";
-import type { PluginId } from "@hawkeye-hub/plugin-format";
+import type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
 import type { PluginRef } from "./diagnostics";
 import {
+  pluginRefOf,
   readRecord,
   versionFolder,
   writeRecord,
@@ -18,18 +19,20 @@ import type { JobQueue } from "./job-queue";
 import type { Lifecycle } from "./lifecycle";
 import {
   buildVersion,
-  failureOf,
   type InstallDeps,
   type InstallFailure,
 } from "./plugin-install";
-import type { RegistryCheck } from "./registry";
+import type { RegistryCheck, RegistryPlugin } from "./registry";
 
 /** `plugin` is the version that failed to build; the installed one is kept. */
 export type UpdateFailure = { plugin: PluginRef } & InstallFailure;
 
 export interface UpdaterDeps extends InstallDeps {
   jobs: JobQueue;
-  lifecycle: Pick<Lifecycle, "snapshot" | "installed" | "updated" | "onChange">;
+  lifecycle: Pick<
+    Lifecycle,
+    "snapshot" | "installed" | "running" | "updated" | "onChange"
+  >;
   /** Logs `plugin-update-failed`. */
   updateFailed: (failure: UpdateFailure) => void;
 }
@@ -45,7 +48,7 @@ export interface Updater {
 export function createUpdater(deps: UpdaterDeps): Updater {
   const { dataDir, jobs, lifecycle, updateFailed } = deps;
   // The newest version each Plugin is being built at, queued or building. A newer one supersedes it.
-  const building = new Map<PluginId, string>();
+  const building = new Map<PluginId, PluginVersion>();
   // Built versions waiting for their Plugin to close.
   const built = new Map<PluginId, InstalledPlugin>();
   // Plugins with a swap job queued, so each change does not queue another.
@@ -55,15 +58,10 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     rmSync(plugin.folder, { recursive: true, force: true });
   };
 
-  const isRunning = (id: PluginId): boolean => {
-    const { open, closing } = lifecycle.snapshot();
-    return open.includes(id) || closing.includes(id);
-  };
-
   // Swaps `id`'s built version in, if it is closed. Runs inside a job.
   const swapIfClosed = (id: PluginId): void => {
     const plugin = built.get(id);
-    if (plugin === undefined || isRunning(id)) return;
+    if (plugin === undefined || lifecycle.running(id)) return;
     built.delete(id);
     const entries = readRecord(dataDir);
     const old = entries.find((entry) => entry.id === id);
@@ -84,7 +82,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 
   lifecycle.onChange(() => {
     for (const id of built.keys()) {
-      if (swapQueued.has(id) || isRunning(id)) continue;
+      if (swapQueued.has(id) || lifecycle.running(id)) continue;
       swapQueued.add(id);
       // A throw is an unhandled rejection: a Hub crash, as with installs.
       void jobs.run(() => {
@@ -95,16 +93,15 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     }
   });
 
-  const update = async (
-    offered: Extract<RegistryCheck, { kind: "listed" }>["plugins"][number],
-  ): Promise<void> => {
+  const update = async (offered: RegistryPlugin): Promise<void> => {
     const { id, version } = offered.manifest;
     // Superseded while queued: the newer version's job builds instead.
     if (building.get(id) !== version) return;
     const outcome = await buildVersion(deps, offered);
     if (building.get(id) === version) building.delete(id);
     if (outcome.kind === "failed") {
-      updateFailed({ plugin: { id, version }, ...failureOf(outcome) });
+      const { kind: _failed, ...failure } = outcome;
+      updateFailed({ plugin: pluginRefOf(offered), ...failure });
       return;
     }
     const superseded = built.get(id);

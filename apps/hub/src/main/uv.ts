@@ -3,7 +3,6 @@
 // A Hub with no Python-Backend Plugin carries none of it: the folder goes with the last one.
 
 import { execFile, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -17,8 +16,15 @@ import {
 import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
 import { unzipSync } from "fflate";
+import { downloadChecked } from "./download";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
-import type { HostPlatform, RegistryFetch } from "./registry";
+import { versionEntryOf } from "./installed-plugins";
+import {
+  Sha256,
+  WebUrl,
+  type HostPlatform,
+  type RegistryFetch,
+} from "./registry";
 
 /** The uv the Hub downloads. CODING_STANDARDS' `required-version` follows it. */
 export const UV_VERSION = "0.13.5";
@@ -26,22 +32,23 @@ export const UV_VERSION = "0.13.5";
 // Astral's release assets for UV_VERSION, with the sha256 its own `.sha256` assets publish.
 const UV_RELEASES: Record<
   "win32-x64" | "darwin-arm64",
-  { asset: string; sha256: string; binary: string }
+  { asset: string; sha256: Sha256; binary: string }
 > = {
   "win32-x64": {
     asset: "uv-x86_64-pc-windows-msvc.zip",
-    sha256: "a38b8d1902b7cfbc76b423ba1bb456f623f42064cdc72628b6075b89afd1019a",
+    sha256: Sha256.parse(
+      "a38b8d1902b7cfbc76b423ba1bb456f623f42064cdc72628b6075b89afd1019a",
+    ),
     binary: "uv.exe",
   },
   "darwin-arm64": {
     asset: "uv-aarch64-apple-darwin.tar.gz",
-    sha256: "743f85035a1996ecb350659e01cd9faea9709829be09b1b4b03c73eaf3c9cd73",
+    sha256: Sha256.parse(
+      "743f85035a1996ecb350659e01cd9faea9709829be09b1b4b03c73eaf3c9cd73",
+    ),
     binary: "uv",
   },
 };
-
-/** How long uv's download may take before it counts as failed. */
-const UV_DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
 
 /** How one uv run ended. `stderr` is all of it; the caller keeps what it needs. */
 export type UvRun = { kind: "succeeded" } | { kind: "failed"; stderr: string };
@@ -77,6 +84,8 @@ export function createUv({
   platform: HostPlatform;
 }): Uv {
   const folder = uvFolder(dataDir);
+  // Null is a real absent state: no uv is pinned for this platform. The Hub still runs there, and
+  // only a Python-Backend build, which needs uv, fails.
   const release =
     platform === "win32-x64" || platform === "darwin-arm64"
       ? UV_RELEASES[platform]
@@ -139,32 +148,6 @@ async function downloadUv(
   release: (typeof UV_RELEASES)[keyof typeof UV_RELEASES],
   binDir: string,
 ): Promise<{ kind: "downloaded" } | { kind: "failed"; stderr: string }> {
-  const url = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${release.asset}`;
-  let bytes: Uint8Array;
-  try {
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(UV_DOWNLOAD_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      return {
-        kind: "failed",
-        stderr: `Downloading uv ${UV_VERSION} answered HTTP ${String(response.status)}`,
-      };
-    }
-    bytes = new Uint8Array(await response.arrayBuffer());
-  } catch (error) {
-    // Not swallowed: a failed download is this run's failure, which the build reports.
-    return {
-      kind: "failed",
-      stderr: `Downloading uv ${UV_VERSION} failed: ${String(error)}`,
-    };
-  }
-  if (createHash("sha256").update(bytes).digest("hex") !== release.sha256) {
-    return {
-      kind: "failed",
-      stderr: `uv ${UV_VERSION}'s download does not match its sha256`,
-    };
-  }
   // Every uv here is another version, or a leftover of this one: none has the binary.
   const folder = dirname(binDir);
   mkdirSync(folder, { recursive: true });
@@ -175,9 +158,28 @@ async function downloadUv(
   }
   const partial = `${binDir}.partial`;
   mkdirSync(partial);
+  const archive = join(partial, release.asset);
+  const downloaded = await downloadChecked(
+    fetch,
+    WebUrl.parse(
+      `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${release.asset}`,
+    ),
+    release.sha256,
+    archive,
+  );
+  if (downloaded.kind === "failed") {
+    rmSync(partial, { recursive: true, force: true });
+    return {
+      kind: "failed",
+      stderr:
+        downloaded.cause === "checksum"
+          ? `uv ${UV_VERSION}'s download does not match its sha256`
+          : `Downloading uv ${UV_VERSION} failed: ${downloaded.reason}`,
+    };
+  }
   if (release.asset.endsWith(".zip")) {
     // Windows: uv.exe sits at the zip's root.
-    const files = unzipSync(bytes, {
+    const files = unzipSync(readFileSync(archive), {
       filter: (file) => file.name === release.binary,
     });
     const binary = files[release.binary];
@@ -187,8 +189,6 @@ async function downloadUv(
     writeFileSync(join(partial, release.binary), binary);
   } else {
     // macOS: the system tar, which keeps uv's executable bit; uv sits in one top folder.
-    const archive = join(partial, release.asset);
-    writeFileSync(archive, bytes);
     await promisify(execFile)("tar", [
       "-xzf",
       archive,
@@ -197,8 +197,8 @@ async function downloadUv(
       "--strip-components",
       "1",
     ]);
-    rmSync(archive);
   }
+  rmSync(archive);
   renameSync(partial, binDir);
   return { kind: "downloaded" };
 }
@@ -221,7 +221,7 @@ export async function pruneUv(uv: Uv, dataDir: AbsolutePath): Promise<void> {
       const cfg = join(dataDir, entry.name, "backend", ".venv", "pyvenv.cfg");
       if (
         !entry.isDirectory() ||
-        !entry.name.includes("@") ||
+        versionEntryOf(entry.name) === null ||
         !existsSync(cfg)
       ) {
         return [];

@@ -36,12 +36,15 @@ export type CatalogueAccess =
 export type PluginAccess =
   { kind: "openable" } | { kind: "blocked"; reason: BlockedReason };
 
+/** An icon on main's `hawkeye-icon` scheme, which only main's `plugin-icons` makes. */
+export type IconUrl = Branded<string, "IconUrl">;
+
 export interface SwitcherPlugin {
   id: PluginId;
   /** Already in the Display Language. */
   name: string;
   /** The Plugin's `icon.svg`, served to the Hub Chrome only as a CSS mask (spec #44 story 53). */
-  iconUrl: string;
+  iconUrl: IconUrl;
   access: PluginAccess;
 }
 
@@ -71,7 +74,7 @@ export interface CataloguePlugin {
   name: string;
   description: string;
   /** The Registry's icon, served through the icon scheme as the Switcher's are. */
-  iconUrl: string;
+  iconUrl: IconUrl;
   access: CatalogueAccess;
   installed: CatalogueInstalled;
   job: CatalogueJob;

@@ -1524,31 +1524,44 @@ test.each([
   },
 );
 
-test("uninstalling an open Plugin closes it first, and asks main only once it is gone", () => {
+test("uninstalling an open Plugin closes it first, then asks; main is asked only once it is gone", () => {
   const { lifecycle, uninstalls } = withRegistry("en-HK");
   lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
   lifecycle.open(id("class-timer"));
 
   lifecycle.uninstall(id("class-timer"));
-  lifecycle.answer("uninstall");
   expect(lifecycle.snapshot()).toMatchObject({
     open: [],
     closing: ["class-timer"],
+    dialog: { kind: "uninstall", plugin: { id: "class-timer", name: "Timer" } },
   });
-  expect(uninstalls).toEqual([]);
 
+  lifecycle.answer("uninstall");
+  expect(uninstalls).toEqual([]);
   lifecycle.closed(id("class-timer"));
   expect(uninstalls).toEqual(["class-timer keep-data"]);
 });
 
-test("uninstalling a Busy Plugin asks to close it; Keep open keeps it installed and open", () => {
+test("Keep installed after the close leaves the Plugin closed and installed", () => {
+  const { lifecycle, uninstalls } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
+  lifecycle.open(id("class-timer"));
+  lifecycle.uninstall(id("class-timer"));
+
+  lifecycle.answer("keep-installed");
+  lifecycle.closed(id("class-timer"));
+  expect(lifecycle.snapshot()).toMatchObject({ open: [], dialog: null });
+  expect(entryOf(lifecycle, "class-timer")?.job).toEqual({ kind: "none" });
+  expect(uninstalls).toEqual([]);
+});
+
+test("uninstalling a Busy Plugin asks to close it first; Keep open keeps it open and installed, asking nothing more", () => {
   const { lifecycle, uninstalls } = withRegistry("en-HK");
   lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
 
   lifecycle.uninstall(id("class-timer"));
-  lifecycle.answer("uninstall-and-delete-data");
   expect(lifecycle.snapshot().dialog).toMatchObject({ kind: "busy-close" });
 
   lifecycle.answer("keep-open");
@@ -1558,19 +1571,24 @@ test("uninstalling a Busy Plugin asks to close it; Keep open keeps it installed 
   });
   expect(entryOf(lifecycle, "class-timer")?.job).toEqual({ kind: "none" });
   lifecycle.close(id("class-timer"));
+  expect(lifecycle.snapshot().dialog).toBeNull();
   lifecycle.closed(id("class-timer"));
   expect(uninstalls).toEqual([]);
 });
 
-test("uninstalling a Busy Plugin goes ahead on Close anyway", () => {
+test("uninstalling a Busy Plugin closes it on Close anyway, then asks", () => {
   const { lifecycle, uninstalls } = withRegistry("en-HK");
   lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
   lifecycle.uninstall(id("class-timer"));
-  lifecycle.answer("uninstall-and-delete-data");
 
   lifecycle.answer("close-anyway");
+  expect(lifecycle.snapshot()).toMatchObject({
+    closing: ["class-timer"],
+    dialog: { kind: "uninstall" },
+  });
+  lifecycle.answer("uninstall-and-delete-data");
   lifecycle.closed(id("class-timer"));
   expect(uninstalls).toEqual(["class-timer delete-data"]);
 });

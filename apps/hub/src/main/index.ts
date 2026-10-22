@@ -13,27 +13,26 @@ import { parseHubMode } from "./hub-mode";
 import {
   loadDevPlugins,
   loadInstalledPlugins,
+  pluginRefOf,
   sweepLeftovers,
   type InstalledPlugin,
 } from "./installed-plugins";
 import { createJobQueue } from "./job-queue";
 import { createLifecycle } from "./lifecycle";
-import { failureOf, installPlugin } from "./plugin-install";
+import { installPlugin } from "./plugin-install";
 import { uninstallPlugin, type UninstallData } from "./plugin-uninstall";
 import { createUpdater } from "./plugin-update";
 import type { HubSettings } from "../shared/hub-settings";
 import { HUB_API_VERSION } from "./hub-api-version";
-import {
-  PLUGIN_ICON_SCHEME,
-  registryIconUrl,
-  servePluginIcons,
-} from "./plugin-icons";
+import { PLUGIN_ICON_SCHEME, servePluginIcons } from "./plugin-icons";
 import {
   checkRegistry,
   REGISTRY_CHECK_INTERVAL_MS,
   registryUrlFrom,
+  type HostPlatform,
   type RegistryFetch,
   type RegistryPlugin,
+  type WebUrl,
 } from "./registry";
 import { PLUGIN_SCHEME } from "./plugin-scheme";
 import { createUv } from "./uv";
@@ -179,14 +178,11 @@ function runHub(): void {
     }
     // Electron's fetch, through the OS's proxy settings, as schools need.
     const fetchFromWeb: RegistryFetch = (url, init) => net.fetch(url, init);
+    const platform: HostPlatform = `${process.platform}-${process.arch}`;
     // uv for Python Backends, downloaded with the first one (ADR 0011).
-    const uv = createUv({
-      dataDir: hubDataDir,
-      fetch: fetchFromWeb,
-      platform: `${process.platform}-${process.arch}`,
-    });
-    // The icons of the Plugins the latest Registry check offered, by their registryIconUrl.
-    let registryIcons: ReadonlyMap<string, string> = new Map();
+    const uv = createUv({ dataDir: hubDataDir, fetch: fetchFromWeb, platform });
+    // The Registry's icon of each Plugin the latest Registry check offered.
+    let registryIcons: ReadonlyMap<PluginId, WebUrl> = new Map();
     // The Hub Chrome has no partition, so its session is the default one.
     session.defaultSession.protocol.handle(
       PLUGIN_ICON_SCHEME,
@@ -215,7 +211,7 @@ function runHub(): void {
       void checkRegistry({
         url: registryUrl,
         fetch: fetchFromWeb,
-        platform: `${process.platform}-${process.arch}`,
+        platform,
         hubApiVersion: HUB_API_VERSION,
       }).then((check) => {
         if (check.kind === "failed") {
@@ -226,7 +222,7 @@ function runHub(): void {
         } else {
           registryIcons = new Map(
             check.plugins.map(({ manifest, iconUrl }) => [
-              registryIconUrl(manifest.id),
+              manifest.id,
               iconUrl,
             ]),
           );
@@ -249,13 +245,11 @@ function runHub(): void {
         )
         .then((outcome) => {
           if (outcome.kind === "failed") {
+            const { kind: _failed, ...failure } = outcome;
             diagnostics.recordHubEvent({
               kind: "plugin-install-failed",
-              plugin: {
-                id: plugin.manifest.id,
-                version: plugin.manifest.version,
-              },
-              ...failureOf(outcome),
+              plugin: pluginRefOf(plugin),
+              ...failure,
             });
           }
           lifecycle.installFinished(plugin.manifest.id, outcome);
@@ -270,14 +264,8 @@ function runHub(): void {
     ): void => {
       const { id } = plugin.manifest;
       void jobs
-        .run(() => {
-          // The partition's session outlives the Plugin: its scheme still serves the old folder,
-          // so it goes, and a reinstall serves the new one.
-          const { protocol: schemes } = partitionOf(id);
-          if (schemes.isProtocolHandled(PLUGIN_SCHEME)) {
-            schemes.unhandle(PLUGIN_SCHEME);
-          }
-          return uninstallPlugin(
+        .run(() =>
+          uninstallPlugin(
             {
               dataDir: hubDataDir,
               uv,
@@ -286,8 +274,8 @@ function runHub(): void {
             },
             plugin,
             data,
-          );
-        })
+          ),
+        )
         .then(() => {
           lifecycle.uninstallFinished(id);
         });

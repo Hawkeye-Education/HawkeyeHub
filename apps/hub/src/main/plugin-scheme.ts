@@ -29,14 +29,19 @@ export function uiFileFor(
   return file;
 }
 
-/** Serves `uiDir` as `hawkeye-plugin://<id>/` on `session`, once per session per Hub run. */
+/**
+ * Serves `uiDir` as `hawkeye-plugin://<id>/` on `session`, called at each open. The partition's
+ * session outlives a close, so a reopen replaces the last open's handler: after an update,
+ * uninstall or reinstall, the folder it served may be gone.
+ */
 export function servePluginUi(
   session: Session,
   id: PluginId,
   uiDir: string,
 ): void {
-  // The partition's session outlives a close, so a reopen finds the scheme already handled.
-  if (session.protocol.isProtocolHandled(PLUGIN_SCHEME)) return;
+  if (session.protocol.isProtocolHandled(PLUGIN_SCHEME)) {
+    session.protocol.unhandle(PLUGIN_SCHEME);
+  }
   session.protocol.handle(PLUGIN_SCHEME, (request) => {
     const file = uiFileFor(uiDir, id, request.url);
     if (file === null) return new Response(null, { status: 404 });

@@ -30,16 +30,6 @@ export const STORES = "hub:stores";
 /** Main sends this with a `StoreChanged` for each change a watch sees. */
 export const STORES_CHANGED = "hub:stores-changed";
 
-/** `watch` and `unwatch` carry an id the preload numbers each watch with. */
-export type StoreCall =
-  | { call: "list"; store: string }
-  | { call: "readText"; store: string; path: string }
-  | { call: "readBytes"; store: string; path: string }
-  | { call: "writeText"; store: string; path: string; text: string }
-  | { call: "writeBytes"; store: string; path: string; bytes: Uint8Array }
-  | { call: "watch"; store: string; id: number }
-  | { call: "unwatch"; id: number };
-
 /** What a `StoreCall` comes to: its value, or the `HubError` the page's call rejects with. */
 export type StoreAnswer<Value> =
   { kind: "done"; value: Value } | { kind: "refused"; refusal: HubError };

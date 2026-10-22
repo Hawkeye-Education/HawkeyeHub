@@ -21,6 +21,11 @@ export default tseslint.config(
       "@typescript-eslint/strict-boolean-expressions": "error",
       "@typescript-eslint/switch-exhaustiveness-check": "error",
       "@typescript-eslint/no-floating-promises": "error",
+      // `const { kind: _, ...rest } = union` drops a discriminant without a hand-written copy.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { ignoreRestSiblings: true },
+      ],
     },
   },
   {
