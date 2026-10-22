@@ -2,7 +2,7 @@
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { app, Menu, nativeTheme, protocol, session } from "electron";
+import { app, Menu, nativeTheme, net, protocol, session } from "electron";
 import { killBackendsNow } from "./backend";
 import { openDiagnostics } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
@@ -17,7 +17,18 @@ import {
 } from "./installed-plugins";
 import { createLifecycle } from "./lifecycle";
 import type { HubSettings } from "../shared/hub-settings";
-import { PLUGIN_ICON_SCHEME, servePluginIcons } from "./plugin-icons";
+import { HUB_API_VERSION } from "./hub-api-version";
+import {
+  PLUGIN_ICON_SCHEME,
+  registryIconUrl,
+  servePluginIcons,
+} from "./plugin-icons";
+import {
+  checkRegistry,
+  REGISTRY_CHECK_INTERVAL_MS,
+  registryUrlFrom,
+  type RegistryFetch,
+} from "./registry";
 import { PLUGIN_SCHEME } from "./plugin-scheme";
 
 // 0. Installed, or dev mode (PLUGIN_STANDARD §9.4). Dev mode's Plugins are loaded here, so a bad
@@ -153,10 +164,14 @@ function runHub(): void {
     for (const { plugin, reason } of installed.leftOut) {
       diagnostics.recordHubEvent({ kind: "plugin-left-out", plugin, reason });
     }
+    // Electron's fetch, through the OS's proxy settings, as schools need.
+    const fetchFromWeb: RegistryFetch = (url, init) => net.fetch(url, init);
+    // The icons of the Plugins the latest Registry check offered, by their registryIconUrl.
+    let registryIcons: ReadonlyMap<string, string> = new Map();
     // The Hub Chrome has no partition, so its session is the default one.
     session.defaultSession.protocol.handle(
       PLUGIN_ICON_SCHEME,
-      servePluginIcons(installed.loaded),
+      servePluginIcons(installed.loaded, () => registryIcons, fetchFromWeb),
     );
     // The Colour Scheme drives `prefers-color-scheme` in every view (ADR 0006), so it is applied
     // before the window opens, and again on every Save.
@@ -165,6 +180,35 @@ function runHub(): void {
     };
     const settings = loadHubSettings(hubDataDir, diagnostics);
     applyColourScheme(settings);
+    // Parsed here, so a bad HAWKEYE_HUB_REGISTRY_URL is logged as a crash. Only an installed Hub
+    // checks it.
+    const registryUrl = registryUrlFrom(process.env);
+    // One failed check is one `registry-check-failed` line; installed Plugins are left alone.
+    // ponytail: two checks in flight answer in whatever order they finish; drop a stale answer if
+    // a hung check ever outlives the next one.
+    const checkRegistryNow = (): void => {
+      void checkRegistry({
+        url: registryUrl,
+        fetch: fetchFromWeb,
+        platform: `${process.platform}-${process.arch}`,
+        hubApiVersion: HUB_API_VERSION,
+      }).then((check) => {
+        if (check.kind === "failed") {
+          diagnostics.recordHubEvent({
+            kind: "registry-check-failed",
+            failure: check.failure,
+          });
+        } else {
+          registryIcons = new Map(
+            check.plugins.map(({ manifest, iconUrl }) => [
+              registryIconUrl(manifest.id),
+              iconUrl,
+            ]),
+          );
+        }
+        lifecycle.registryChecked(check);
+      });
+    };
     const lifecycle = createLifecycle({
       // package.json's `version`: without one Electron would answer its own version.
       hubVersion: parseHubVersion(app.getVersion()),
@@ -178,7 +222,17 @@ function runHub(): void {
       unknownTheme: (name) => {
         diagnostics.recordHubEvent({ kind: "theme-unknown", name });
       },
+      // Dev mode runs no Registry checks (PLUGIN_STANDARD §9.4).
+      registry:
+        startedAs.kind === "dev"
+          ? { kind: "off" }
+          : { kind: "on", check: checkRegistryNow },
     });
+    // At launch and every 4 hours (spec #91); Retry checks through the lifecycle too.
+    if (startedAs.kind === "installed") {
+      checkRegistryNow();
+      setInterval(checkRegistryNow, REGISTRY_CHECK_INTERVAL_MS);
+    }
     return openHubWindow(
       diagnostics,
       now,

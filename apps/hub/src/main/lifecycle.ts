@@ -14,6 +14,7 @@ import {
   KEEP_ANSWERS,
   type BusyPlugin,
   type BusyReason,
+  type Catalogue,
   type DialogAnswer,
   type DisplayLanguage,
   type HubChromeDialog,
@@ -27,7 +28,8 @@ import type { SystemDescription } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
 import type { HubApiVersion } from "./ids";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
-import { pluginIconUrl } from "./plugin-icons";
+import { pluginIconUrl, registryIconUrl } from "./plugin-icons";
+import type { RegistryCheck, RegistryPlugin } from "./registry";
 
 /** An open Plugin's Busy, as its page last set it. */
 export type Busy = { kind: "busy"; reason: BusyReason } | { kind: "not-busy" };
@@ -74,6 +76,15 @@ export interface Lifecycle {
   answer(answer: DialogAnswer): void;
   /** Shows Hub Settings in the content area, until `open` brings a Plugin forward. */
   showSettings(): void;
+  /**
+   * Shows the Plugin Catalogue in the content area, until `open` brings a Plugin forward; from
+   * settings with unsaved edits, the Discard dialog asks first. Throws in dev mode.
+   */
+  showCatalogue(): void;
+  /** Takes a Registry check's answer into the Catalogue. Throws in dev mode. */
+  registryChecked(check: RegistryCheck): void;
+  /** **Retry**: the Catalogue is checking, and the Registry is checked again. Throws unless unreachable. */
+  retryRegistry(): void;
   /** Replaces the unsaved form. Throws if settings are not showing. */
   editSettings(form: HubSettings): void;
   /**
@@ -99,6 +110,11 @@ export interface LifecycleDeps {
   save: (settings: HubSettings) => void;
   /** Logs a stored or company Theme this Hub does not have; called once per name. */
   unknownTheme: (name: ThemeName) => void;
+  /**
+   * `off` in dev mode, which has no Catalogue. `check` starts a Registry check, whose answer comes
+   * back through `registryChecked`; the lifecycle calls it only on **Retry**.
+   */
+  registry: { kind: "off" } | { kind: "on"; check: () => void };
 }
 
 /** Display text in `language`, falling back to English (ADR 0007). */
@@ -167,6 +183,7 @@ export function createLifecycle({
   storedAtStart,
   save,
   unknownTheme,
+  registry,
 }: LifecycleDeps): Lifecycle {
   const languageOf = ({ displayLanguage }: HubSettings): DisplayLanguage => {
     switch (displayLanguage.kind) {
@@ -214,8 +231,39 @@ export function createLifecycle({
   // switch language when reopened, from a Save that changed it while any was open, until staff
   // leave settings or the last open Plugin closes.
   let content:
-    { kind: "plugin" } | { kind: "settings"; languageNoteShowing: boolean } = {
+    | { kind: "plugin" }
+    | { kind: "catalogue" }
+    | { kind: "settings"; languageNoteShowing: boolean } = {
     kind: "plugin",
+  };
+  // What the Registry last offered, kept untranslated so a Display Language change re-derives it.
+  let offered:
+    | { kind: "off" }
+    | { kind: "checking" }
+    | { kind: "unreachable" }
+    | { kind: "listed"; plugins: RegistryPlugin[] } =
+    registry.kind === "off" ? { kind: "off" } : { kind: "checking" };
+  const catalogueIn = (language: DisplayLanguage): Catalogue => {
+    if (offered.kind !== "listed") return offered;
+    const byName = new Intl.Collator(language).compare;
+    return {
+      kind: "listed",
+      plugins: offered.plugins
+        .map(({ manifest, access }) => ({
+          id: manifest.id,
+          name: displayTextIn(manifest.name, language),
+          description: displayTextIn(manifest.description, language),
+          iconUrl: registryIconUrl(manifest.id),
+          access,
+        }))
+        .sort((a, b) => byName(a.name, b.name)),
+    };
+  };
+  const registryOn = (operation: string) => {
+    if (registry.kind === "off") {
+      throw new Error(`${operation}: dev mode has no Plugin Catalogue`);
+    }
+    return registry;
   };
   let stored = storedAtStart;
   // The unsaved form: what is stored until staff edit it.
@@ -300,6 +348,7 @@ export function createLifecycle({
       hubVersion,
       theme,
       themes: [...THEMES],
+      catalogue: catalogueIn(listing.language),
     }),
     installed: (id) => installedPlugin(id).plugin,
     onChange: (listener) => {
@@ -371,10 +420,42 @@ export function createLifecycle({
       });
     },
     showSettings: () => {
-      if (content.kind === "plugin") {
+      if (content.kind !== "settings") {
         content = { kind: "settings", languageNoteShowing: false };
       }
       changed();
+    },
+    showCatalogue: () => {
+      registryOn("showCatalogue");
+      discardingEditsFirst(() => {
+        content = { kind: "catalogue" };
+        changed();
+      });
+    },
+    registryChecked: (check) => {
+      registryOn("registryChecked");
+      switch (check.kind) {
+        case "listed":
+          offered = { kind: "listed", plugins: check.plugins };
+          break;
+        case "failed":
+          offered = { kind: "unreachable" };
+          break;
+        default:
+          return check satisfies never;
+      }
+      changed();
+    },
+    retryRegistry: () => {
+      const on = registryOn("retryRegistry");
+      if (offered.kind !== "unreachable") {
+        throw new Error(
+          `Retry needs the Registry unreachable, not ${offered.kind}`,
+        );
+      }
+      offered = { kind: "checking" };
+      changed();
+      on.check();
     },
     editSettings: (edited) => {
       settingsShowing("editSettings");

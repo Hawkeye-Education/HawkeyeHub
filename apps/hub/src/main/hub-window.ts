@@ -21,7 +21,9 @@ import {
   EXPORT_DIAGNOSTICS,
   GET_SNAPSHOT,
   OPEN_PLUGIN,
+  RETRY_REGISTRY,
   SAVE_SETTINGS,
+  SHOW_CATALOGUE,
   SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
   type DisplayLanguage,
@@ -198,6 +200,14 @@ export function openHubWindow(
   ipcMain.handle(CANCEL_SETTINGS, (event) => {
     fromHubChrome(CANCEL_SETTINGS, event.sender);
     lifecycle.cancelSettings();
+  });
+  ipcMain.handle(SHOW_CATALOGUE, (event) => {
+    fromHubChrome(SHOW_CATALOGUE, event.sender);
+    lifecycle.showCatalogue();
+  });
+  ipcMain.handle(RETRY_REGISTRY, (event) => {
+    fromHubChrome(RETRY_REGISTRY, event.sender);
+    lifecycle.retryRegistry();
   });
   ipcMain.handle(EXPORT_DIAGNOSTICS, async (event) => {
     fromHubChrome(EXPORT_DIAGNOSTICS, event.sender);

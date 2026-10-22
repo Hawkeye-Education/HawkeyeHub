@@ -1,7 +1,7 @@
 // Everything the Hub Chrome says, in each Display Language (ADR 0007).
 
 import type {
-  BlockedReason,
+  CatalogueBlockedReason,
   ColourScheme,
   DisplayLanguage,
 } from "../shared/hub-chrome-ipc";
@@ -39,10 +39,16 @@ export const STRINGS = {
     about: "About",
     hubVersion: "Version",
     exportDiagnostics: "Export diagnostics",
+    catalogue: "Plugin Catalogue",
+    checkingRegistry: "Checking the Registry…",
+    registryUnreachable: "Can't reach the Registry",
+    retry: "Retry",
+    noPluginsOffered: "The Registry offers no Plugins",
     blocked: {
+      "not-for-this-computer": "Not for this computer",
       "needs-sign-in": "Needs sign-in",
       "needs-different-hub": "Needs a different Hub",
-    } satisfies Record<BlockedReason, string>,
+    } satisfies Record<CatalogueBlockedReason, string>,
   },
   "zh-HK": {
     plugins: "外掛程式",
@@ -76,10 +82,16 @@ export const STRINGS = {
     about: "關於",
     hubVersion: "版本",
     exportDiagnostics: "匯出診斷資料",
+    catalogue: "外掛程式目錄",
+    checkingRegistry: "正在檢查外掛程式庫…",
+    registryUnreachable: "無法連線至外掛程式庫",
+    retry: "重試",
+    noPluginsOffered: "外掛程式庫未有提供任何外掛程式",
     blocked: {
+      "not-for-this-computer": "不適用於這部電腦",
       "needs-sign-in": "需要登入",
       "needs-different-hub": "需要另一版本的 Hawkeye Hub",
-    } satisfies Record<BlockedReason, string>,
+    } satisfies Record<CatalogueBlockedReason, string>,
   },
 } satisfies Record<DisplayLanguage, unknown>;
 

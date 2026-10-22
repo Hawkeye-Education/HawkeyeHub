@@ -16,7 +16,9 @@ import {
   createLifecycle,
   type Busy,
   type Lifecycle,
+  type LifecycleDeps,
 } from "./lifecycle";
+import type { RegistryPlugin } from "./registry";
 
 function installed(
   id: string,
@@ -47,6 +49,8 @@ const busy = (reason: string): Busy => ({
   reason: reason as BusyReason,
 });
 const NOT_BUSY: Busy = { kind: "not-busy" };
+// Dev mode: no Catalogue and no Registry checks. Most tests are not about the Catalogue.
+const DEV_MODE: LifecycleDeps["registry"] = { kind: "off" };
 const HUB_VERSION = parseHubVersion("1.4.2");
 const ignoreSave = (): void => {
   // Most tests never save.
@@ -70,6 +74,7 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
       storedAtStart: FIRST_LAUNCH_SETTINGS,
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
+      registry: DEV_MODE,
     }).snapshot(),
   ).toEqual({
     displayLanguage: "en-HK",
@@ -101,6 +106,7 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
     hubVersion: "1.4.2",
     theme: "hawkeye",
     themes: ["hawkeye"],
+    catalogue: { kind: "off" },
   });
 });
 
@@ -113,6 +119,7 @@ test("in zh-HK the snapshot uses zh-HK names, falls back to English, and sorts b
       storedAtStart: FIRST_LAUNCH_SETTINGS,
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
+      registry: DEV_MODE,
     })
       .snapshot()
       .plugins.map(({ name }) => name),
@@ -128,6 +135,7 @@ test("showing settings keeps open Plugins open with the front one still in front
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -167,6 +175,7 @@ function inSettings(stored: HubSettings) {
     unknownTheme: (name) => {
       unknownThemes.push(name);
     },
+    registry: DEV_MODE,
   });
   lifecycle.showSettings();
   return { lifecycle, saved, unknownThemes };
@@ -294,6 +303,7 @@ test("picking a Plugin while settings show leaves them and brings that Plugin fo
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -315,6 +325,7 @@ test("settings stay showing while the Plugins behind them close", () => {
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("attendance"));
   lifecycle.showSettings();
@@ -334,6 +345,7 @@ test("editing, saving or cancelling while settings are not showing throws", () =
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   expect(() => {
     lifecycle.editSettings(DARK);
@@ -359,6 +371,7 @@ test("opening Plugins brings each forward, and opening an open one brings it for
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   expect(openAndForeground(lifecycle)).toEqual({ open: [], foreground: null });
 
@@ -384,6 +397,7 @@ test("closing the foreground Plugin brings forward the most recently foregrounde
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("seating-plan"));
@@ -406,6 +420,7 @@ test("closing a background Plugin leaves the foreground one in front", () => {
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -425,6 +440,7 @@ test("every change is announced", () => {
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   const seen: (string | null)[] = [];
   lifecycle.onChange(() => {
@@ -446,6 +462,7 @@ test("a closed Plugin is closing until its close finishes, cannot be reopened un
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -477,6 +494,7 @@ test("finishing the close of a Plugin that is not closing throws", () => {
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("attendance"));
   expect(() => {
@@ -492,6 +510,7 @@ test("a staff close of a Plugin that is not Busy closes it without asking", () =
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("attendance"));
 
@@ -511,6 +530,7 @@ test("a staff close of a Busy Plugin asks with its latest reason; Keep open leav
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
@@ -541,6 +561,7 @@ test("Close anyway closes the Busy Plugin, and closing clears its Busy", () => {
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
@@ -567,6 +588,7 @@ test("a Plugin that clears Busy closes without asking, but a dialog already up s
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -595,6 +617,7 @@ test("a Busy Plugin that closes abnormally while its dialog is up takes the dial
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
@@ -615,6 +638,7 @@ test("a Busy Plugin that closes abnormally while the quit dialog is up leaves it
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -643,6 +667,7 @@ test("a Busy reason that changes while its dialog is up leaves the dialog as it 
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
@@ -662,6 +687,7 @@ test("Busy from a Plugin that is not open is ignored: it arrived as the Plugin c
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.close(id("class-timer"));
@@ -681,6 +707,7 @@ test("a quit with no Busy Plugin goes ahead without asking", () => {
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   let quits = 0;
@@ -700,6 +727,7 @@ test("a quit with Busy Plugins asks once, listing each by name; Keep open stays,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.open(id("attendance"));
@@ -740,6 +768,7 @@ test("a quit while a Busy close is asking asks about the quit instead", () => {
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
@@ -757,6 +786,7 @@ test("an answer that is not one of the pending dialog's buttons, or with no dial
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   expect(() => {
     lifecycle.answer("keep-open");
@@ -777,6 +807,7 @@ test("opening a Plugin that is not installed, or closing one that is not open, t
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   expect(() => {
     lifecycle.open(id("not-installed"));
@@ -828,6 +859,7 @@ test("the snapshot marks blocked Plugins, and opening one throws", () => {
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   expect(
     lifecycle.snapshot().plugins.map(({ id, access }) => ({ id, access })),
@@ -855,6 +887,7 @@ test("installed answers the installed Plugin with an id, and throws for one that
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   expect(lifecycle.installed(id("attendance"))).toBe(plugins[1]);
   expect(() => lifecycle.installed(id("not-installed"))).toThrow();
@@ -926,6 +959,7 @@ test("picking a blocked Plugin with unsaved edits throws rather than asking", ()
     storedAtStart: FIRST_LAUNCH_SETTINGS,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   });
   lifecycle.showSettings();
   lifecycle.editSettings(DARK);
@@ -1025,6 +1059,7 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
     storedAtStart: IN_CHINESE,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
   }).snapshot();
   expect(chosen.displayLanguage).toBe("zh-HK");
   expect(chosen.plugins.map(({ name }) => name)).toEqual([
@@ -1040,6 +1075,7 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
       storedAtStart: FIRST_LAUNCH_SETTINGS,
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
+      registry: DEV_MODE,
     }).snapshot().displayLanguage,
   ).toBe("zh-HK");
 });
@@ -1142,5 +1178,176 @@ test("choosing the language the OS already gives changes nothing a Plugin sees, 
   lifecycle.saveSettings();
   expect(lifecycle.snapshot().content).toMatchObject({
     languageNoteShowing: false,
+  });
+});
+
+// The Plugin Catalogue (spec #91, ticket #92).
+
+function offered(
+  raw: string,
+  name: unknown,
+  description: Manifest["description"],
+  access: RegistryPlugin["access"],
+): RegistryPlugin {
+  const { manifest } = installed(raw, name);
+  return {
+    manifest: { ...manifest, description },
+    url: `https://registry.example/${raw}.zip` as RegistryPlugin["url"],
+    sha256: "a".repeat(64) as RegistryPlugin["sha256"],
+    iconUrl: `https://registry.example/${raw}.svg` as RegistryPlugin["iconUrl"],
+    access,
+  };
+}
+
+const OFFERED = [
+  offered(
+    "class-timer",
+    { "en-HK": "Timer", "zh-HK": "計時器" },
+    { "en-HK": "Times a class.", "zh-HK": "為課堂計時。" },
+    { kind: "installable" },
+  ),
+  offered(
+    "attendance",
+    { "en-HK": "Attendance", "zh-HK": "點名" },
+    "Takes the register.",
+    { kind: "blocked", reason: "not-for-this-computer" },
+  ),
+];
+
+/** An installed Hub's Lifecycle, in `language`, and how many Registry checks it asked for. */
+function withRegistry(language: "en-HK" | "zh-HK") {
+  const checks = { asked: 0 };
+  const lifecycle = createLifecycle({
+    hubVersion: HUB_VERSION,
+    systemLanguage: language,
+    installed: plugins,
+    storedAtStart: FIRST_LAUNCH_SETTINGS,
+    save: ignoreSave,
+    unknownTheme: ignoreUnknownTheme,
+    registry: {
+      kind: "on",
+      check: () => {
+        checks.asked += 1;
+      },
+    },
+  });
+  return { lifecycle, checks };
+}
+
+test("an installed Hub's Catalogue is checking until the first check answers", () => {
+  expect(withRegistry("en-HK").lifecycle.snapshot().catalogue).toEqual({
+    kind: "checking",
+  });
+});
+
+test("showing the Catalogue puts it in the content area, with open Plugins kept open behind it", () => {
+  const { lifecycle } = withRegistry("en-HK");
+  lifecycle.open(id("attendance"));
+
+  lifecycle.showCatalogue();
+  expect(lifecycle.snapshot()).toMatchObject({
+    open: ["attendance"],
+    foreground: "attendance",
+    content: { kind: "catalogue" },
+  });
+
+  lifecycle.open(id("attendance"));
+  expect(lifecycle.snapshot().content).toEqual({ kind: "plugin" });
+});
+
+test("a check lists each Plugin by name, description and Registry icon in the Display Language, sorted, with its access", () => {
+  const { lifecycle } = withRegistry("zh-HK");
+
+  lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
+  expect(lifecycle.snapshot().catalogue).toEqual({
+    kind: "listed",
+    plugins: [
+      {
+        id: "class-timer",
+        name: "計時器",
+        description: "為課堂計時。",
+        iconUrl: "hawkeye-icon://class-timer/registry.svg",
+        access: { kind: "installable" },
+      },
+      {
+        id: "attendance",
+        name: "點名",
+        description: "Takes the register.",
+        iconUrl: "hawkeye-icon://attendance/registry.svg",
+        access: { kind: "blocked", reason: "not-for-this-computer" },
+      },
+    ],
+  });
+});
+
+test("a failed check leaves installed Plugins as they are, and the Catalogue unreachable; Retry checks again", () => {
+  const { lifecycle, checks } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
+  const before = lifecycle.snapshot();
+
+  lifecycle.registryChecked({
+    kind: "failed",
+    failure: { kind: "no-response" },
+  });
+  expect(lifecycle.snapshot()).toEqual({
+    ...before,
+    catalogue: { kind: "unreachable" },
+  });
+
+  lifecycle.retryRegistry();
+  expect(lifecycle.snapshot().catalogue).toEqual({ kind: "checking" });
+  expect(checks.asked).toBe(1);
+});
+
+test("Retry while the Registry is reachable or being checked throws", () => {
+  const { lifecycle } = withRegistry("en-HK");
+  expect(() => {
+    lifecycle.retryRegistry();
+  }).toThrow();
+  lifecycle.registryChecked({ kind: "listed", plugins: [] });
+  expect(() => {
+    lifecycle.retryRegistry();
+  }).toThrow();
+});
+
+test("dev mode has no Catalogue: showing it, retrying or answering a check throws", () => {
+  const lifecycle = createLifecycle({
+    hubVersion: HUB_VERSION,
+    systemLanguage: "en-HK",
+    installed: plugins,
+    storedAtStart: FIRST_LAUNCH_SETTINGS,
+    save: ignoreSave,
+    unknownTheme: ignoreUnknownTheme,
+    registry: DEV_MODE,
+  });
+  expect(lifecycle.snapshot().catalogue).toEqual({ kind: "off" });
+  expect(() => {
+    lifecycle.showCatalogue();
+  }).toThrow();
+  expect(() => {
+    lifecycle.retryRegistry();
+  }).toThrow();
+  expect(() => {
+    lifecycle.registryChecked({ kind: "listed", plugins: [] });
+  }).toThrow();
+});
+
+test("settings and the Catalogue replace each other; leaving settings with unsaved edits asks first", () => {
+  const { lifecycle } = withRegistry("en-HK");
+  lifecycle.showCatalogue();
+  lifecycle.showSettings();
+  expect(lifecycle.snapshot().content).toMatchObject({ kind: "settings" });
+  lifecycle.editSettings(DARK);
+
+  lifecycle.showCatalogue();
+  expect(lifecycle.snapshot()).toMatchObject({
+    content: { kind: "settings", form: DARK },
+    dialog: { kind: "discard-changes" },
+  });
+
+  lifecycle.answer("discard");
+  expect(lifecycle.snapshot()).toMatchObject({
+    content: { kind: "catalogue" },
+    dialog: null,
   });
 });
