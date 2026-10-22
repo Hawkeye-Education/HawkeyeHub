@@ -219,6 +219,66 @@ test("no response fails with download and leaves nothing", async () => {
   expect(onDisk()).toEqual([]);
 });
 
+/** A Registry serving `bytes` in two chunks, calling `between` before it sends the second. */
+function servingInTwo(
+  bytes: Uint8Array,
+  between: (stream: ReadableStreamDefaultController<Uint8Array>) => void,
+): RegistryFetch {
+  return () =>
+    Promise.resolve(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start: (stream) => {
+            stream.enqueue(bytes.slice(0, 10));
+          },
+          pull: (stream) => {
+            between(stream);
+            stream.enqueue(bytes.slice(10));
+            stream.close();
+          },
+        }),
+      ),
+    );
+}
+
+test("the package downloads to a file in the data folder, which goes once it is unpacked", async () => {
+  const bytes = pluginPackage();
+  let whileDownloading: string[] = [];
+
+  const outcome = await installPlugin(
+    {
+      dataDir,
+      uv: uvNeverRun,
+      fetch: servingInTwo(bytes, () => {
+        whileDownloading = onDisk();
+      }),
+    },
+    offered(bytes),
+  );
+
+  expect(outcome.kind).toBe("installed");
+  expect(whileDownloading).toEqual(["seating-plan@1.2.0.download"]);
+  expect(onDisk()).not.toContain("seating-plan@1.2.0.download");
+});
+
+test("a download cut short fails with download and leaves nothing", async () => {
+  const bytes = pluginPackage();
+
+  const outcome = await installPlugin(
+    {
+      dataDir,
+      uv: uvNeverRun,
+      fetch: servingInTwo(bytes, (stream) => {
+        stream.error(new TypeError("terminated"));
+      }),
+    },
+    offered(bytes),
+  );
+
+  expect(outcome).toEqual({ kind: "failed", cause: "download" });
+  expect(onDisk()).toEqual([]);
+});
+
 test.each([
   ["a file that is not a zip", strToU8("not a zip")],
   [

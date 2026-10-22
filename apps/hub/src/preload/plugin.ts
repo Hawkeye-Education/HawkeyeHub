@@ -22,9 +22,9 @@ import {
   STORES_CHANGED,
   type BusyMessage,
   type StoreAnswer,
-  type StoreCall,
   type StoreChanged,
 } from "../shared/plugin-preload";
+import type { StoreCall } from "../shared/store-call";
 
 /** A JSON-RPC response or notification from the Backend, as main relays it. */
 type BackendMessage =

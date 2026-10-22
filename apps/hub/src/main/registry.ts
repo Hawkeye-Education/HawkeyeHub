@@ -31,9 +31,9 @@ export function registryUrlFrom(env: NodeJS.ProcessEnv): URL {
 export type HostPlatform = `${NodeJS.Platform}-${NodeJS.Architecture}`;
 
 // A package or icon is only ever fetched over the web, never from a local file.
-const WebUrl = z.url({ protocol: /^https?$/ }).brand<"WebUrl">();
+export const WebUrl = z.url({ protocol: /^https?$/ }).brand<"WebUrl">();
 export type WebUrl = z.infer<typeof WebUrl>;
-const Sha256 = z
+export const Sha256 = z
   .string()
   .regex(/^[0-9a-f]{64}$/)
   .brand<"Sha256">();

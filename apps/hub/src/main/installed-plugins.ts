@@ -36,8 +36,10 @@ export interface InstalledPlugin {
   manifest: Manifest;
 }
 
-/** The Plugin as Diagnostics names it. */
-export function pluginRefOf({ manifest }: InstalledPlugin): PluginRef {
+/** The Plugin, installed or offered by the Registry, as Diagnostics names it. */
+export function pluginRefOf({
+  manifest,
+}: Pick<InstalledPlugin, "manifest">): PluginRef {
   return { id: manifest.id, version: manifest.version };
 }
 
@@ -47,6 +49,39 @@ export function versionFolder(
   { id, version }: PluginRef,
 ): AbsolutePath {
   return parseAbsolutePath(join(dataDir, `${id}@${version}`));
+}
+
+/**
+ * Where a job building `ref` downloads its Plugin Package and unpacks it, before the rename to
+ * `versionFolder`. The launch sweep deletes both.
+ */
+export function buildPaths(
+  dataDir: AbsolutePath,
+  ref: PluginRef,
+): { download: AbsolutePath; partial: AbsolutePath } {
+  const folder = versionFolder(dataDir, ref);
+  return {
+    download: parseAbsolutePath(`${folder}.download`),
+    partial: parseAbsolutePath(`${folder}.partial`),
+  };
+}
+
+const VERSION_ENTRY =
+  /^(?<id>[^@]+)@(?<version>.+?)(?<build>\.partial|\.download)?$/;
+
+/** The data-folder entry `name`, if `versionFolder` or `buildPaths` named it; `partial` for a build's. */
+export function versionEntryOf(
+  name: string,
+): { plugin: PluginRef; partial: boolean } | null {
+  const groups = VERSION_ENTRY.exec(name)?.groups;
+  if (groups === undefined) return null;
+  const id = PluginId.safeParse(groups["id"]);
+  const version = PluginVersion.safeParse(groups["version"]);
+  if (!id.success || !version.success) return null;
+  return {
+    plugin: { id: id.data, version: version.data },
+    partial: groups["build"] !== undefined,
+  };
 }
 
 /**
@@ -87,35 +122,27 @@ export function writeRecord(
   renameSync(temp, recordPath);
 }
 
-/** A Plugin folder the launch sweep deleted: a `.partial` one, or a version the record does not name. */
+/** What the launch sweep deleted: a build's leftover (`partial`), or a version the record does not name. */
 export interface SweptFolder {
   plugin: PluginRef;
   partial: boolean;
 }
 
-const VERSION_FOLDER = /^(?<id>[^@]+)@(?<version>.+?)(?<partial>\.partial)?$/;
-
 /**
- * At launch, before loading (spec #91): deletes every `<id>@<version>.partial` folder, left by a
+ * At launch, before loading (spec #91): deletes every build's leftover (`buildPaths`), left by a
  * job cut short, and every `<id>@<version>` folder the record does not name. Nothing else in the
  * data folder is touched.
  */
 export function sweepLeftovers(dataDir: AbsolutePath): SweptFolder[] {
-  const recorded = new Set(
-    readRecord(dataDir).map(({ id, version }) => `${id}@${version}`),
+  const recorded = new Set<string>(
+    readRecord(dataDir).map((ref) => versionFolder(dataDir, ref)),
   );
-  return readdirSync(dataDir, { withFileTypes: true }).flatMap((entry) => {
-    const groups = entry.isDirectory()
-      ? VERSION_FOLDER.exec(entry.name)?.groups
-      : undefined;
-    if (groups === undefined) return [];
-    const id = PluginId.safeParse(groups["id"]);
-    const version = PluginVersion.safeParse(groups["version"]);
-    if (!id.success || !version.success) return [];
-    const partial = groups["partial"] !== undefined;
-    if (!partial && recorded.has(entry.name)) return [];
-    rmSync(join(dataDir, entry.name), { recursive: true, force: true });
-    return [{ plugin: { id: id.data, version: version.data }, partial }];
+  return readdirSync(dataDir).flatMap((name) => {
+    const swept = versionEntryOf(name);
+    const path = join(dataDir, name);
+    if (swept === null || (!swept.partial && recorded.has(path))) return [];
+    rmSync(path, { recursive: true, force: true });
+    return [swept];
   });
 }
 

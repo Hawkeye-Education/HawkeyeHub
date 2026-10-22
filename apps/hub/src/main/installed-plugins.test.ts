@@ -233,11 +233,12 @@ test.each([
 
 // The launch sweep and the record's write (spec #91).
 
-test("the sweep deletes every .partial folder and every version the record does not name, and nothing else", () => {
+test("the sweep deletes every .partial folder, .download file and version the record does not name, and nothing else", () => {
   install("seating-plan", "1.2.0");
   install("seating-plan", "1.1.0");
   install("class-timer", "0.1.0");
   mkdirSync(join(dataDir, "seating-plan@1.3.0.partial"));
+  writeFileSync(join(dataDir, "attendance@2.0.0.download"), "zip");
   mkdirSync(join(dataDir, "plugin-data"));
   mkdirSync(join(dataDir, "stores"));
   mkdirSync(join(dataDir, "not@a version"));
@@ -249,6 +250,7 @@ test("the sweep deletes every .partial folder and every version the record does 
   );
 
   expect(swept.sort()).toEqual([
+    "attendance@2.0.0 partial",
     "class-timer@0.1.0",
     "seating-plan@1.1.0",
     "seating-plan@1.3.0 partial",

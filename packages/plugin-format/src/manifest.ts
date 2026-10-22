@@ -69,6 +69,7 @@ export type Manifest = z.infer<typeof Manifest>;
 export type PluginId = z.infer<typeof PluginId>;
 export type PluginVersion = z.infer<typeof PluginVersion>;
 export type StoreName = z.infer<typeof StoreName>;
+export type PythonMinor = z.infer<typeof PythonMinor>;
 export type DisplayText = z.infer<typeof DisplayText>;
 
 export type ManifestParse =
