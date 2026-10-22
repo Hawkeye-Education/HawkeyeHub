@@ -1214,9 +1214,13 @@ const OFFERED = [
   ),
 ];
 
-/** An installed Hub's Lifecycle, in `language`, and how many Registry checks it asked for. */
+/**
+ * An installed Hub's Lifecycle, in `language`, how many Registry checks it asked for, and the
+ * Plugins it asked to install.
+ */
 function withRegistry(language: "en-HK" | "zh-HK") {
   const checks = { asked: 0 };
+  const installs: string[] = [];
   const lifecycle = createLifecycle({
     hubVersion: HUB_VERSION,
     systemLanguage: language,
@@ -1229,9 +1233,12 @@ function withRegistry(language: "en-HK" | "zh-HK") {
       check: () => {
         checks.asked += 1;
       },
+      install: (plugin) => {
+        installs.push(`${plugin.manifest.id}@${plugin.manifest.version}`);
+      },
     },
   });
-  return { lifecycle, checks };
+  return { lifecycle, checks, installs };
 }
 
 test("an installed Hub's Catalogue is checking until the first check answers", () => {
@@ -1268,6 +1275,8 @@ test("a check lists each Plugin by name, description and Registry icon in the Di
         description: "為課堂計時。",
         iconUrl: "hawkeye-icon://class-timer/registry.svg",
         access: { kind: "installable" },
+        installed: { kind: "installed", version: "1.0.0" },
+        job: { kind: "none" },
       },
       {
         id: "attendance",
@@ -1275,9 +1284,117 @@ test("a check lists each Plugin by name, description and Registry icon in the Di
         description: "Takes the register.",
         iconUrl: "hawkeye-icon://attendance/registry.svg",
         access: { kind: "blocked", reason: "not-for-this-computer" },
+        installed: { kind: "installed", version: "1.0.0" },
+        job: { kind: "none" },
       },
     ],
   });
+});
+
+// Install (ticket #93).
+
+const LIBRARY = offered(
+  "library",
+  { "en-HK": "Library", "zh-HK": "圖書館" },
+  "Lends books.",
+  { kind: "installable" },
+);
+
+/** The Catalogue entry for `raw`, once a check has listed it. */
+function entryOf(lifecycle: Lifecycle, raw: string) {
+  const { catalogue } = lifecycle.snapshot();
+  if (catalogue.kind !== "listed") throw new Error(catalogue.kind);
+  return catalogue.plugins.find((plugin) => plugin.id === raw);
+}
+
+test("a Plugin not installed is listed as such, and Install shows it installing and asks main to install it", () => {
+  const { lifecycle, installs } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: [LIBRARY] });
+  expect(entryOf(lifecycle, "library")).toMatchObject({
+    installed: { kind: "not-installed" },
+    job: { kind: "none" },
+  });
+  const seen: string[] = [];
+  lifecycle.onChange(() => {
+    seen.push(entryOf(lifecycle, "library")?.job.kind ?? "gone");
+  });
+
+  lifecycle.install(id("library"));
+
+  expect(entryOf(lifecycle, "library")?.job).toEqual({ kind: "installing" });
+  expect(seen).toEqual(["installing"]);
+  expect(installs).toEqual(["library@1.0.0"]);
+});
+
+test("a finished install puts the Plugin in the Switcher, openable, with its installed version in the Catalogue", () => {
+  const { lifecycle } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: [LIBRARY] });
+  lifecycle.install(id("library"));
+  const library = installed("library", { "en-HK": "Library" });
+
+  lifecycle.installFinished(id("library"), {
+    kind: "installed",
+    plugin: library,
+  });
+
+  expect(lifecycle.snapshot().plugins.map(({ name }) => name)).toEqual([
+    "Attendance",
+    "Library",
+    "Seating Plan",
+    "Timer",
+  ]);
+  expect(entryOf(lifecycle, "library")).toMatchObject({
+    installed: { kind: "installed", version: "1.0.0" },
+    job: { kind: "none" },
+  });
+  expect(lifecycle.installed(id("library"))).toBe(library);
+  lifecycle.open(id("library"));
+  expect(lifecycle.snapshot().foreground).toBe("library");
+});
+
+test("a failed install shows its cause, and Install can be tried again", () => {
+  const { lifecycle, installs } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: [LIBRARY] });
+  lifecycle.install(id("library"));
+
+  lifecycle.installFinished(id("library"), {
+    kind: "failed",
+    cause: "checksum",
+  });
+  expect(entryOf(lifecycle, "library")).toMatchObject({
+    installed: { kind: "not-installed" },
+    job: { kind: "install-failed", cause: "checksum" },
+  });
+  expect(lifecycle.snapshot().plugins).toHaveLength(3);
+
+  lifecycle.install(id("library"));
+  expect(entryOf(lifecycle, "library")?.job).toEqual({ kind: "installing" });
+  expect(installs).toEqual(["library@1.0.0", "library@1.0.0"]);
+});
+
+test("Install throws for a Plugin that is blocked, installed, installing or not offered", () => {
+  const { lifecycle } = withRegistry("en-HK");
+  lifecycle.registryChecked({
+    kind: "listed",
+    plugins: [...OFFERED, LIBRARY],
+  });
+  lifecycle.install(id("library"));
+  for (const raw of ["attendance", "class-timer", "library", "unknown"]) {
+    expect(() => {
+      lifecycle.install(id(raw));
+    }).toThrow();
+  }
+});
+
+test("an install finishing for a Plugin not installing throws", () => {
+  const { lifecycle } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: [LIBRARY] });
+  expect(() => {
+    lifecycle.installFinished(id("library"), {
+      kind: "failed",
+      cause: "download",
+    });
+  }).toThrow();
 });
 
 test("a failed check leaves installed Plugins as they are, and the Catalogue unreachable; Retry checks again", () => {

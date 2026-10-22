@@ -143,7 +143,10 @@ function failed(failure: RegistryCheckFailure): RegistryCheck {
   return { kind: "failed", failure };
 }
 
-/** ADR 0005's gates, in order: Supported Platforms, then `accessOf` (sign-in, then `hubApi`). */
+/**
+ * ADR 0005's gates, in order: Supported Platforms, then `accessOf` (sign-in, then `hubApi`). Then,
+ * until the Python ticket lands, a Python Backend, which this Hub cannot build yet.
+ */
 function catalogueAccessOf(
   manifest: Manifest,
   platform: HostPlatform,
@@ -153,5 +156,9 @@ function catalogueAccessOf(
     return { kind: "blocked", reason: "not-for-this-computer" };
   }
   const access = accessOf(manifest, hubApiVersion);
-  return access.kind === "blocked" ? access : { kind: "installable" };
+  if (access.kind === "blocked") return access;
+  if (manifest.backend.kind === "python") {
+    return { kind: "blocked", reason: "python-not-yet-supported" };
+  }
+  return { kind: "installable" };
 }

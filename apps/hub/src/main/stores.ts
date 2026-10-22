@@ -14,7 +14,7 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, join, relative, sep } from "node:path";
 import type { HubError, StoreChange } from "@hawkeye-hub/hub-api";
-import type { StoreName } from "@hawkeye-hub/plugin-format";
+import type { PluginId, StoreName } from "@hawkeye-hub/plugin-format";
 import type { WebContents } from "electron";
 import { z } from "zod";
 import {
@@ -88,6 +88,14 @@ export function storeFolder(
   store: StoreName,
 ): string {
   return join(hubDataDir, "stores", store);
+}
+
+/** A Plugin's Plugin Data folder: keyed by id, never version, so it survives updates (ADR 0008). */
+export function pluginDataFolder(
+  hubDataDir: AbsolutePath,
+  id: PluginId,
+): string {
+  return join(hubDataDir, "plugin-data", id);
 }
 
 export function createStores(

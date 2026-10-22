@@ -27,16 +27,17 @@ export function registryIconUrl(id: PluginId): string {
  * mode, hence the CORS header.
  */
 export function servePluginIcons(
-  installed: readonly InstalledPlugin[],
+  /** The installed Plugins now: an install adds to them while the Hub runs. */
+  installed: () => readonly InstalledPlugin[],
   registryIcons: () => ReadonlyMap<string, string>,
   fetch: RegistryFetch,
 ): (request: Request) => Promise<Response> {
-  const files = new Map(
-    installed.map(({ folder, manifest }) => [
-      pluginIconUrl(manifest.id),
-      join(folder, "icon.svg"),
-    ]),
-  );
+  const fileOf = (url: string): string | undefined => {
+    const plugin = installed().find(
+      ({ manifest }) => pluginIconUrl(manifest.id) === url,
+    );
+    return plugin === undefined ? undefined : join(plugin.folder, "icon.svg");
+  };
   const svg = (body: Buffer | ArrayBuffer): Response =>
     new Response(body, {
       headers: {
@@ -46,7 +47,7 @@ export function servePluginIcons(
     });
   return async (request) => {
     if (request.method !== "GET") return new Response(null, { status: 404 });
-    const file = files.get(request.url);
+    const file = fileOf(request.url);
     // A missing icon.svg rejects, which fails the request: the switcher then draws no icon.
     if (file !== undefined) return svg(await readFile(file));
     const remote = registryIcons().get(request.url);

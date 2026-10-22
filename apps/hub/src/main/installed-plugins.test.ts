@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
@@ -9,8 +10,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, expect, test } from "vitest";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
-import { loadDevPlugins, loadInstalledPlugins } from "./installed-plugins";
-import { PluginId } from "@hawkeye-hub/plugin-format";
+import {
+  loadDevPlugins,
+  loadInstalledPlugins,
+  sweepLeftovers,
+  writeRecord as writeInstalledRecord,
+} from "./installed-plugins";
+import { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
 
 let dataDir: AbsolutePath;
 
@@ -223,4 +229,56 @@ test.each([
   ).toThrow(
     `Plugin "seating-plan" (${join(dataDir, "seating-plan")}): ${reason}`,
   );
+});
+
+// The launch sweep and the record's write (spec #91).
+
+test("the sweep deletes every .partial folder and every version the record does not name, and nothing else", () => {
+  install("seating-plan", "1.2.0");
+  install("seating-plan", "1.1.0");
+  install("class-timer", "0.1.0");
+  mkdirSync(join(dataDir, "seating-plan@1.3.0.partial"));
+  mkdirSync(join(dataDir, "plugin-data"));
+  mkdirSync(join(dataDir, "stores"));
+  mkdirSync(join(dataDir, "not@a version"));
+  writeRecord(JSON.stringify([{ id: "seating-plan", version: "1.2.0" }]));
+
+  const swept = sweepLeftovers(dataDir).map(
+    ({ plugin, partial }) =>
+      `${plugin.id}@${plugin.version}${partial ? " partial" : ""}`,
+  );
+
+  expect(swept.sort()).toEqual([
+    "class-timer@0.1.0",
+    "seating-plan@1.1.0",
+    "seating-plan@1.3.0 partial",
+  ]);
+  expect(readdirSync(dataDir).sort()).toEqual([
+    "installed-plugins.json",
+    "not@a version",
+    "plugin-data",
+    "seating-plan@1.2.0",
+    "stores",
+  ]);
+});
+
+test("the sweep on a fresh Hub writes the empty record and deletes nothing", () => {
+  expect(sweepLeftovers(dataDir)).toEqual([]);
+  expect(readdirSync(dataDir)).toEqual(["installed-plugins.json"]);
+});
+
+test("the record is replaced whole, leaving no temp file", () => {
+  writeRecord(JSON.stringify([{ id: "seating-plan", version: "1.2.0" }]));
+
+  writeInstalledRecord(dataDir, [
+    {
+      id: PluginId.parse("class-timer"),
+      version: PluginVersion.parse("0.1.0"),
+    },
+  ]);
+
+  expect(
+    JSON.parse(readFileSync(join(dataDir, "installed-plugins.json"), "utf8")),
+  ).toEqual([{ id: "class-timer", version: "0.1.0" }]);
+  expect(readdirSync(dataDir)).toEqual(["installed-plugins.json"]);
 });
