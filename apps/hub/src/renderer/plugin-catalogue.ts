@@ -1,6 +1,7 @@
 // The Plugin Catalogue, drawn in the content area while the open Plugins run hidden behind them:
 // every Plugin the Registry offers, with its name, description and icon, its installed version, and
-// **Install**, *Installing…*, an install's failure, or why it cannot be installed (spec #91). No
+// **Install**, *Installing…*, an install's failure, **Uninstall**, *Uninstalling…*, or why it
+// cannot be installed (spec #91). No
 // Theme yet (ADR 0006).
 
 import { LitElement, css, html, nothing } from "lit";
@@ -147,6 +148,8 @@ export class PluginCatalogue extends LitElement {
         return nothing;
       case "installing":
         return html`<p role="status">${strings.installing}</p>`;
+      case "uninstalling":
+        return html`<p role="status">${strings.uninstalling}</p>`;
       case "install-failed":
         return html`<p role="alert">${strings.installFailed[job.cause]}</p>
           <button
@@ -161,13 +164,22 @@ export class PluginCatalogue extends LitElement {
     }
   }
 
-  // **Install** for an installable Plugin not installed and not installing.
+  // **Uninstall** for an installed Plugin with no job; **Install** for an installable Plugin not
+  // installed and not installing.
   private renderAction({ id, access, installed, job }: CataloguePlugin) {
-    if (
-      access.kind === "blocked" ||
-      installed.kind === "installed" ||
-      job.kind === "installing"
-    ) {
+    if (installed.kind === "installed") {
+      return job.kind === "none"
+        ? html`<button
+            class="action"
+            @click=${() => {
+              this.hub.uninstall(id);
+            }}
+          >
+            ${this.strings.uninstall}
+          </button>`
+        : nothing;
+    }
+    if (access.kind === "blocked" || job.kind === "installing") {
       return nothing;
     }
     return html`<button

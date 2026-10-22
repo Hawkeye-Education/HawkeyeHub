@@ -121,6 +121,9 @@ function hubWith(fetch: RegistryFetch) {
       install: () => {
         // No installs here.
       },
+      uninstall: () => {
+        // No uninstalls here.
+      },
     },
   });
   const jobs = createJobQueue();

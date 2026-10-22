@@ -16,6 +16,7 @@ import {
   SHOW_CATALOGUE,
   SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
+  UNINSTALL_PLUGIN,
   type HubChromeApi,
   type HubChromeSnapshot,
 } from "../shared/hub-chrome-ipc";
@@ -66,6 +67,9 @@ const api: HubChromeApi = {
   },
   install(id) {
     void ipcRenderer.invoke(INSTALL_PLUGIN, id);
+  },
+  uninstall(id) {
+    void ipcRenderer.invoke(UNINSTALL_PLUGIN, id);
   },
 };
 

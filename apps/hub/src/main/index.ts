@@ -19,6 +19,7 @@ import {
 import { createJobQueue } from "./job-queue";
 import { createLifecycle } from "./lifecycle";
 import { installPlugin } from "./plugin-install";
+import { uninstallPlugin, type UninstallData } from "./plugin-uninstall";
 import { createUpdater } from "./plugin-update";
 import type { HubSettings } from "../shared/hub-settings";
 import { HUB_API_VERSION } from "./hub-api-version";
@@ -35,6 +36,7 @@ import {
   type RegistryPlugin,
 } from "./registry";
 import { PLUGIN_SCHEME } from "./plugin-scheme";
+import type { PluginId } from "@hawkeye-hub/plugin-format";
 
 // 0. Installed, or dev mode (PLUGIN_STANDARD §9.4). Dev mode's Plugins are loaded here, so a bad
 // one stops the Hub before it opens, with why printed in the terminal. Nothing is open yet to log
@@ -227,7 +229,7 @@ function runHub(): void {
         void updater.registryChecked(check);
       });
     };
-    // Installs, and later updates and uninstalls, run one at a time (spec #91). A job that throws,
+    // Installs, updates and uninstalls run one at a time (spec #91). A job that throws,
     // rather than answering a failure cause, is an unhandled rejection: a Hub crash.
     const jobs = createJobQueue();
     const installNow = (plugin: RegistryPlugin): void => {
@@ -249,6 +251,36 @@ function runHub(): void {
           lifecycle.installFinished(plugin.manifest.id, outcome);
         });
     };
+    // The partition plugin-views opens the Plugin in.
+    const partitionOf = (id: PluginId) =>
+      session.fromPartition(`persist:plugin-${id}`);
+    const uninstallNow = (
+      plugin: InstalledPlugin,
+      data: UninstallData,
+    ): void => {
+      const { id } = plugin.manifest;
+      void jobs
+        .run(() => {
+          // The partition's session outlives the Plugin: its scheme still serves the old folder,
+          // so it goes, and a reinstall serves the new one.
+          const { protocol: schemes } = partitionOf(id);
+          if (schemes.isProtocolHandled(PLUGIN_SCHEME)) {
+            schemes.unhandle(PLUGIN_SCHEME);
+          }
+          return uninstallPlugin(
+            {
+              dataDir: hubDataDir,
+              clearPartition: (cleared) =>
+                partitionOf(cleared).clearStorageData(),
+            },
+            plugin,
+            data,
+          );
+        })
+        .then(() => {
+          lifecycle.uninstallFinished(id);
+        });
+    };
     const lifecycle = createLifecycle({
       // package.json's `version`: without one Electron would answer its own version.
       hubVersion: parseHubVersion(app.getVersion()),
@@ -266,7 +298,12 @@ function runHub(): void {
       registry:
         startedAs.kind === "dev"
           ? { kind: "off" }
-          : { kind: "on", check: checkRegistryNow, install: installNow },
+          : {
+              kind: "on",
+              check: checkRegistryNow,
+              install: installNow,
+              uninstall: uninstallNow,
+            },
     });
     // Silent updates after each check, through the same job queue (spec #91).
     const updater = createUpdater({
