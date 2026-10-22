@@ -18,7 +18,7 @@ import {
 } from "./installed-plugins";
 import { createJobQueue } from "./job-queue";
 import { createLifecycle } from "./lifecycle";
-import { installPlugin } from "./plugin-install";
+import { failureOf, installPlugin } from "./plugin-install";
 import { uninstallPlugin, type UninstallData } from "./plugin-uninstall";
 import { createUpdater } from "./plugin-update";
 import type { HubSettings } from "../shared/hub-settings";
@@ -36,6 +36,7 @@ import {
   type RegistryPlugin,
 } from "./registry";
 import { PLUGIN_SCHEME } from "./plugin-scheme";
+import { createUv } from "./uv";
 import type { PluginId } from "@hawkeye-hub/plugin-format";
 
 // 0. Installed, or dev mode (PLUGIN_STANDARD §9.4). Dev mode's Plugins are loaded here, so a bad
@@ -178,6 +179,12 @@ function runHub(): void {
     }
     // Electron's fetch, through the OS's proxy settings, as schools need.
     const fetchFromWeb: RegistryFetch = (url, init) => net.fetch(url, init);
+    // uv for Python Backends, downloaded with the first one (ADR 0011).
+    const uv = createUv({
+      dataDir: hubDataDir,
+      fetch: fetchFromWeb,
+      platform: `${process.platform}-${process.arch}`,
+    });
     // The icons of the Plugins the latest Registry check offered, by their registryIconUrl.
     let registryIcons: ReadonlyMap<string, string> = new Map();
     // The Hub Chrome has no partition, so its session is the default one.
@@ -235,7 +242,10 @@ function runHub(): void {
     const installNow = (plugin: RegistryPlugin): void => {
       void jobs
         .run(() =>
-          installPlugin({ dataDir: hubDataDir, fetch: fetchFromWeb }, plugin),
+          installPlugin(
+            { dataDir: hubDataDir, fetch: fetchFromWeb, uv },
+            plugin,
+          ),
         )
         .then((outcome) => {
           if (outcome.kind === "failed") {
@@ -245,7 +255,7 @@ function runHub(): void {
                 id: plugin.manifest.id,
                 version: plugin.manifest.version,
               },
-              cause: outcome.cause,
+              ...failureOf(outcome),
             });
           }
           lifecycle.installFinished(plugin.manifest.id, outcome);
@@ -270,6 +280,7 @@ function runHub(): void {
           return uninstallPlugin(
             {
               dataDir: hubDataDir,
+              uv,
               clearPartition: (cleared) =>
                 partitionOf(cleared).clearStorageData(),
             },
@@ -309,13 +320,13 @@ function runHub(): void {
     const updater = createUpdater({
       dataDir: hubDataDir,
       fetch: fetchFromWeb,
+      uv,
       jobs,
       lifecycle,
-      updateFailed: ({ plugin, cause }) => {
+      updateFailed: (failure) => {
         diagnostics.recordHubEvent({
           kind: "plugin-update-failed",
-          plugin,
-          cause,
+          ...failure,
         });
       },
     });

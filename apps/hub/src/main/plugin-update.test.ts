@@ -131,6 +131,11 @@ function hubWith(fetch: RegistryFetch) {
   const updater = createUpdater({
     dataDir,
     fetch,
+    uv: {
+      run: () => {
+        throw new Error("uv ran for a UI-only Plugin");
+      },
+    },
     jobs,
     lifecycle,
     updateFailed: (failure) => failures.push(failure),

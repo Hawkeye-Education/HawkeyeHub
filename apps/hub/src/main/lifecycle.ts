@@ -634,7 +634,8 @@ export function createLifecycle({
       theme,
       colourScheme: stored.colourScheme,
       plugins: listing.plugins.map(({ plugin }) => pluginRefOf(plugin)),
-      // The Hub downloads no Python interpreter and has no AI Provider or Auth Provider yet.
+      // ponytail: uv's interpreters are not listed yet; read `uv/python` if support asks. There is
+      // no AI Provider or Auth Provider yet.
       pythonVersions: [],
       aiProviders: [],
       authProvider: { kind: "none" },

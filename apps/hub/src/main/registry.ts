@@ -144,8 +144,7 @@ function failed(failure: RegistryCheckFailure): RegistryCheck {
 }
 
 /**
- * ADR 0005's gates, in order: Supported Platforms, then `accessOf` (sign-in, then `hubApi`). Then,
- * until the Python ticket lands, a Python Backend, which this Hub cannot build yet.
+ * ADR 0005's gates, in order: Supported Platforms, then `accessOf` (sign-in, then `hubApi`).
  */
 function catalogueAccessOf(
   manifest: Manifest,
@@ -157,8 +156,5 @@ function catalogueAccessOf(
   }
   const access = accessOf(manifest, hubApiVersion);
   if (access.kind === "blocked") return access;
-  if (manifest.backend.kind === "python") {
-    return { kind: "blocked", reason: "python-not-yet-supported" };
-  }
   return { kind: "installable" };
 }
