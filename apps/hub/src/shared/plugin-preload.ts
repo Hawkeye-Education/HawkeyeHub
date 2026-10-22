@@ -1,6 +1,8 @@
 // What main and the Plugin preload tell each other, shared by both. Types and constants only: the
 // preload is sandboxed.
 
+import type { HubError, StoreChange } from "@hawkeye-hub/hub-api";
+
 /** Prefix of the `additionalArguments` entry that carries the Display Language to the preload. */
 export const DISPLAY_LANGUAGE_ARG = "--hawkeye-hub-display-language=";
 
@@ -15,6 +17,37 @@ export const BACKEND_PORT = "hub:backend-port";
 
 /** The preload invokes this with a `BusyMessage`, from `window.hub.busy`. */
 export const BUSY = "hub:busy";
+
+/**
+ * The `additionalArguments` entry present exactly when the Manifest declares a store, and so the
+ * page has `hub.stores`.
+ */
+export const HAS_STORES_ARG = "--hawkeye-hub-has-stores";
+
+/** The preload invokes this with a `StoreCall`, from `window.hub.stores`; main answers a `StoreAnswer`. */
+export const STORES = "hub:stores";
+
+/** Main sends this with a `StoreChanged` for each change a watch sees. */
+export const STORES_CHANGED = "hub:stores-changed";
+
+/** `watch` and `unwatch` carry an id the preload numbers each watch with. */
+export type StoreCall =
+  | { call: "list"; store: string }
+  | { call: "readText"; store: string; path: string }
+  | { call: "readBytes"; store: string; path: string }
+  | { call: "writeText"; store: string; path: string; text: string }
+  | { call: "writeBytes"; store: string; path: string; bytes: Uint8Array }
+  | { call: "watch"; store: string; id: number }
+  | { call: "unwatch"; id: number };
+
+/** What a `StoreCall` comes to: its value, or the `HubError` the page's call rejects with. */
+export type StoreAnswer<Value> =
+  { kind: "done"; value: Value } | { kind: "refused"; refusal: HubError };
+
+export interface StoreChanged {
+  id: number;
+  change: StoreChange;
+}
 
 /** The page's Busy: set, with the reason the page gave, or cleared. Main refuses an empty reason. */
 export type BusyMessage =
