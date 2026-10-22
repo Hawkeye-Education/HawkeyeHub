@@ -15,6 +15,7 @@ import {
   type BusyPlugin,
   type BusyReason,
   type Catalogue,
+  type CatalogueJob,
   type DialogAnswer,
   type DisplayLanguage,
   type HubChromeDialog,
@@ -29,6 +30,7 @@ import { HUB_API_VERSION } from "./hub-api-version";
 import type { HubApiVersion } from "./ids";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import { pluginIconUrl, registryIconUrl } from "./plugin-icons";
+import type { InstallOutcome } from "./plugin-install";
 import type { RegistryCheck, RegistryPlugin } from "./registry";
 
 /** An open Plugin's Busy, as its page last set it. */
@@ -85,6 +87,17 @@ export interface Lifecycle {
   registryChecked(check: RegistryCheck): void;
   /** **Retry**: the Catalogue is checking, and the Registry is checked again. Throws unless unreachable. */
   retryRegistry(): void;
+  /**
+   * **Install**: the Catalogue entry is installing, and main is asked to install the version
+   * offered, answering through `installFinished`. Throws unless the latest check offered the Plugin
+   * as installable, and it is neither installed nor installing.
+   */
+  install(id: PluginId): void;
+  /**
+   * An install's answer: an installed Plugin joins the Plugin Switcher at once; a failure shows its
+   * cause in the Catalogue until staff try again. Throws unless the Plugin is installing.
+   */
+  installFinished(id: PluginId, outcome: InstallOutcome): void;
   /** Replaces the unsaved form. Throws if settings are not showing. */
   editSettings(form: HubSettings): void;
   /**
@@ -112,9 +125,16 @@ export interface LifecycleDeps {
   unknownTheme: (name: ThemeName) => void;
   /**
    * `off` in dev mode, which has no Catalogue. `check` starts a Registry check, whose answer comes
-   * back through `registryChecked`; the lifecycle calls it only on **Retry**.
+   * back through `registryChecked`; the lifecycle calls it only on **Retry**. `install` queues an
+   * install, whose answer comes back through `installFinished`.
    */
-  registry: { kind: "off" } | { kind: "on"; check: () => void };
+  registry:
+    | { kind: "off" }
+    | {
+        kind: "on";
+        check: () => void;
+        install: (plugin: RegistryPlugin) => void;
+      };
 }
 
 /** Display text in `language`, falling back to English (ADR 0007). */
@@ -195,10 +215,12 @@ export function createLifecycle({
         return displayLanguage satisfies never;
     }
   };
+  // Grows as installs finish.
+  let installedPlugins = [...installed];
   // The Display Language and the installed Plugins named and sorted in it.
   const listingIn = (language: DisplayLanguage) => {
     const byName = new Intl.Collator(language).compare;
-    const plugins = installed
+    const plugins = installedPlugins
       .map((plugin) => ({
         plugin,
         listed: {
@@ -243,19 +265,31 @@ export function createLifecycle({
     | { kind: "unreachable" }
     | { kind: "listed"; plugins: RegistryPlugin[] } =
     registry.kind === "off" ? { kind: "off" } : { kind: "checking" };
+  // Each Plugin's job, queued or running, or its last failed install; none when absent.
+  const jobs = new Map<PluginId, Exclude<CatalogueJob, { kind: "none" }>>();
   const catalogueIn = (language: DisplayLanguage): Catalogue => {
     if (offered.kind !== "listed") return offered;
     const byName = new Intl.Collator(language).compare;
     return {
       kind: "listed",
       plugins: offered.plugins
-        .map(({ manifest, access }) => ({
-          id: manifest.id,
-          name: displayTextIn(manifest.name, language),
-          description: displayTextIn(manifest.description, language),
-          iconUrl: registryIconUrl(manifest.id),
-          access,
-        }))
+        .map(({ manifest, access }) => {
+          const installedVersion = installedPlugins.find(
+            (plugin) => plugin.manifest.id === manifest.id,
+          )?.manifest.version;
+          return {
+            id: manifest.id,
+            name: displayTextIn(manifest.name, language),
+            description: displayTextIn(manifest.description, language),
+            iconUrl: registryIconUrl(manifest.id),
+            access,
+            installed:
+              installedVersion === undefined
+                ? { kind: "not-installed" as const }
+                : { kind: "installed" as const, version: installedVersion },
+            job: jobs.get(manifest.id) ?? { kind: "none" as const },
+          };
+        })
         .sort((a, b) => byName(a.name, b.name)),
     };
   };
@@ -456,6 +490,47 @@ export function createLifecycle({
       offered = { kind: "checking" };
       changed();
       on.check();
+    },
+    install: (id) => {
+      const on = registryOn("install");
+      const plugin =
+        offered.kind === "listed"
+          ? offered.plugins.find(({ manifest }) => manifest.id === id)
+          : undefined;
+      if (plugin === undefined) {
+        throw new Error(`The Registry does not offer ${JSON.stringify(id)}`);
+      }
+      if (plugin.access.kind === "blocked") {
+        throw new Error(`${id} cannot be installed: ${plugin.access.reason}`);
+      }
+      if (installedPlugins.some(({ manifest }) => manifest.id === id)) {
+        throw new Error(`${id} is already installed`);
+      }
+      if (jobs.get(id)?.kind === "installing") {
+        throw new Error(`${id} is already installing`);
+      }
+      jobs.set(id, { kind: "installing" });
+      changed();
+      on.install(plugin);
+    },
+    installFinished: (id, outcome) => {
+      registryOn("installFinished");
+      if (jobs.get(id)?.kind !== "installing") {
+        throw new Error(`${id} is not installing`);
+      }
+      switch (outcome.kind) {
+        case "installed":
+          jobs.delete(id);
+          installedPlugins = [...installedPlugins, outcome.plugin];
+          listing = listingIn(listing.language);
+          break;
+        case "failed":
+          jobs.set(id, { kind: "install-failed", cause: outcome.cause });
+          break;
+        default:
+          return outcome satisfies never;
+      }
+      changed();
     },
     editSettings: (edited) => {
       settingsShowing("editSettings");

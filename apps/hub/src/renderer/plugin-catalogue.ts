@@ -1,6 +1,7 @@
 // The Plugin Catalogue, drawn in the content area while the open Plugins run hidden behind them:
-// every Plugin the Registry offers, with its name, description and icon, and why it cannot be
-// installed where that applies. Read-only until install arrives (spec #91). No Theme yet (ADR 0006).
+// every Plugin the Registry offers, with its name, description and icon, its installed version, and
+// **Install**, *Installing…*, an install's failure, or why it cannot be installed (spec #91). No
+// Theme yet (ADR 0006).
 
 import { LitElement, css, html, nothing } from "lit";
 import type {
@@ -48,6 +49,13 @@ export class PluginCatalogue extends LitElement {
     .reason {
       color: #666;
       font-size: smaller;
+    }
+    .entry {
+      flex: 1;
+    }
+    .action {
+      flex: none;
+      align-self: start;
     }
     /* The Registry's icon.svg as a mask over currentColor, as in the Plugin Switcher. */
     li::before {
@@ -102,9 +110,18 @@ export class PluginCatalogue extends LitElement {
               ${catalogue.plugins.map(
                 (plugin) =>
                   html`<li .style=${iconStyle(plugin)}>
-                    <div>
+                    <div class="entry">
                       <h3>${plugin.name}</h3>
                       <p>${plugin.description}</p>
+                      ${
+                        plugin.installed.kind === "installed"
+                          ? html`<p class="reason">
+                              ${strings.installedVersion(
+                                plugin.installed.version,
+                              )}
+                            </p>`
+                          : nothing
+                      }
                       ${
                         plugin.access.kind === "blocked"
                           ? html`<p class="reason">
@@ -112,13 +129,55 @@ export class PluginCatalogue extends LitElement {
                             </p>`
                           : nothing
                       }
+                      ${this.renderJob(plugin)}
                     </div>
+                    ${this.renderAction(plugin)}
                   </li>`,
               )}
             </ul>`;
       default:
         return catalogue satisfies never;
     }
+  }
+
+  private renderJob({ job }: CataloguePlugin) {
+    const { strings } = this;
+    switch (job.kind) {
+      case "none":
+        return nothing;
+      case "installing":
+        return html`<p role="status">${strings.installing}</p>`;
+      case "install-failed":
+        return html`<p role="alert">${strings.installFailed[job.cause]}</p>
+          <button
+            @click=${() => {
+              this.hub.exportDiagnostics();
+            }}
+          >
+            ${strings.exportDiagnostics}
+          </button>`;
+      default:
+        return job satisfies never;
+    }
+  }
+
+  // **Install** for an installable Plugin not installed and not installing.
+  private renderAction({ id, access, installed, job }: CataloguePlugin) {
+    if (
+      access.kind === "blocked" ||
+      installed.kind === "installed" ||
+      job.kind === "installing"
+    ) {
+      return nothing;
+    }
+    return html`<button
+      class="action"
+      @click=${() => {
+        this.hub.install(id);
+      }}
+    >
+      ${this.strings.install}
+    </button>`;
   }
 }
 

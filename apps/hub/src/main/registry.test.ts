@@ -170,6 +170,28 @@ test("the gates run in order: Supported Platforms, then sign-in, then the Hub AP
   ]);
 });
 
+test("a Plugin with a Python Backend is not yet installable, after the other gates, and a UI-only version is chosen over it", async () => {
+  const python = { backend: { kind: "python", python: "3.12" } };
+  expect(
+    await chosen({
+      "seating-plan": [
+        entry(manifest("seating-plan", "1.0.0")),
+        entry(manifest("seating-plan", "2.0.0", python)),
+      ],
+      attendance: [entry(manifest("attendance", "1.0.0", python))],
+      "class-timer": [
+        entry(
+          manifest("class-timer", "1.0.0", { ...python, hubApi: "^2.0.0" }),
+        ),
+      ],
+    }),
+  ).toEqual([
+    "seating-plan@1.0.0: installable",
+    "attendance@1.0.0: python-not-yet-supported",
+    "class-timer@1.0.0: needs-different-hub",
+  ]);
+});
+
 test("an entry whose Manifest is invalid, or whose id disagrees with its key, is left out; the rest still list", async () => {
   expect(
     await chosen({

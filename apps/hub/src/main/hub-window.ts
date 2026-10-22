@@ -20,6 +20,7 @@ import {
   EDIT_SETTINGS,
   EXPORT_DIAGNOSTICS,
   GET_SNAPSHOT,
+  INSTALL_PLUGIN,
   OPEN_PLUGIN,
   RETRY_REGISTRY,
   SAVE_SETTINGS,
@@ -208,6 +209,10 @@ export function openHubWindow(
   ipcMain.handle(RETRY_REGISTRY, (event) => {
     fromHubChrome(RETRY_REGISTRY, event.sender);
     lifecycle.retryRegistry();
+  });
+  ipcMain.handle(INSTALL_PLUGIN, (event, id: unknown) => {
+    fromHubChrome(INSTALL_PLUGIN, event.sender);
+    lifecycle.install(PluginId.parse(id));
   });
   ipcMain.handle(EXPORT_DIAGNOSTICS, async (event) => {
     fromHubChrome(EXPORT_DIAGNOSTICS, event.sender);

@@ -13,7 +13,11 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
-import type { DisplayLanguage, ThemeName } from "../shared/hub-chrome-ipc";
+import type {
+  DisplayLanguage,
+  InstallFailureCause,
+  ThemeName,
+} from "../shared/hub-chrome-ipc";
 import { HAWKEYE } from "./lifecycle";
 import type { RegistryCheckFailure } from "./registry";
 import type {
@@ -179,6 +183,13 @@ export type HubEvent =
     }
   // A Registry check that failed: only how, never the index's contents.
   | { kind: "registry-check-failed"; failure: RegistryCheckFailure }
+  | {
+      kind: "plugin-install-failed";
+      plugin: PluginRef;
+      cause: InstallFailureCause;
+    }
+  // A Plugin folder the launch sweep deleted: `.partial`, or a version the record does not name.
+  | { kind: "plugin-swept"; plugin: PluginRef; partial: boolean }
   | {
       kind: "uncaught-exception";
       origin: NodeJS.UncaughtExceptionOrigin;
@@ -564,6 +575,18 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
         level: "warn",
         message: `Registry check failed: ${describeRegistryFailure(event.failure)}`,
         subject: NO_PLUGIN,
+      };
+    case "plugin-install-failed":
+      return {
+        level: "error",
+        message: `Plugin install failed: ${event.cause}`,
+        subject: subjectOf(event.plugin),
+      };
+    case "plugin-swept":
+      return {
+        level: "warn",
+        message: `Plugin folder swept: ${event.partial ? "partial" : "not in the record"}`,
+        subject: subjectOf(event.plugin),
       };
     case "uncaught-exception":
       return {

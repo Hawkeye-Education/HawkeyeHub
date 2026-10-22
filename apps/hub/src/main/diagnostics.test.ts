@@ -176,6 +176,31 @@ const cases: [string, HubEvent, unknown][] = [
     hubLine("warn", "Registry check failed: sent an invalid index"),
   ],
   [
+    "install failed on its download",
+    { kind: "plugin-install-failed", plugin, cause: "download" },
+    pluginLine("error", "Plugin install failed: download"),
+  ],
+  [
+    "install failed on its checksum",
+    { kind: "plugin-install-failed", plugin, cause: "checksum" },
+    pluginLine("error", "Plugin install failed: checksum"),
+  ],
+  [
+    "install failed to unpack",
+    { kind: "plugin-install-failed", plugin, cause: "unpack" },
+    pluginLine("error", "Plugin install failed: unpack"),
+  ],
+  [
+    "a partial folder swept",
+    { kind: "plugin-swept", plugin, partial: true },
+    pluginLine("warn", "Plugin folder swept: partial"),
+  ],
+  [
+    "an unrecorded version swept",
+    { kind: "plugin-swept", plugin, partial: false },
+    pluginLine("warn", "Plugin folder swept: not in the record"),
+  ],
+  [
     "AI Provider returned an HTTP error",
     {
       kind: "ai-provider-call-failed",

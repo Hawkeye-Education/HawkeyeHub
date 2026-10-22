@@ -9,6 +9,7 @@ import {
   EDIT_SETTINGS,
   EXPORT_DIAGNOSTICS,
   GET_SNAPSHOT,
+  INSTALL_PLUGIN,
   OPEN_PLUGIN,
   RETRY_REGISTRY,
   SAVE_SETTINGS,
@@ -62,6 +63,9 @@ const api: HubChromeApi = {
   },
   retryRegistry() {
     void ipcRenderer.invoke(RETRY_REGISTRY);
+  },
+  install(id) {
+    void ipcRenderer.invoke(INSTALL_PLUGIN, id);
   },
 };
 

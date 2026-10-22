@@ -3,7 +3,7 @@
 // snapshot, so a reloaded Hub Chrome redraws the same state by fetching it again.
 // Types and constants only: the preload is sandboxed and the Hub Chrome has no Node.
 
-import type { PluginId } from "@hawkeye-hub/plugin-format";
+import type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
 import type { Branded } from "./branded";
 import type { HubSettings } from "./hub-settings";
 
@@ -24,9 +24,11 @@ export type BlockedReason = "needs-sign-in" | "needs-different-hub";
 
 /**
  * Why the Plugin Catalogue cannot install a Plugin: none of its Supported Platforms is this
- * computer, or a reason it could not be opened once installed.
+ * computer, a reason it could not be opened once installed, or it has a Python Backend, which
+ * this Hub cannot install yet (the Python ticket removes it).
  */
-export type CatalogueBlockedReason = "not-for-this-computer" | BlockedReason;
+export type CatalogueBlockedReason =
+  "not-for-this-computer" | BlockedReason | "python-not-yet-supported";
 
 /** Whether staff can install a Plugin the Registry offers, and if not, why. */
 export type CatalogueAccess =
@@ -45,6 +47,22 @@ export interface SwitcherPlugin {
   access: PluginAccess;
 }
 
+/** Why an install failed (spec #91). The Python ticket adds `environment`. */
+export type InstallFailureCause = "download" | "checksum" | "unpack";
+
+/** Whether a Plugin the Catalogue lists is installed, and at which version. */
+export type CatalogueInstalled =
+  { kind: "not-installed" } | { kind: "installed"; version: PluginVersion };
+
+/**
+ * The job queued or running for a Plugin the Catalogue lists, or how its last install failed, which
+ * shows until staff try again. Update and uninstall add their own.
+ */
+export type CatalogueJob =
+  | { kind: "none" }
+  | { kind: "installing" }
+  | { kind: "install-failed"; cause: InstallFailureCause };
+
 /** A Plugin the Registry offers, at the version the Catalogue would install. */
 export interface CataloguePlugin {
   id: PluginId;
@@ -54,6 +72,8 @@ export interface CataloguePlugin {
   /** The Registry's icon, served through the icon scheme as the Switcher's are. */
   iconUrl: string;
   access: CatalogueAccess;
+  installed: CatalogueInstalled;
+  job: CatalogueJob;
 }
 
 /**
@@ -183,6 +203,8 @@ export interface HubChromeApi {
   showCatalogue(): void;
   /** Checks the Registry again after a failed check. */
   retryRegistry(): void;
+  /** Installs a Plugin the Catalogue lists as installable and not installed. */
+  install(id: PluginId): void;
 }
 
 /** Hub Chrome → main, `invoke`: answers the current snapshot. */
@@ -209,3 +231,5 @@ export const EXPORT_DIAGNOSTICS = "hub-chrome:export-diagnostics";
 export const SHOW_CATALOGUE = "hub-chrome:show-catalogue";
 /** Hub Chrome → main, `invoke`: checks the Registry again. */
 export const RETRY_REGISTRY = "hub-chrome:retry-registry";
+/** Hub Chrome → main, `invoke`: the id of a Plugin to install from the Catalogue. */
+export const INSTALL_PLUGIN = "hub-chrome:install-plugin";

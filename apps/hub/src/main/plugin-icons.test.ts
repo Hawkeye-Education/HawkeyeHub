@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { parseManifest, PluginId } from "@hawkeye-hub/plugin-format";
 import { beforeAll, expect, test } from "vitest";
 import { parseAbsolutePath } from "./ids";
+import type { InstalledPlugin } from "./installed-plugins";
 import {
   pluginIconUrl,
   registryIconUrl,
@@ -14,6 +15,8 @@ const CLASS_TIMER = PluginId.parse("class-timer");
 const ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"/>';
 
 let serve: (request: Request) => Promise<Response>;
+// The installed Plugins: the handler reads them on every request, so an install shows at once.
+let installedPlugins: InstalledPlugin[];
 
 beforeAll(() => {
   const dataDir = mkdtempSync(join(tmpdir(), "hub-icons-"));
@@ -36,8 +39,11 @@ beforeAll(() => {
     assistant: { kind: "none" },
   });
   if (parsed.kind === "invalid") throw new Error(parsed.reason);
+  installedPlugins = [
+    { folder: parseAbsolutePath(folder), manifest: parsed.manifest },
+  ];
   serve = servePluginIcons(
-    [{ folder: parseAbsolutePath(folder), manifest: parsed.manifest }],
+    () => installedPlugins,
     () => registryIcons,
     (url) =>
       Promise.resolve(
@@ -88,6 +94,22 @@ test("an installed Plugin's icon URL serves its icon.svg as SVG, readable cross-
   expect(response.headers.get("content-type")).toBe("image/svg+xml");
   expect(response.headers.get("access-control-allow-origin")).toBe("*");
   expect(await response.text()).toBe(ICON);
+});
+
+test("a Plugin installed after the handler was made has its icon served", async () => {
+  const [classTimer] = installedPlugins;
+  if (classTimer === undefined) throw new Error("no fixture");
+  const before = installedPlugins;
+  installedPlugins = [
+    ...before,
+    { ...classTimer, manifest: { ...classTimer.manifest, id: ATTENDANCE } },
+  ];
+  try {
+    const response = await serve(new Request(pluginIconUrl(ATTENDANCE)));
+    expect(await response.text()).toBe(ICON);
+  } finally {
+    installedPlugins = before;
+  }
 });
 
 test.each([
