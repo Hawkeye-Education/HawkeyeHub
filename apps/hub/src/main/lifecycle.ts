@@ -108,6 +108,11 @@ export interface Lifecycle {
   uninstall(id: PluginId): void;
   /** An uninstall's answer: the Plugin leaves the Plugin Switcher. Throws unless it is uninstalling. */
   uninstallFinished(id: PluginId): void;
+  /**
+   * A silent update swapped in: the installed Plugin with `plugin`'s id is now `plugin`, from its
+   * next open. Throws unless that Plugin is installed and neither open nor closing.
+   */
+  updated(plugin: InstalledPlugin): void;
   /** Replaces the unsaved form. Throws if settings are not showing. */
   editSettings(form: HubSettings): void;
   /**
@@ -580,6 +585,18 @@ export function createLifecycle({
       jobs.delete(id);
       installedPlugins = installedPlugins.filter(
         ({ manifest }) => manifest.id !== id,
+      );
+      listing = listingIn(listing.language);
+      changed();
+    },
+    updated: (plugin) => {
+      const { id } = plugin.manifest;
+      installedPlugin(id);
+      if (open.includes(id) || closing.includes(id)) {
+        throw new Error(`${id} cannot be updated while it is open`);
+      }
+      installedPlugins = installedPlugins.map((other) =>
+        other.manifest.id === id ? plugin : other,
       );
       listing = listingIn(listing.language);
       changed();

@@ -7,7 +7,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseManifest, type PluginId } from "@hawkeye-hub/plugin-format";
+import {
+  parseManifest,
+  PluginVersion,
+  type PluginId,
+} from "@hawkeye-hub/plugin-format";
 import { beforeEach, expect, test } from "vitest";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
 import { versionFolder, type InstalledPlugin } from "./installed-plugins";
@@ -104,4 +108,22 @@ test("deleting data also clears the partition, the Plugin Data and every store n
   expect(there("stores", "rooms")).toBe(false);
   expect(there("stores", "timetable", "kept.txt")).toBe(true);
   expect(there("plugin-data", "class-timer", "kept.txt")).toBe(true);
+});
+
+test("the version the record names is removed, even if an update swapped it in after the uninstall was asked for", async () => {
+  const asked = installedOnDisk("seating-plan", []);
+  const swapped = versionFolder(dataDir, {
+    id: asked.manifest.id,
+    version: PluginVersion.parse("1.1.0"),
+  });
+  mkdirSync(swapped);
+  writeFileSync(
+    join(dataDir, "installed-plugins.json"),
+    JSON.stringify([{ id: "seating-plan", version: "1.1.0" }]),
+  );
+
+  await uninstallPlugin(deps(), asked, "keep-data");
+
+  expect(record()).toEqual([]);
+  expect(existsSync(swapped)).toBe(false);
 });

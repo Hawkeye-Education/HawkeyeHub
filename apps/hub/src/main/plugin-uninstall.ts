@@ -9,6 +9,7 @@ import type { AbsolutePath } from "./ids";
 import {
   loadInstalledPlugins,
   readRecord,
+  versionFolder,
   writeRecord,
   type InstalledPlugin,
 } from "./installed-plugins";
@@ -25,14 +26,21 @@ export interface UninstallDeps {
 
 export async function uninstallPlugin(
   { dataDir, clearPartition }: UninstallDeps,
-  { folder, manifest }: InstalledPlugin,
+  { manifest }: InstalledPlugin,
   data: UninstallData,
 ): Promise<void> {
+  const entries = readRecord(dataDir);
+  // The record's version, not `manifest`'s: a silent update may have swapped one in since staff
+  // asked, while the Plugin closed.
+  const entry = entries.find(({ id }) => id === manifest.id);
+  if (entry === undefined) {
+    throw new Error(`${manifest.id} is not in the record`);
+  }
   writeRecord(
     dataDir,
-    readRecord(dataDir).filter(({ id }) => id !== manifest.id),
+    entries.filter((other) => other !== entry),
   );
-  rmSync(folder, { recursive: true, force: true });
+  rmSync(versionFolder(dataDir, entry), { recursive: true, force: true });
   if (data === "keep-data") return;
   await clearPartition(manifest.id);
   rmSync(pluginDataFolder(dataDir, manifest.id), {
