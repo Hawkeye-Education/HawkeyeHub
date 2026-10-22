@@ -164,9 +164,11 @@ export function createStores(
       const folder = storeFolder(hubDataDir, declaredStore(store));
       let watching = true;
       const watcher = watch(folder, { recursive: true }, (_event, name) => {
-        // Node gives no name only on platforms without one, and every Hub platform has it
-        // (https://nodejs.org/docs/latest-v22.x/api/fs.html#filename-argument).
-        if (name === null) throw new Error("A store watch gave no file name");
+        // No name: on Windows, more changes came at once than its buffer holds, and the OS named
+        // none of them (libuv src/win/fs-event.c; stores.test.ts makes one). Thrown, it would crash
+        // the Hub. ponytail: those changes go unreported; re-list the store and report each file
+        // as changed if a Plugin ever needs every one.
+        if (name === null) return;
         if (isTemp(name)) return;
         const file = join(folder, name);
         const path = posixPathOf(folder, file);
