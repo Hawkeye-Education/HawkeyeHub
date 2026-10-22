@@ -24,11 +24,9 @@ export type BlockedReason = "needs-sign-in" | "needs-different-hub";
 
 /**
  * Why the Plugin Catalogue cannot install a Plugin: none of its Supported Platforms is this
- * computer, a reason it could not be opened once installed, or it has a Python Backend, which
- * this Hub cannot install yet (the Python ticket removes it).
+ * computer, or a reason it could not be opened once installed.
  */
-export type CatalogueBlockedReason =
-  "not-for-this-computer" | BlockedReason | "python-not-yet-supported";
+export type CatalogueBlockedReason = "not-for-this-computer" | BlockedReason;
 
 /** Whether staff can install a Plugin the Registry offers, and if not, why. */
 export type CatalogueAccess =
@@ -47,8 +45,9 @@ export interface SwitcherPlugin {
   access: PluginAccess;
 }
 
-/** Why an install failed (spec #91). The Python ticket adds `environment`. */
-export type InstallFailureCause = "download" | "checksum" | "unpack";
+/** Why an install failed (spec #91): `environment` is a Python Backend's venv that would not build. */
+export type InstallFailureCause =
+  "download" | "checksum" | "unpack" | "environment";
 
 /** Whether a Plugin the Catalogue lists is installed, and at which version. */
 export type CatalogueInstalled =

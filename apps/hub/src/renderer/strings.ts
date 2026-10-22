@@ -49,7 +49,6 @@ export const STRINGS = {
       "not-for-this-computer": "Not for this computer",
       "needs-sign-in": "Needs sign-in",
       "needs-different-hub": "Needs a different Hub",
-      "python-not-yet-supported": "Not installable yet",
     } satisfies Record<CatalogueBlockedReason, string>,
     install: "Install",
     installing: "Installing…",
@@ -63,6 +62,7 @@ export const STRINGS = {
       download: "Install failed: the download did not finish",
       checksum: "Install failed: the download was damaged",
       unpack: "Install failed: the package could not be unpacked",
+      environment: "Install failed: Python could not be set up",
     } satisfies Record<InstallFailureCause, string>,
   },
   "zh-HK": {
@@ -106,7 +106,6 @@ export const STRINGS = {
       "not-for-this-computer": "不適用於這部電腦",
       "needs-sign-in": "需要登入",
       "needs-different-hub": "需要另一版本的 Hawkeye Hub",
-      "python-not-yet-supported": "暫時未能安裝",
     } satisfies Record<CatalogueBlockedReason, string>,
     install: "安裝",
     installing: "正在安裝…",
@@ -120,6 +119,7 @@ export const STRINGS = {
       download: "安裝失敗：下載未能完成",
       checksum: "安裝失敗：下載的檔案已損壞",
       unpack: "安裝失敗：無法解開套件",
+      environment: "安裝失敗：無法設定 Python",
     } satisfies Record<InstallFailureCause, string>,
   },
 } satisfies Record<DisplayLanguage, unknown>;

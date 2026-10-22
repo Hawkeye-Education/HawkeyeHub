@@ -18,16 +18,14 @@ import type { JobQueue } from "./job-queue";
 import type { Lifecycle } from "./lifecycle";
 import {
   buildVersion,
+  failureOf,
   type InstallDeps,
-  type InstallFailureCause,
+  type InstallFailure,
 } from "./plugin-install";
 import type { RegistryCheck } from "./registry";
 
-export interface UpdateFailure {
-  /** The version that failed to build; the installed one is kept. */
-  plugin: PluginRef;
-  cause: InstallFailureCause;
-}
+/** `plugin` is the version that failed to build; the installed one is kept. */
+export type UpdateFailure = { plugin: PluginRef } & InstallFailure;
 
 export interface UpdaterDeps extends InstallDeps {
   jobs: JobQueue;
@@ -106,7 +104,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     const outcome = await buildVersion(deps, offered);
     if (building.get(id) === version) building.delete(id);
     if (outcome.kind === "failed") {
-      updateFailed({ plugin: { id, version }, cause: outcome.cause });
+      updateFailed({ plugin: { id, version }, ...failureOf(outcome) });
       return;
     }
     const superseded = built.get(id);

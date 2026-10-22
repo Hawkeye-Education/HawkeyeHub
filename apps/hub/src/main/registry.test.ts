@@ -170,7 +170,7 @@ test("the gates run in order: Supported Platforms, then sign-in, then the Hub AP
   ]);
 });
 
-test("a Plugin with a Python Backend is not yet installable, after the other gates, and a UI-only version is chosen over it", async () => {
+test("a Plugin with a Python Backend is installable, through the same gates", async () => {
   const python = { backend: { kind: "python", python: "3.12" } };
   expect(
     await chosen({
@@ -186,8 +186,8 @@ test("a Plugin with a Python Backend is not yet installable, after the other gat
       ],
     }),
   ).toEqual([
-    "seating-plan@1.0.0: installable",
-    "attendance@1.0.0: python-not-yet-supported",
+    "seating-plan@2.0.0: installable",
+    "attendance@1.0.0: installable",
     "class-timer@1.0.0: needs-different-hub",
   ]);
 });

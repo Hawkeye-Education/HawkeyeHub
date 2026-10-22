@@ -191,6 +191,32 @@ const cases: [string, HubEvent, unknown][] = [
     pluginLine("error", "Plugin install failed: unpack"),
   ],
   [
+    "install failed to build its venv, with the end of uv's stderr",
+    {
+      kind: "plugin-install-failed",
+      plugin,
+      cause: "environment",
+      stderr: "error: lock file is invalid\nhint: run uv lock",
+    },
+    pluginLine(
+      "error",
+      "Plugin install failed: environment\nerror: lock file is invalid\nhint: run uv lock",
+    ),
+  ],
+  [
+    "update failed to build its venv",
+    {
+      kind: "plugin-update-failed",
+      plugin,
+      cause: "environment",
+      stderr: "error: no Python 3.99",
+    },
+    pluginLine(
+      "error",
+      "Plugin update failed: environment\nerror: no Python 3.99",
+    ),
+  ],
+  [
     "update failed to unpack",
     { kind: "plugin-update-failed", plugin, cause: "unpack" },
     pluginLine("error", "Plugin update failed: unpack"),

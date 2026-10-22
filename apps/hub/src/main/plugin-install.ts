@@ -2,7 +2,7 @@
 // the same steps in the Hub's data folder, beside the record:
 //   1. download the Plugin Package and check its sha256;
 //   2. unpack it with fflate into `<id>@<version>.partial`;
-//   3. (a Python Backend's venv is built here, in a later ticket);
+//   3. build a Python Backend's venv in `backend/` with uv (ADR 0011);
 //   4. rename the folder to `<id>@<version>`;
 //   5. write the record atomically.
 // `buildVersion` is steps 1 to 4, which update shares; `installPlugin` adds the record entry and the
@@ -24,32 +24,52 @@ import {
 } from "./installed-plugins";
 import type { RegistryFetch, RegistryPlugin } from "./registry";
 import { pluginDataFolder, storeFolder } from "./stores";
+import { pruneUv, type Uv } from "./uv";
 
 /** How long a Plugin Package download may take before it counts as failed. */
 const PACKAGE_TIMEOUT_MS = 5 * 60_000;
 
+/** How much of uv's stderr an `environment` failure keeps: its end, where uv says what went wrong. */
+const STDERR_LINES = 50;
+
 export type { InstallFailureCause };
+
+/** Why a build failed; `environment` carries the end of uv's stderr for hub.log. */
+export type InstallFailure =
+  | { cause: Exclude<InstallFailureCause, "environment"> }
+  | { cause: "environment"; stderr: string };
+
+/** A failed outcome's failure, for hub.log. */
+export function failureOf(
+  failed: { kind: "failed" } & InstallFailure,
+): InstallFailure {
+  return failed.cause === "environment"
+    ? { cause: failed.cause, stderr: failed.stderr }
+    : { cause: failed.cause };
+}
 
 export interface InstallDeps {
   dataDir: AbsolutePath;
   /** `fetch`, or Electron's `net.fetch`: injected so tests need no network. */
   fetch: RegistryFetch;
+  /** Runs uv for a Python Backend's venv: injected so tests need no uv. */
+  uv: Uv;
 }
 
 export type BuildOutcome =
   | { kind: "built"; plugin: InstalledPlugin }
-  | { kind: "failed"; cause: InstallFailureCause };
+  | ({ kind: "failed" } & InstallFailure);
 
 export type InstallOutcome =
   | { kind: "installed"; plugin: InstalledPlugin }
-  | { kind: "failed"; cause: InstallFailureCause };
+  | ({ kind: "failed" } & InstallFailure);
 
 /**
  * Steps 1 to 4: `plugin`'s version, downloaded, checked and unpacked into `<id>@<version>`. A
  * failure leaves nothing on disk. The record is not touched.
  */
 export async function buildVersion(
-  { dataDir, fetch }: InstallDeps,
+  { dataDir, fetch, uv }: InstallDeps,
   plugin: RegistryPlugin,
 ): Promise<BuildOutcome> {
   const downloaded = await download(fetch, plugin);
@@ -68,6 +88,20 @@ export async function buildVersion(
   if (loaded.kind === "left-out") {
     rmSync(partial, { recursive: true, force: true });
     return { kind: "failed", cause: "unpack" };
+  }
+  const { backend } = loaded.plugin.manifest;
+  if (backend.kind === "python") {
+    const venv = await buildVenv(
+      uv,
+      parseAbsolutePath(join(partial, "backend")),
+      backend.python,
+    );
+    if (venv.kind === "failed") {
+      rmSync(partial, { recursive: true, force: true });
+      // What uv set up for it goes too, uv itself if no other Python-Backend Plugin needs it.
+      await pruneUv(uv, dataDir);
+      return venv;
+    }
   }
   // Not named by the record (install needs the Plugin not installed, update a newer version), so
   // anything already there is a leftover.
@@ -97,6 +131,34 @@ export async function installPlugin(
     mkdirSync(storeFolder(dataDir, store), { recursive: true });
   }
   return { kind: "installed", plugin: built.plugin };
+}
+
+/**
+ * Step 3: `backend/.venv`, where `venvPython` looks, on uv's own build of `python` (never staff's
+ * Python), with the locked dependencies only. Not editable: the folder is renamed after this, and
+ * an editable install would point into the `.partial` folder.
+ */
+async function buildVenv(
+  uv: Uv,
+  backendDir: AbsolutePath,
+  python: string,
+): Promise<{ kind: "built" } | ({ kind: "failed" } & InstallFailure)> {
+  for (const args of [
+    // Not into staff's PATH folder or, on Windows, the registry: only the Hub's uv finds it.
+    ["python", "install", "--no-bin", "--no-registry", python],
+    ["sync", "--frozen", "--no-dev", "--no-editable", "--python", python],
+  ]) {
+    const run = await uv.run(args, backendDir);
+    if (run.kind === "failed") {
+      const stderr = run.stderr
+        .trimEnd()
+        .split(/\r?\n/)
+        .slice(-STDERR_LINES)
+        .join("\n");
+      return { kind: "failed", cause: "environment", stderr };
+    }
+  }
+  return { kind: "built" };
 }
 
 async function download(
