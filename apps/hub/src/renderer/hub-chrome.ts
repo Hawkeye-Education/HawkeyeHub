@@ -11,6 +11,7 @@ import {
 } from "../shared/hub-chrome-ipc";
 import "./hub-dialog";
 import "./hub-settings";
+import "./plugin-catalogue";
 import "./plugin-switcher";
 import { STRINGS, type Strings } from "./strings";
 
@@ -103,9 +104,23 @@ export class HubChrome extends LitElement {
           .plugins=${this.snapshot.plugins}
           .open=${this.snapshot.open}
           .closing=${this.snapshot.closing}
-          .foreground=${settingsShowing ? null : foreground}
+          .foreground=${content.kind === "plugin" ? foreground : null}
           .hub=${window.hubChrome}
         ></plugin-switcher>
+        ${
+          // Dev mode has no Catalogue (PLUGIN_STANDARD §9.4).
+          this.snapshot.catalogue.kind === "off"
+            ? nothing
+            : html`<button
+                class="gear"
+                aria-current=${content.kind === "catalogue" ? "page" : nothing}
+                @click=${() => {
+                  window.hubChrome.showCatalogue();
+                }}
+              >
+                <span aria-hidden="true">＋</span> ${strings.catalogue}
+              </button>`
+        }
         <button
           class="gear"
           aria-current=${settingsShowing ? "page" : nothing}
@@ -135,6 +150,12 @@ export class HubChrome extends LitElement {
           .languageNoteShowing=${content.languageNoteShowing}
           .hub=${window.hubChrome}
         ></hub-settings>`;
+      case "catalogue":
+        return html`<plugin-catalogue
+          .strings=${strings}
+          .catalogue=${this.snapshot.catalogue}
+          .hub=${window.hubChrome}
+        ></plugin-catalogue>`;
       case "plugin":
         return this.snapshot.foreground === null
           ? html`<p class="empty">${strings.noPluginOpen}</p>`

@@ -158,6 +158,24 @@ const cases: [string, HubEvent, unknown][] = [
     pluginLine("error", "initialize failed: timed out"),
   ],
   [
+    "Registry check returned an HTTP error",
+    {
+      kind: "registry-check-failed",
+      failure: { kind: "http-status", status: 503 },
+    },
+    hubLine("warn", "Registry check failed: returned HTTP 503"),
+  ],
+  [
+    "Registry check got no response",
+    { kind: "registry-check-failed", failure: { kind: "no-response" } },
+    hubLine("warn", "Registry check failed: gave no response"),
+  ],
+  [
+    "Registry check got an invalid index",
+    { kind: "registry-check-failed", failure: { kind: "invalid" } },
+    hubLine("warn", "Registry check failed: sent an invalid index"),
+  ],
+  [
     "AI Provider returned an HTTP error",
     {
       kind: "ai-provider-call-failed",

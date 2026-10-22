@@ -10,7 +10,9 @@ import {
   EXPORT_DIAGNOSTICS,
   GET_SNAPSHOT,
   OPEN_PLUGIN,
+  RETRY_REGISTRY,
   SAVE_SETTINGS,
+  SHOW_CATALOGUE,
   SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
   type HubChromeApi,
@@ -54,6 +56,12 @@ const api: HubChromeApi = {
   },
   exportDiagnostics() {
     void ipcRenderer.invoke(EXPORT_DIAGNOSTICS);
+  },
+  showCatalogue() {
+    void ipcRenderer.invoke(SHOW_CATALOGUE);
+  },
+  retryRegistry() {
+    void ipcRenderer.invoke(RETRY_REGISTRY);
   },
 };
 

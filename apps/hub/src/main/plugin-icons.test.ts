@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { parseManifest, PluginId } from "@hawkeye-hub/plugin-format";
 import { beforeAll, expect, test } from "vitest";
 import { parseAbsolutePath } from "./ids";
-import { pluginIconUrl, servePluginIcons } from "./plugin-icons";
+import {
+  pluginIconUrl,
+  registryIconUrl,
+  servePluginIcons,
+} from "./plugin-icons";
 
 const CLASS_TIMER = PluginId.parse("class-timer");
 const ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"/>';
@@ -32,9 +36,49 @@ beforeAll(() => {
     assistant: { kind: "none" },
   });
   if (parsed.kind === "invalid") throw new Error(parsed.reason);
-  serve = servePluginIcons([
-    { folder: parseAbsolutePath(folder), manifest: parsed.manifest },
+  serve = servePluginIcons(
+    [{ folder: parseAbsolutePath(folder), manifest: parsed.manifest }],
+    () => registryIcons,
+    (url) =>
+      Promise.resolve(
+        url === REMOTE_ICON
+          ? new Response(REGISTRY_ICON, {
+              headers: { "content-type": "application/octet-stream" },
+            })
+          : new Response("missing", { status: 404 }),
+      ),
+  );
+});
+
+const ATTENDANCE = PluginId.parse("attendance");
+const REMOTE_ICON = "https://registry.example/attendance.svg";
+const REGISTRY_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>';
+// What the latest Registry check offered: the handler reads it on every request.
+let registryIcons = new Map<string, string>();
+
+test("a Plugin the Registry offers has its Registry icon served as SVG, readable cross-origin", async () => {
+  registryIcons = new Map([[registryIconUrl(ATTENDANCE), REMOTE_ICON]]);
+  const response = await serve(new Request(registryIconUrl(ATTENDANCE)));
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe("image/svg+xml");
+  expect(response.headers.get("access-control-allow-origin")).toBe("*");
+  expect(await response.text()).toBe(REGISTRY_ICON);
+});
+
+test("a Registry icon the Registry does not serve, or a Plugin it no longer offers, is refused", async () => {
+  registryIcons = new Map([
+    [registryIconUrl(ATTENDANCE), "https://registry.example/gone.svg"],
   ]);
+  expect((await serve(new Request(registryIconUrl(ATTENDANCE)))).status).toBe(
+    404,
+  );
+
+  registryIcons = new Map();
+  expect((await serve(new Request(registryIconUrl(ATTENDANCE)))).status).toBe(
+    404,
+  );
 });
 
 test("an installed Plugin's icon URL serves its icon.svg as SVG, readable cross-origin", async () => {

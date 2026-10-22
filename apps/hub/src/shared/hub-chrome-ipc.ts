@@ -22,6 +22,16 @@ export const SWITCHER_WIDTH_PX = 240;
  */
 export type BlockedReason = "needs-sign-in" | "needs-different-hub";
 
+/**
+ * Why the Plugin Catalogue cannot install a Plugin: none of its Supported Platforms is this
+ * computer, or a reason it could not be opened once installed.
+ */
+export type CatalogueBlockedReason = "not-for-this-computer" | BlockedReason;
+
+/** Whether staff can install a Plugin the Registry offers, and if not, why. */
+export type CatalogueAccess =
+  { kind: "installable" } | { kind: "blocked"; reason: CatalogueBlockedReason };
+
 /** Whether staff can open an installed Plugin, and if not, why. */
 export type PluginAccess =
   { kind: "openable" } | { kind: "blocked"; reason: BlockedReason };
@@ -35,6 +45,27 @@ export interface SwitcherPlugin {
   access: PluginAccess;
 }
 
+/** A Plugin the Registry offers, at the version the Catalogue would install. */
+export interface CataloguePlugin {
+  id: PluginId;
+  /** Already in the Display Language, as is the description. */
+  name: string;
+  description: string;
+  /** The Registry's icon, served through the icon scheme as the Switcher's are. */
+  iconUrl: string;
+  access: CatalogueAccess;
+}
+
+/**
+ * What the Plugin Catalogue lists: `off` in dev mode, which has no Catalogue; `checking` until a
+ * Registry check answers; `unreachable` after one failed, until Retry.
+ */
+export type Catalogue =
+  | { kind: "off" }
+  | { kind: "checking" }
+  | { kind: "unreachable" }
+  | { kind: "listed"; plugins: CataloguePlugin[] };
+
 /** The Hub's own version (semver), as main parses it. */
 export type HubVersion = Branded<string, "HubVersion">;
 
@@ -47,11 +78,12 @@ export type ColourScheme = (typeof COLOUR_SCHEMES)[number];
 
 /**
  * What the content area shows: the front Plugin's UI (or the empty state when none is open), or
- * Hub Settings, with the open Plugins still running hidden behind them. Settings carry the unsaved
- * form, held in main, so a reloaded Hub Chrome redraws it.
+ * Hub Settings or the Plugin Catalogue, with the open Plugins still running hidden behind them.
+ * Settings carry the unsaved form, held in main, so a reloaded Hub Chrome redraws it.
  */
 export type HubChromeContent =
   | { kind: "plugin" }
+  | { kind: "catalogue" }
   | {
       kind: "settings";
       form: HubSettings;
@@ -81,6 +113,7 @@ export interface HubChromeSnapshot {
   theme: ThemeName;
   /** The Themes this Hub has, for the Theme picker. */
   themes: ThemeName[];
+  catalogue: Catalogue;
 }
 
 /** A Plugin's own Busy reason, in the Display Language. Never empty: main parses it so. */
@@ -146,6 +179,10 @@ export interface HubChromeApi {
   cancelSettings(): void;
   /** Exports a Diagnostics Bundle to where staff choose in a native save dialog. */
   exportDiagnostics(): void;
+  /** Shows the Plugin Catalogue in the content area. */
+  showCatalogue(): void;
+  /** Checks the Registry again after a failed check. */
+  retryRegistry(): void;
 }
 
 /** Hub Chrome → main, `invoke`: answers the current snapshot. */
@@ -168,3 +205,7 @@ export const SAVE_SETTINGS = "hub-chrome:save-settings";
 export const CANCEL_SETTINGS = "hub-chrome:cancel-settings";
 /** Hub Chrome → main, `invoke`: exports a Diagnostics Bundle through a native save dialog. */
 export const EXPORT_DIAGNOSTICS = "hub-chrome:export-diagnostics";
+/** Hub Chrome → main, `invoke`: shows the Plugin Catalogue. */
+export const SHOW_CATALOGUE = "hub-chrome:show-catalogue";
+/** Hub Chrome → main, `invoke`: checks the Registry again. */
+export const RETRY_REGISTRY = "hub-chrome:retry-registry";

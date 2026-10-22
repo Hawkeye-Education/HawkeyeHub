@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
 import type { DisplayLanguage, ThemeName } from "../shared/hub-chrome-ipc";
 import { HAWKEYE } from "./lifecycle";
+import type { RegistryCheckFailure } from "./registry";
 import type {
   AbsolutePath,
   AiProviderKind,
@@ -176,6 +177,8 @@ export type HubEvent =
       outcome:
         { kind: "http-status"; status: number } | { kind: "no-response" };
     }
+  // A Registry check that failed: only how, never the index's contents.
+  | { kind: "registry-check-failed"; failure: RegistryCheckFailure }
   | {
       kind: "uncaught-exception";
       origin: NodeJS.UncaughtExceptionOrigin;
@@ -556,6 +559,12 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
         }`,
         subject: NO_PLUGIN,
       };
+    case "registry-check-failed":
+      return {
+        level: "warn",
+        message: `Registry check failed: ${describeRegistryFailure(event.failure)}`,
+        subject: NO_PLUGIN,
+      };
     case "uncaught-exception":
       return {
         level: "error",
@@ -600,6 +609,19 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
       };
     default:
       return event satisfies never;
+  }
+}
+
+function describeRegistryFailure(failure: RegistryCheckFailure): string {
+  switch (failure.kind) {
+    case "http-status":
+      return `returned HTTP ${String(failure.status)}`;
+    case "no-response":
+      return "gave no response";
+    case "invalid":
+      return "sent an invalid index";
+    default:
+      return failure satisfies never;
   }
 }
 
