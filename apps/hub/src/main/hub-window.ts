@@ -27,6 +27,7 @@ import {
   SHOW_CATALOGUE,
   SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
+  UNINSTALL_PLUGIN,
   type DisplayLanguage,
   type HubChromeDialog,
 } from "../shared/hub-chrome-ipc";
@@ -213,6 +214,10 @@ export function openHubWindow(
   ipcMain.handle(INSTALL_PLUGIN, (event, id: unknown) => {
     fromHubChrome(INSTALL_PLUGIN, event.sender);
     lifecycle.install(PluginId.parse(id));
+  });
+  ipcMain.handle(UNINSTALL_PLUGIN, (event, id: unknown) => {
+    fromHubChrome(UNINSTALL_PLUGIN, event.sender);
+    lifecycle.uninstall(PluginId.parse(id));
   });
   ipcMain.handle(EXPORT_DIAGNOSTICS, async (event) => {
     fromHubChrome(EXPORT_DIAGNOSTICS, event.sender);

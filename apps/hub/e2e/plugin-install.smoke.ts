@@ -1,5 +1,6 @@
 // Install from the Plugin Catalogue (#93): a local Registry at HAWKEYE_HUB_REGISTRY_URL serves a
-// UI-only Plugin Package; Install puts it in the Plugin Switcher without a restart, and it opens. A
+// UI-only Plugin Package; Install puts it in the Plugin Switcher without a restart, and it opens.
+// Uninstall (#95) closes it and takes it away, keeping its data unless staff tick the box. A
 // package that fails its checksum says why and leaves nothing behind. Leftovers are swept at launch.
 
 import { createHash } from "node:crypto";
@@ -9,11 +10,17 @@ import {
   readdirSync,
   readFileSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join, sep } from "node:path";
-import { _electron, type ElectronApplication } from "@playwright/test";
+import {
+  _electron,
+  type ElectronApplication,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import { zipSync } from "fflate";
 import {
   displayLanguageOf,
@@ -38,6 +45,8 @@ const STRINGS = {
     installed: "Installed: version 1.0.0",
     checksumFailed: "Install failed: the download was damaged",
     exportDiagnostics: "Export diagnostics",
+    uninstall: "Uninstall",
+    alsoDeleteData: "Also delete my data",
   },
   "zh-HK": {
     catalogue: "外掛程式目錄",
@@ -47,6 +56,8 @@ const STRINGS = {
     installed: "已安裝：版本 1.0.0",
     checksumFailed: "安裝失敗：下載的檔案已損壞",
     exportDiagnostics: "匯出診斷資料",
+    uninstall: "解除安裝",
+    alsoDeleteData: "同時刪除我的資料",
   },
 };
 
@@ -130,13 +141,35 @@ function launchWithRegistry(
   });
 }
 
+/** The dialog overlay's dialog, once it is showing. */
+async function overlayDialog(hub: ElectronApplication): Promise<Locator> {
+  let page: Page | undefined;
+  await expect
+    .poll(() => {
+      page = hub.windows().find((each) => each.url().endsWith("#dialog"));
+      return page !== undefined;
+    })
+    .toBe(true);
+  if (page === undefined) throw new Error("unreachable: polled for above");
+  return page.getByRole("dialog");
+}
+
+/**
+ * Presses a dialog button with Enter going down only: its answer takes the overlay away, so a click
+ * can lose its page before the mouseup is acknowledged (as in plugin-busy.smoke.ts).
+ */
+async function press(button: Locator): Promise<void> {
+  await button.focus();
+  await button.page().keyboard.down("Enter");
+}
+
 function hubLogMessages(dataDir: string): string[] {
   return hubLogLines(dataDir).map(
     (line) => (line as { message: string }).message,
   );
 }
 
-test("Install puts a UI-only Plugin in the Plugin Switcher without a restart, and it opens", async ({
+test("Install puts a UI-only Plugin in the Plugin Switcher without a restart, it opens, and Uninstall takes it away keeping or deleting its data", async ({
   dataDir,
 }) => {
   const registry = await serveRegistry();
@@ -154,7 +187,7 @@ test("Install puts a UI-only Plugin in the Plugin Switcher without a restart, an
     await timer.getByRole("button", { name: strings.install }).click();
 
     await expect(timer).toContainText(strings.installed);
-    await expect(timer.getByRole("button")).toHaveCount(0);
+    await expect(timer.getByRole("button")).toHaveText([strings.uninstall]);
     await expect.poll(() => switcherNames(hubChrome)).toEqual([strings.timer]);
     expect(
       JSON.parse(
@@ -168,6 +201,44 @@ test("Install puts a UI-only Plugin in the Plugin Switcher without a restart, an
       .click();
     const page = await pluginPage(() => hub.windows(), "class-timer");
     await expect(page.locator("body")).toContainText("Fixture Plugin UI");
+
+    // Uninstalling the open Plugin closes it, and keeps its data.
+    const pluginData = join(dataDir, "plugin-data", "class-timer");
+    writeFileSync(join(pluginData, "kept.txt"), "kept");
+    await hubChrome.getByRole("button", { name: strings.catalogue }).click();
+    await timer.getByRole("button", { name: strings.uninstall }).click();
+    await press(
+      (await overlayDialog(hub)).getByRole("button", {
+        name: strings.uninstall,
+      }),
+    );
+    await expect(
+      timer.getByRole("button", { name: strings.install }),
+    ).toBeVisible();
+    expect(await switcherNames(hubChrome)).toEqual([]);
+    expect(
+      JSON.parse(
+        readFileSync(join(dataDir, "installed-plugins.json"), "utf8"),
+      ) as unknown,
+    ).toEqual([]);
+    expect(existsSync(join(dataDir, "class-timer@1.0.0"))).toBe(false);
+    expect(existsSync(join(pluginData, "kept.txt"))).toBe(true);
+
+    // Reinstalled, it finds its data; uninstalled with the box ticked, the data goes too.
+    await timer.getByRole("button", { name: strings.install }).click();
+    await expect.poll(() => switcherNames(hubChrome)).toEqual([strings.timer]);
+    expect(existsSync(join(pluginData, "kept.txt"))).toBe(true);
+    await timer.getByRole("button", { name: strings.uninstall }).click();
+    const dialog = await overlayDialog(hub);
+    await dialog
+      .getByRole("checkbox", { name: strings.alsoDeleteData })
+      .check();
+    await press(dialog.getByRole("button", { name: strings.uninstall }));
+    await expect(
+      timer.getByRole("button", { name: strings.install }),
+    ).toBeVisible();
+    expect(existsSync(pluginData)).toBe(false);
+    expect(existsSync(join(dataDir, "class-timer@1.0.0"))).toBe(false);
   } finally {
     await hub.close();
     registry.server.close();

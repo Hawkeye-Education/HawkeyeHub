@@ -53,6 +53,11 @@ export const STRINGS = {
     } satisfies Record<CatalogueBlockedReason, string>,
     install: "Install",
     installing: "Installing…",
+    uninstall: "Uninstall",
+    uninstalling: "Uninstalling…",
+    uninstallQuestion: (name: string) => `Uninstall ${name}?`,
+    keepInstalled: "Keep installed",
+    alsoDeleteData: "Also delete my data",
     installedVersion: (version: string) => `Installed: version ${version}`,
     installFailed: {
       download: "Install failed: the download did not finish",
@@ -105,6 +110,11 @@ export const STRINGS = {
     } satisfies Record<CatalogueBlockedReason, string>,
     install: "安裝",
     installing: "正在安裝…",
+    uninstall: "解除安裝",
+    uninstalling: "正在解除安裝…",
+    uninstallQuestion: (name: string) => `解除安裝 ${name}？`,
+    keepInstalled: "保留",
+    alsoDeleteData: "同時刪除我的資料",
     installedVersion: (version: string) => `已安裝：版本 ${version}`,
     installFailed: {
       download: "安裝失敗：下載未能完成",

@@ -1221,6 +1221,7 @@ const OFFERED = [
 function withRegistry(language: "en-HK" | "zh-HK") {
   const checks = { asked: 0 };
   const installs: string[] = [];
+  const uninstalls: string[] = [];
   const lifecycle = createLifecycle({
     hubVersion: HUB_VERSION,
     systemLanguage: language,
@@ -1236,9 +1237,12 @@ function withRegistry(language: "en-HK" | "zh-HK") {
       install: (plugin) => {
         installs.push(`${plugin.manifest.id}@${plugin.manifest.version}`);
       },
+      uninstall: (plugin, data) => {
+        uninstalls.push(`${plugin.manifest.id} ${data}`);
+      },
     },
   });
-  return { lifecycle, checks, installs };
+  return { lifecycle, checks, installs, uninstalls };
 }
 
 test("an installed Hub's Catalogue is checking until the first check answers", () => {
@@ -1467,4 +1471,122 @@ test("settings and the Catalogue replace each other; leaving settings with unsav
     content: { kind: "catalogue" },
     dialog: null,
   });
+});
+
+// Uninstall (ticket #95).
+
+test("Uninstall asks first, and Keep installed changes nothing", () => {
+  const { lifecycle, uninstalls } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
+  const before = lifecycle.snapshot();
+
+  lifecycle.uninstall(id("class-timer"));
+  expect(lifecycle.snapshot().dialog).toEqual({
+    kind: "uninstall",
+    plugin: { id: "class-timer", name: "Timer" },
+  });
+
+  lifecycle.answer("keep-installed");
+  expect(lifecycle.snapshot()).toEqual(before);
+  expect(uninstalls).toEqual([]);
+});
+
+test.each([
+  ["uninstall", "keep-data"],
+  ["uninstall-and-delete-data", "delete-data"],
+] as const)(
+  "confirming %s on a closed Plugin asks main to uninstall it with %s; once finished it leaves the Switcher",
+  (answer, data) => {
+    const { lifecycle, uninstalls } = withRegistry("en-HK");
+    lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
+
+    lifecycle.uninstall(id("class-timer"));
+    lifecycle.answer(answer);
+    expect(lifecycle.snapshot().dialog).toBeNull();
+    expect(entryOf(lifecycle, "class-timer")?.job).toEqual({
+      kind: "uninstalling",
+    });
+    expect(uninstalls).toEqual([`class-timer ${data}`]);
+    expect(() => {
+      lifecycle.open(id("class-timer"));
+    }).toThrow();
+
+    lifecycle.uninstallFinished(id("class-timer"));
+    expect(lifecycle.snapshot().plugins.map(({ id }) => id)).toEqual([
+      "attendance",
+      "seating-plan",
+    ]);
+    expect(entryOf(lifecycle, "class-timer")).toMatchObject({
+      installed: { kind: "not-installed" },
+      job: { kind: "none" },
+    });
+    expect(() => lifecycle.installed(id("class-timer"))).toThrow();
+  },
+);
+
+test("uninstalling an open Plugin closes it first, and asks main only once it is gone", () => {
+  const { lifecycle, uninstalls } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
+  lifecycle.open(id("class-timer"));
+
+  lifecycle.uninstall(id("class-timer"));
+  lifecycle.answer("uninstall");
+  expect(lifecycle.snapshot()).toMatchObject({
+    open: [],
+    closing: ["class-timer"],
+  });
+  expect(uninstalls).toEqual([]);
+
+  lifecycle.closed(id("class-timer"));
+  expect(uninstalls).toEqual(["class-timer keep-data"]);
+});
+
+test("uninstalling a Busy Plugin asks to close it; Keep open keeps it installed and open", () => {
+  const { lifecycle, uninstalls } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
+  lifecycle.open(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
+
+  lifecycle.uninstall(id("class-timer"));
+  lifecycle.answer("uninstall-and-delete-data");
+  expect(lifecycle.snapshot().dialog).toMatchObject({ kind: "busy-close" });
+
+  lifecycle.answer("keep-open");
+  expect(lifecycle.snapshot()).toMatchObject({
+    open: ["class-timer"],
+    dialog: null,
+  });
+  expect(entryOf(lifecycle, "class-timer")?.job).toEqual({ kind: "none" });
+  lifecycle.close(id("class-timer"));
+  lifecycle.closed(id("class-timer"));
+  expect(uninstalls).toEqual([]);
+});
+
+test("uninstalling a Busy Plugin goes ahead on Close anyway", () => {
+  const { lifecycle, uninstalls } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
+  lifecycle.open(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
+  lifecycle.uninstall(id("class-timer"));
+  lifecycle.answer("uninstall-and-delete-data");
+
+  lifecycle.answer("close-anyway");
+  lifecycle.closed(id("class-timer"));
+  expect(uninstalls).toEqual(["class-timer delete-data"]);
+});
+
+test("Uninstall throws for a Plugin not installed or already uninstalling, and finishing one not uninstalling throws", () => {
+  const { lifecycle } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: [LIBRARY] });
+  expect(() => {
+    lifecycle.uninstall(id("library"));
+  }).toThrow();
+  expect(() => {
+    lifecycle.uninstallFinished(id("class-timer"));
+  }).toThrow();
+  lifecycle.uninstall(id("class-timer"));
+  lifecycle.answer("uninstall");
+  expect(() => {
+    lifecycle.uninstall(id("class-timer"));
+  }).toThrow();
 });

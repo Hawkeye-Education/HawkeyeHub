@@ -31,6 +31,7 @@ import type { HubApiVersion } from "./ids";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import { pluginIconUrl, registryIconUrl } from "./plugin-icons";
 import type { InstallOutcome } from "./plugin-install";
+import type { UninstallData } from "./plugin-uninstall";
 import type { RegistryCheck, RegistryPlugin } from "./registry";
 
 /** An open Plugin's Busy, as its page last set it. */
@@ -98,6 +99,15 @@ export interface Lifecycle {
    * cause in the Catalogue until staff try again. Throws unless the Plugin is installing.
    */
   installFinished(id: PluginId, outcome: InstallOutcome): void;
+  /**
+   * **Uninstall**: the uninstall dialog asks first. Confirming it makes the Catalogue entry
+   * uninstalling and closes the Plugin if it is open, asking first if it is Busy (**Keep open**
+   * keeps it installed); once it is closed, main is asked to uninstall it, answering through
+   * `uninstallFinished`. Throws in dev mode, or unless the Plugin is installed with no job.
+   */
+  uninstall(id: PluginId): void;
+  /** An uninstall's answer: the Plugin leaves the Plugin Switcher. Throws unless it is uninstalling. */
+  uninstallFinished(id: PluginId): void;
   /** Replaces the unsaved form. Throws if settings are not showing. */
   editSettings(form: HubSettings): void;
   /**
@@ -126,7 +136,8 @@ export interface LifecycleDeps {
   /**
    * `off` in dev mode, which has no Catalogue. `check` starts a Registry check, whose answer comes
    * back through `registryChecked`; the lifecycle calls it only on **Retry**. `install` queues an
-   * install, whose answer comes back through `installFinished`.
+   * install, whose answer comes back through `installFinished`; `uninstall` queues an uninstall of a
+   * closed Plugin, whose answer comes back through `uninstallFinished`.
    */
   registry:
     | { kind: "off" }
@@ -134,6 +145,7 @@ export interface LifecycleDeps {
         kind: "on";
         check: () => void;
         install: (plugin: RegistryPlugin) => void;
+        uninstall: (plugin: InstalledPlugin, data: UninstallData) => void;
       };
 }
 
@@ -180,12 +192,14 @@ const COMPANY_THEME = HAWKEYE;
 type Asking =
   | Extract<HubChromeDialog, { kind: "busy-close" }>
   | (Extract<HubChromeDialog, { kind: "busy-quit" }> & { quit: () => void })
-  | { kind: "discard-changes"; proceed: () => void };
+  | { kind: "discard-changes"; proceed: () => void }
+  | Extract<HubChromeDialog, { kind: "uninstall" }>;
 
 function dialogOf(asking: Asking | null): HubChromeDialog | null {
   if (asking === null) return null;
   switch (asking.kind) {
     case "busy-close":
+    case "uninstall":
       return asking;
     case "busy-quit":
       return { kind: "busy-quit", plugins: asking.plugins };
@@ -215,7 +229,7 @@ export function createLifecycle({
         return displayLanguage satisfies never;
     }
   };
-  // Grows as installs finish.
+  // Grows as installs finish, and shrinks as uninstalls do.
   let installedPlugins = [...installed];
   // The Display Language and the installed Plugins named and sorted in it.
   const listingIn = (language: DisplayLanguage) => {
@@ -267,6 +281,17 @@ export function createLifecycle({
     registry.kind === "off" ? { kind: "off" } : { kind: "checking" };
   // Each Plugin's job, queued or running, or its last failed install; none when absent.
   const jobs = new Map<PluginId, Exclude<CatalogueJob, { kind: "none" }>>();
+  // Confirmed uninstalls of Plugins still open or closing, with staff's data choice.
+  const waitingToClose = new Map<PluginId, UninstallData>();
+  // Queues a confirmed uninstall once its Plugin is neither open nor closing.
+  const uninstallOnceClosed = (id: PluginId): void => {
+    const data = waitingToClose.get(id);
+    if (data === undefined || open.includes(id) || closing.includes(id)) {
+      return;
+    }
+    waitingToClose.delete(id);
+    registryOn("uninstall").uninstall(installedPlugin(id).plugin, data);
+  };
   const catalogueIn = (language: DisplayLanguage): Catalogue => {
     if (offered.kind !== "listed") return offered;
     const byName = new Intl.Collator(language).compare;
@@ -352,6 +377,7 @@ export function createLifecycle({
         return plugins.length === 0 ? null : { ...asking, plugins };
       }
       case "discard-changes":
+      case "uninstall":
         return asking;
       default:
         return asking satisfies never;
@@ -368,6 +394,15 @@ export function createLifecycle({
     if (open.length === 0 && content.kind === "settings") {
       content = { kind: "settings", languageNoteShowing: false };
     }
+    changed();
+  };
+  const requestClose = (id: PluginId): void => {
+    const reason = busyReasons.get(id);
+    if (reason === undefined) {
+      close(id);
+      return;
+    }
+    asking = { kind: "busy-close", plugin: busyPlugin(id, reason) };
     changed();
   };
   return {
@@ -402,6 +437,9 @@ export function createLifecycle({
       if (closing.includes(id)) {
         throw new Error(`${id} is still closing`);
       }
+      if (jobs.get(id)?.kind === "uninstalling") {
+        throw new Error(`${id} is uninstalling`);
+      }
       discardingEditsFirst(() => {
         open = [id, ...open.filter((other) => other !== id)];
         content = { kind: "plugin" };
@@ -415,16 +453,9 @@ export function createLifecycle({
       }
       closing = closing.filter((other) => other !== id);
       changed();
+      uninstallOnceClosed(id);
     },
-    requestClose: (id) => {
-      const reason = busyReasons.get(id);
-      if (reason === undefined) {
-        close(id);
-        return;
-      }
-      asking = { kind: "busy-close", plugin: busyPlugin(id, reason) };
-      changed();
-    },
+    requestClose,
     setBusy: (id, busy) => {
       if (!open.includes(id)) return;
       switch (busy.kind) {
@@ -532,6 +563,27 @@ export function createLifecycle({
       }
       changed();
     },
+    uninstall: (id) => {
+      registryOn("uninstall");
+      const { listed } = installedPlugin(id);
+      if (jobs.has(id)) {
+        throw new Error(`${id} already has a job`);
+      }
+      asking = { kind: "uninstall", plugin: { id, name: listed.name } };
+      changed();
+    },
+    uninstallFinished: (id) => {
+      registryOn("uninstallFinished");
+      if (jobs.get(id)?.kind !== "uninstalling" || waitingToClose.has(id)) {
+        throw new Error(`${id} is not uninstalling`);
+      }
+      jobs.delete(id);
+      installedPlugins = installedPlugins.filter(
+        ({ manifest }) => manifest.id !== id,
+      );
+      listing = listingIn(listing.language);
+      changed();
+    },
     editSettings: (edited) => {
       settingsShowing("editSettings");
       form = edited;
@@ -576,7 +628,30 @@ export function createLifecycle({
         throw new Error("No dialog is waiting for an answer");
       if (answer === KEEP_ANSWERS[pending.kind]) {
         asking = null;
+        // Keeping a Busy Plugin open keeps it installed too.
+        if (
+          pending.kind === "busy-close" &&
+          waitingToClose.delete(pending.plugin.id)
+        ) {
+          jobs.delete(pending.plugin.id);
+        }
         changed();
+        return;
+      }
+      if (
+        pending.kind === "uninstall" &&
+        (answer === "uninstall" || answer === "uninstall-and-delete-data")
+      ) {
+        const { id } = pending.plugin;
+        asking = null;
+        jobs.set(id, { kind: "uninstalling" });
+        waitingToClose.set(
+          id,
+          answer === "uninstall" ? "keep-data" : "delete-data",
+        );
+        changed();
+        if (open.includes(id)) requestClose(id);
+        uninstallOnceClosed(id);
         return;
       }
       if (pending.kind === "discard-changes" && answer === "discard") {

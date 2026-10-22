@@ -56,12 +56,14 @@ export type CatalogueInstalled =
 
 /**
  * The job queued or running for a Plugin the Catalogue lists, or how its last install failed, which
- * shows until staff try again. Update and uninstall add their own.
+ * shows until staff try again. Update adds its own. `uninstalling` starts once staff confirm, while
+ * an open Plugin is still closing.
  */
 export type CatalogueJob =
   | { kind: "none" }
   | { kind: "installing" }
-  | { kind: "install-failed"; cause: InstallFailureCause };
+  | { kind: "install-failed"; cause: InstallFailureCause }
+  | { kind: "uninstalling" };
 
 /** A Plugin the Registry offers, at the version the Catalogue would install. */
 export interface CataloguePlugin {
@@ -150,15 +152,18 @@ export interface BusyPlugin {
  * A Hub Chrome dialog. Its Busy reasons are those at the time it was asked: a Plugin clearing or
  * changing Busy leaves the dialog as it is (spec #44). A Plugin that closes leaves it.
  * `discard-changes` asks before picking a Plugin or quitting drops unsaved Hub Settings edits.
+ * `uninstall` confirms an uninstall, with its "Also delete my data" checkbox.
  */
 export type HubChromeDialog =
   | { kind: "busy-close"; plugin: BusyPlugin }
   | { kind: "busy-quit"; plugins: BusyPlugin[] }
-  | { kind: "discard-changes" };
+  | { kind: "discard-changes" }
+  | { kind: "uninstall"; plugin: { id: PluginId; name: string } };
 
 /**
  * Staff's answers to the pending dialog: **Keep open**, or **Close anyway** / **Quit anyway**, to
- * a Busy dialog; **Keep editing** or **Discard** to the Discard dialog.
+ * a Busy dialog; **Keep editing** or **Discard** to the Discard dialog; **Keep installed**, or
+ * **Uninstall** with the checkbox unticked or ticked, to the uninstall dialog.
  */
 export const DIALOG_ANSWERS = [
   "keep-open",
@@ -166,6 +171,9 @@ export const DIALOG_ANSWERS = [
   "quit-anyway",
   "keep-editing",
   "discard",
+  "keep-installed",
+  "uninstall",
+  "uninstall-and-delete-data",
 ] as const;
 export type DialogAnswer = (typeof DIALOG_ANSWERS)[number];
 
@@ -174,6 +182,7 @@ export const KEEP_ANSWERS = {
   "busy-close": "keep-open",
   "busy-quit": "keep-open",
   "discard-changes": "keep-editing",
+  uninstall: "keep-installed",
 } as const satisfies Record<HubChromeDialog["kind"], DialogAnswer>;
 
 /** What the Hub Chrome preload exposes as `window.hubChrome`. */
@@ -205,6 +214,8 @@ export interface HubChromeApi {
   retryRegistry(): void;
   /** Installs a Plugin the Catalogue lists as installable and not installed. */
   install(id: PluginId): void;
+  /** Asks to uninstall an installed Plugin, through the uninstall dialog. */
+  uninstall(id: PluginId): void;
 }
 
 /** Hub Chrome → main, `invoke`: answers the current snapshot. */
@@ -233,3 +244,5 @@ export const SHOW_CATALOGUE = "hub-chrome:show-catalogue";
 export const RETRY_REGISTRY = "hub-chrome:retry-registry";
 /** Hub Chrome → main, `invoke`: the id of a Plugin to install from the Catalogue. */
 export const INSTALL_PLUGIN = "hub-chrome:install-plugin";
+/** Hub Chrome → main, `invoke`: the id of a Plugin to uninstall from the Catalogue. */
+export const UNINSTALL_PLUGIN = "hub-chrome:uninstall-plugin";
