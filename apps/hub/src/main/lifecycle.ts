@@ -41,6 +41,8 @@ export interface Lifecycle {
   snapshot(): HubChromeSnapshot;
   /** The installed Plugin with `id`. Throws if none is. */
   installed(id: PluginId): InstalledPlugin;
+  /** Whether the Plugin with `id` is open or closing. */
+  running(id: PluginId): boolean;
   /** `listener` runs after every change to the state, to push a new snapshot. */
   onChange(listener: () => void): void;
   /**
@@ -100,10 +102,11 @@ export interface Lifecycle {
    */
   installFinished(id: PluginId, outcome: InstallOutcome): void;
   /**
-   * **Uninstall**: the uninstall dialog asks first. Confirming it makes the Catalogue entry
-   * uninstalling and closes the Plugin if it is open, asking first if it is Busy (**Keep open**
-   * keeps it installed); once it is closed, main is asked to uninstall it, answering through
-   * `uninstallFinished`. Throws in dev mode, or unless the Plugin is installed with no job.
+   * **Uninstall**: an open Plugin is closed first, asking first if it is Busy (**Keep open** keeps
+   * it open and installed, and asks nothing more). Then the uninstall dialog asks. Confirming it
+   * makes the Catalogue entry uninstalling; once the Plugin is closed, main is asked to uninstall
+   * it, answering through `uninstallFinished`. Throws in dev mode, or unless the Plugin is installed
+   * with no job.
    */
   uninstall(id: PluginId): void;
   /** An uninstall's answer: the Plugin leaves the Plugin Switcher. Throws unless it is uninstalling. */
@@ -267,6 +270,8 @@ export function createLifecycle({
   // Closed by staff or the Hub, but not yet gone: two Backends never share one Plugin Data
   // folder (ADR 0008), so a closing Plugin cannot be reopened.
   let closing: PluginId[] = [];
+  const running = (id: PluginId): boolean =>
+    open.includes(id) || closing.includes(id);
   let asking: Asking | null = null;
   // Plugins closing behind Hub Settings leave them showing. The language note says open Plugins
   // switch language when reopened, from a Save that changed it while any was open, until staff
@@ -286,14 +291,14 @@ export function createLifecycle({
     registry.kind === "off" ? { kind: "off" } : { kind: "checking" };
   // Each Plugin's job, queued or running, or its last failed install; none when absent.
   const jobs = new Map<PluginId, Exclude<CatalogueJob, { kind: "none" }>>();
-  // Confirmed uninstalls of Plugins still open or closing, with staff's data choice.
+  // Open Plugins staff asked to uninstall: the uninstall dialog asks once each has started closing.
+  const askUninstallOnClose = new Set<PluginId>();
+  // Confirmed uninstalls of Plugins still closing, with staff's data choice.
   const waitingToClose = new Map<PluginId, UninstallData>();
   // Queues a confirmed uninstall once its Plugin is neither open nor closing.
   const uninstallOnceClosed = (id: PluginId): void => {
     const data = waitingToClose.get(id);
-    if (data === undefined || open.includes(id) || closing.includes(id)) {
-      return;
-    }
+    if (data === undefined || running(id)) return;
     waitingToClose.delete(id);
     registryOn("uninstall").uninstall(installedPlugin(id).plugin, data);
   };
@@ -388,6 +393,10 @@ export function createLifecycle({
         return asking satisfies never;
     }
   };
+  const uninstallDialog = (id: PluginId): Asking => ({
+    kind: "uninstall",
+    plugin: { id, name: installedPlugin(id).listed.name },
+  });
   const close = (id: PluginId): void => {
     if (!open.includes(id)) {
       throw new Error(`No open Plugin has the id ${JSON.stringify(id)}`);
@@ -395,7 +404,9 @@ export function createLifecycle({
     open = open.filter((other) => other !== id);
     closing = [...closing, id];
     busyReasons.delete(id);
-    asking = askingWithout(id);
+    asking = askUninstallOnClose.delete(id)
+      ? uninstallDialog(id)
+      : askingWithout(id);
     if (open.length === 0 && content.kind === "settings") {
       content = { kind: "settings", languageNoteShowing: false };
     }
@@ -425,6 +436,7 @@ export function createLifecycle({
       catalogue: catalogueIn(listing.language),
     }),
     installed: (id) => installedPlugin(id).plugin,
+    running,
     onChange: (listener) => {
       listeners.push(listener);
     },
@@ -570,11 +582,16 @@ export function createLifecycle({
     },
     uninstall: (id) => {
       registryOn("uninstall");
-      const { listed } = installedPlugin(id);
+      installedPlugin(id);
       if (jobs.has(id)) {
         throw new Error(`${id} already has a job`);
       }
-      asking = { kind: "uninstall", plugin: { id, name: listed.name } };
+      if (open.includes(id)) {
+        askUninstallOnClose.add(id);
+        requestClose(id);
+        return;
+      }
+      asking = uninstallDialog(id);
       changed();
     },
     uninstallFinished: (id) => {
@@ -592,7 +609,7 @@ export function createLifecycle({
     updated: (plugin) => {
       const { id } = plugin.manifest;
       installedPlugin(id);
-      if (open.includes(id) || closing.includes(id)) {
+      if (running(id)) {
         throw new Error(`${id} cannot be updated while it is open`);
       }
       installedPlugins = installedPlugins.map((other) =>
@@ -647,11 +664,8 @@ export function createLifecycle({
       if (answer === KEEP_ANSWERS[pending.kind]) {
         asking = null;
         // Keeping a Busy Plugin open keeps it installed too.
-        if (
-          pending.kind === "busy-close" &&
-          waitingToClose.delete(pending.plugin.id)
-        ) {
-          jobs.delete(pending.plugin.id);
+        if (pending.kind === "busy-close") {
+          askUninstallOnClose.delete(pending.plugin.id);
         }
         changed();
         return;
@@ -668,7 +682,7 @@ export function createLifecycle({
           answer === "uninstall" ? "keep-data" : "delete-data",
         );
         changed();
-        if (open.includes(id)) requestClose(id);
+        // Not open: it was closed before this dialog asked, and the dialog is modal.
         uninstallOnceClosed(id);
         return;
       }

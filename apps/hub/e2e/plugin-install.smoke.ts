@@ -202,16 +202,14 @@ test("Install puts a UI-only Plugin in the Plugin Switcher without a restart, it
     const page = await pluginPage(() => hub.windows(), "class-timer");
     await expect(page.locator("body")).toContainText("Fixture Plugin UI");
 
-    // Uninstalling the open Plugin closes it, and keeps its data.
+    // Uninstalling the open Plugin closes it before the dialog asks, and keeps its data.
     const pluginData = join(dataDir, "plugin-data", "class-timer");
     writeFileSync(join(pluginData, "kept.txt"), "kept");
     await hubChrome.getByRole("button", { name: strings.catalogue }).click();
     await timer.getByRole("button", { name: strings.uninstall }).click();
-    await press(
-      (await overlayDialog(hub)).getByRole("button", {
-        name: strings.uninstall,
-      }),
-    );
+    const confirm = await overlayDialog(hub);
+    await expect.poll(() => page.isClosed()).toBe(true);
+    await press(confirm.getByRole("button", { name: strings.uninstall }));
     await expect(
       timer.getByRole("button", { name: strings.install }),
     ).toBeVisible();
