@@ -188,6 +188,12 @@ export type HubEvent =
       plugin: PluginRef;
       cause: InstallFailureCause;
     }
+  // A silent update's version that failed to build; the installed version is kept.
+  | {
+      kind: "plugin-update-failed";
+      plugin: PluginRef;
+      cause: InstallFailureCause;
+    }
   // A Plugin folder the launch sweep deleted: `.partial`, or a version the record does not name.
   | { kind: "plugin-swept"; plugin: PluginRef; partial: boolean }
   | {
@@ -580,6 +586,12 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
       return {
         level: "error",
         message: `Plugin install failed: ${event.cause}`,
+        subject: subjectOf(event.plugin),
+      };
+    case "plugin-update-failed":
+      return {
+        level: "error",
+        message: `Plugin update failed: ${event.cause}`,
         subject: subjectOf(event.plugin),
       };
     case "plugin-swept":

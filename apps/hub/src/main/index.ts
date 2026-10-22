@@ -19,6 +19,7 @@ import {
 import { createJobQueue } from "./job-queue";
 import { createLifecycle } from "./lifecycle";
 import { installPlugin } from "./plugin-install";
+import { createUpdater } from "./plugin-update";
 import type { HubSettings } from "../shared/hub-settings";
 import { HUB_API_VERSION } from "./hub-api-version";
 import {
@@ -222,6 +223,8 @@ function runHub(): void {
           );
         }
         lifecycle.registryChecked(check);
+        // A throw is an unhandled rejection: a Hub crash, as with installs.
+        void updater.registryChecked(check);
       });
     };
     // Installs, and later updates and uninstalls, run one at a time (spec #91). A job that throws,
@@ -264,6 +267,20 @@ function runHub(): void {
         startedAs.kind === "dev"
           ? { kind: "off" }
           : { kind: "on", check: checkRegistryNow, install: installNow },
+    });
+    // Silent updates after each check, through the same job queue (spec #91).
+    const updater = createUpdater({
+      dataDir: hubDataDir,
+      fetch: fetchFromWeb,
+      jobs,
+      lifecycle,
+      updateFailed: ({ plugin, cause }) => {
+        diagnostics.recordHubEvent({
+          kind: "plugin-update-failed",
+          plugin,
+          cause,
+        });
+      },
     });
     // At launch and every 4 hours (spec #91); Retry checks through the lifecycle too.
     if (startedAs.kind === "installed") {

@@ -191,6 +191,11 @@ const cases: [string, HubEvent, unknown][] = [
     pluginLine("error", "Plugin install failed: unpack"),
   ],
   [
+    "update failed to unpack",
+    { kind: "plugin-update-failed", plugin, cause: "unpack" },
+    pluginLine("error", "Plugin update failed: unpack"),
+  ],
+  [
     "a partial folder swept",
     { kind: "plugin-swept", plugin, partial: true },
     pluginLine("warn", "Plugin folder swept: partial"),
