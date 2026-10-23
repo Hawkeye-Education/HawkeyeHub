@@ -126,7 +126,7 @@ test("the Assistant Panel streams a Markdown reply, stops one, and copies a code
       .getByRole("combobox", { name: labels.model })
       .selectOption({ label: "Fake · fake-model" });
     await expect
-      .poll(() =>
+      .poll((): unknown =>
         JSON.parse(
           readFileSync(join(dataDir, "assistant-models.json"), "utf8"),
         ),
