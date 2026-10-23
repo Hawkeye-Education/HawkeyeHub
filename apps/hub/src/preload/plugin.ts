@@ -4,6 +4,9 @@
 // declares any.
 
 import type {
+  AiChat,
+  AiChatRequest,
+  AiProviderInfo,
   HubBackend,
   HubBusy,
   HubError,
@@ -13,6 +16,11 @@ import type {
 } from "@hawkeye-hub/hub-api";
 import { contextBridge, ipcRenderer } from "electron";
 import {
+  AI_CANCEL,
+  AI_CHAT,
+  AI_CHAT_EVENT,
+  AI_PROVIDERS,
+  type AiChatEvent,
   BACKEND_PORT,
   BUSY,
   DISPLAY_LANGUAGE_ARG,
@@ -53,19 +61,145 @@ const busy: HubBusy = {
   },
 };
 
-contextBridge.exposeInMainWorld(
-  "hub",
-  Object.freeze({
-    displayLanguage,
-    busy,
-    ...(process.argv.includes(HAS_BACKEND_ARG)
-      ? { backend: connectBackend() }
-      : {}),
-    ...(process.argv.includes(HAS_STORES_ARG)
-      ? { stores: connectStores() }
-      : {}),
-  }),
-);
+// Built in the page's world, not with exposeInMainWorld: `hub.ai.chat`'s `text` is an async
+// iterable, and the context bridge drops symbol keys, `Symbol.asyncIterator` among them. The
+// arguments cross the bridge as exposeInMainWorld's would.
+contextBridge.executeInMainWorld({
+  func: (parts: object, ai: BridgedAi) => {
+    const chat = (request: AiChatRequest): AiChat => {
+      const bridged = ai.chat(request);
+      return Object.freeze({
+        text: {
+          [Symbol.asyncIterator]: () => ({
+            next: () => bridged.next(),
+            // A `for await` left early stops the reply.
+            return: () => {
+              bridged.cancel();
+              return Promise.resolve({ done: true as const, value: undefined });
+            },
+          }),
+        },
+        done: bridged.done,
+        cancel: () => {
+          bridged.cancel();
+        },
+      });
+    };
+    Object.defineProperty(window, "hub", {
+      value: Object.freeze({
+        ...parts,
+        ai: Object.freeze({ providers: () => ai.providers(), chat }),
+      }),
+      enumerable: true,
+    });
+  },
+  args: [
+    {
+      displayLanguage,
+      busy,
+      ...(process.argv.includes(HAS_BACKEND_ARG)
+        ? { backend: connectBackend() }
+        : {}),
+      ...(process.argv.includes(HAS_STORES_ARG)
+        ? { stores: connectStores() }
+        : {}),
+    },
+    connectAi(),
+  ],
+});
+
+/** `hub.ai` as the preload hands it to the page's world, which makes `text` iterable. */
+interface BridgedAi {
+  providers(): Promise<readonly AiProviderInfo[]>;
+  chat(request: AiChatRequest): {
+    next(): Promise<IteratorResult<string, undefined>>;
+    done: Promise<string>;
+    cancel(): void;
+  };
+}
+
+/**
+ * `hub.ai`: main streams each chat's text as `AiChatEvent`s, which wait here until the page asks
+ * for them. A failure rejects `done` and the next `next()` with its `HubError`.
+ */
+function connectAi(): BridgedAi {
+  const chats = new Map<number, (event: AiChatEvent) => void>();
+  ipcRenderer.on(AI_CHAT_EVENT, (_event, event: AiChatEvent) => {
+    chats.get(event.id)?.(event);
+  });
+  let lastChat = 0;
+  return {
+    // Main is trusted, so its answer is not re-validated.
+    providers: () =>
+      ipcRenderer
+        .invoke(AI_PROVIDERS)
+        .then((providers: readonly AiProviderInfo[]) => providers),
+    chat(request) {
+      lastChat += 1;
+      const id = lastChat;
+      const arrived: string[] = [];
+      let settled = false;
+      let wake = (): void => undefined;
+      const done = new Promise<string>((resolve, reject) => {
+        const settle = (): void => {
+          settled = true;
+          chats.delete(id);
+        };
+        chats.set(id, (event) => {
+          switch (event.kind) {
+            case "delta":
+              arrived.push(event.text);
+              break;
+            case "done":
+              settle();
+              resolve(event.text);
+              break;
+            case "failed":
+              settle();
+              // A HubError is a plain object by design (ADR 0009).
+              // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+              reject(event.failure);
+              break;
+            default:
+              event satisfies never;
+          }
+          wake();
+        });
+        // Main parses it as an `AiChatCall`, and throws for an image to a model that does not
+        // accept images.
+        ipcRenderer.invoke(AI_CHAT, { id, request }).catch((error: unknown) => {
+          settle();
+          // An invoke rejects with an Error, but its type says unknown.
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+          reject(error);
+          wake();
+        });
+      });
+      // Not swallowed: `done` still rejects for the page. A page that reads only `text` gets the
+      // same failure there, and must not see an unhandled rejection for `done`.
+      done.catch(() => undefined);
+      return {
+        async next() {
+          for (;;) {
+            const text = arrived.shift();
+            if (text !== undefined) return { done: false, value: text };
+            if (settled) {
+              await done;
+              return { done: true, value: undefined };
+            }
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+            });
+          }
+        },
+        done,
+        cancel: () => {
+          void ipcRenderer.invoke(AI_CANCEL, id);
+        },
+      };
+    },
+  };
+}
 
 /**
  * `hub.stores`: each call answered by main, which refuses what the Plugin got wrong with the
