@@ -13,7 +13,6 @@ import {
 } from "./diagnostics";
 import {
   parseAbsolutePath,
-  parseAiProviderKind,
   parseAiProviderLabel,
   parseHubVersion,
   parsePythonVersion,
@@ -736,7 +735,7 @@ const system: SystemDescription = {
   aiProviders: [
     {
       label: parseAiProviderLabel("School Azure"),
-      kind: parseAiProviderKind("azure-openai"),
+      kind: "openai-compatible",
     },
   ],
   authProvider: { kind: "oidc", signedIn: true },
@@ -787,7 +786,7 @@ test("an exported bundle holds every log at its path relative to the logs folder
       { id: "pdf-watermark-eraser", version: "0.4.0" },
     ],
     pythonVersions: ["3.12.7"],
-    aiProviders: [{ label: "School Azure", kind: "azure-openai" }],
+    aiProviders: [{ label: "School Azure", kind: "openai-compatible" }],
     authProvider: { kind: "oidc", signedIn: true },
   });
 });
@@ -869,7 +868,6 @@ test("constrained strings are parsed, not taken as bare strings", () => {
   expect(() => parsePythonVersion("3.12")).toThrow();
   expect(parsePythonVersion("3.14.0rc1")).toBe("3.14.0rc1");
   expect(() => parseAiProviderLabel(" ")).toThrow();
-  expect(() => parseAiProviderKind("Azure OpenAI")).toThrow();
   expect(() => RpcErrorReason.parse("Same folder")).toThrow();
   expect(() => parseAbsolutePath("logs")).toThrow();
 });

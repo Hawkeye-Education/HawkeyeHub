@@ -4,7 +4,12 @@ import {
   type Manifest,
 } from "@hawkeye-hub/plugin-format";
 import { expect, test } from "vitest";
-import { parseAbsolutePath, parseHubApiVersion, parseHubVersion } from "./ids";
+import {
+  parseAbsolutePath,
+  parseAiProviderLabel,
+  parseHubApiVersion,
+  parseHubVersion,
+} from "./ids";
 import type {
   BusyReason,
   HubSettings,
@@ -1136,8 +1141,26 @@ test("the language note goes once the last open Plugin closes while settings sho
 });
 
 test("the system description holds what is stored and drawn, and the installed Plugins in the Switcher's order", () => {
-  const { lifecycle } = inSettings(IN_CHINESE);
-  lifecycle.editSettings({ ...IN_CHINESE, colourScheme: "dark" });
+  const stored: HubSettings = {
+    ...IN_CHINESE,
+    aiProviders: [
+      {
+        label: parseAiProviderLabel("School Azure"),
+        endpoint: {
+          kind: "openai-compatible",
+          baseUrl: "https://school.openai.azure.com/openai/v1",
+        },
+        models: [{ id: "gpt-5", acceptsImages: true }],
+      },
+      {
+        label: parseAiProviderLabel("Claude"),
+        endpoint: { kind: "anthropic" },
+        models: [{ id: "claude-opus-5-5", acceptsImages: true }],
+      },
+    ],
+  };
+  const { lifecycle } = inSettings(stored);
+  lifecycle.editSettings({ ...stored, colourScheme: "dark", aiProviders: [] });
   const os = { name: "win32", version: "10.0.19045", arch: "x64" };
   expect(lifecycle.systemDescription(os)).toEqual({
     hubVersion: "1.4.2",
@@ -1151,7 +1174,10 @@ test("the system description holds what is stored and drawn, and the installed P
       { id: "seating-plan", version: "1.0.0" },
     ],
     pythonVersions: [],
-    aiProviders: [],
+    aiProviders: [
+      { label: "School Azure", kind: "openai-compatible" },
+      { label: "Claude", kind: "anthropic" },
+    ],
     authProvider: { kind: "none" },
   });
 });

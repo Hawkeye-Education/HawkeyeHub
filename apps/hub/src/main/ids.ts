@@ -14,8 +14,12 @@ import type { Branded } from "../shared/branded";
 
 export type HubApiVersion = Branded<string, "HubApiVersion">;
 export type PythonVersion = Branded<string, "PythonVersion">;
-export type AiProviderLabel = Branded<string, "AiProviderLabel">;
-export type AiProviderKind = Branded<string, "AiProviderKind">;
+import {
+  AiProviderLabelSchema,
+  type AiProviderKind,
+  type AiProviderLabel,
+} from "../shared/hub-settings";
+export type { AiProviderKind, AiProviderLabel };
 export type RpcErrorReason = Branded<string, "RpcErrorReason">;
 export type AbsolutePath = Branded<string, "AbsolutePath">;
 
@@ -51,18 +55,7 @@ export function parsePythonVersion(raw: string): PythonVersion {
 }
 
 export function parseAiProviderLabel(raw: string): AiProviderLabel {
-  if (raw.trim() === "") {
-    throw new Error("An AI Provider label cannot be blank");
-  }
-  return raw as AiProviderLabel;
-}
-
-/** No ADR names the set of AI Provider kinds yet, so a kind is any kebab-case name. */
-export function parseAiProviderKind(raw: string): AiProviderKind {
-  if (!KEBAB_CASE.test(raw)) {
-    throw new Error(`Not an AI Provider kind: ${JSON.stringify(raw)}`);
-  }
-  return raw as AiProviderKind;
+  return AiProviderLabelSchema.parse(raw);
 }
 
 /**
