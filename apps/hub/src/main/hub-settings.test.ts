@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, expect, test } from "vitest";
 import type { HubSettings } from "../shared/hub-chrome-ipc";
+import { HubSettingsSchema } from "../shared/hub-settings";
 import { openDiagnostics, type Diagnostics } from "./diagnostics";
 import { loadHubSettings, saveHubSettings } from "./hub-settings";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
@@ -17,6 +18,8 @@ const FIRST_LAUNCH = {
   theme: { kind: "company" },
   colourScheme: "system",
   displayLanguage: { kind: "system" },
+  aiProviders: [],
+  defaultAiProvider: { kind: "none" },
 };
 
 let dataDir: AbsolutePath;
@@ -46,6 +49,8 @@ const CHOSEN = {
   theme: { kind: "chosen", name: "harbour" },
   colourScheme: "dark",
   displayLanguage: { kind: "chosen", language: "zh-HK" },
+  aiProviders: [],
+  defaultAiProvider: { kind: "none" },
 };
 
 test("a valid file is returned as it is, with nothing logged", () => {
@@ -120,4 +125,87 @@ test("saved settings load back the same", () => {
   const saved = { ...FIRST_LAUNCH, colourScheme: "light" } as HubSettings;
   saveHubSettings(dataDir, saved);
   expect(loadHubSettings(dataDir, diagnostics)).toEqual(saved);
+});
+
+const AZURE = {
+  label: "School Azure",
+  endpoint: {
+    kind: "openai-compatible",
+    baseUrl: "https://school.openai.azure.com/openai/v1",
+  },
+  models: [{ id: "gpt-5", acceptsImages: true }],
+};
+const CLAUDE = {
+  label: "Claude",
+  endpoint: { kind: "anthropic" },
+  models: [
+    { id: "claude-opus-5-5", acceptsImages: true },
+    { id: "claude-haiku-4-5", acceptsImages: false },
+  ],
+};
+const WITH_AI = {
+  ...CHOSEN,
+  aiProviders: [AZURE, CLAUDE],
+  defaultAiProvider: {
+    kind: "chosen",
+    provider: "Claude",
+    model: "claude-haiku-4-5",
+  },
+};
+
+test("AI Providers of both kinds and a Default AI Provider are accepted", () => {
+  expect(HubSettingsSchema.parse(WITH_AI)).toEqual(WITH_AI);
+});
+
+test.each([
+  ["an unknown kind", { ...CLAUDE, endpoint: { kind: "gemini" } }],
+  [
+    "a Base URL on an Anthropic provider",
+    {
+      ...CLAUDE,
+      endpoint: { kind: "anthropic", baseUrl: "https://example.com" },
+    },
+  ],
+  [
+    "an openai-compatible provider with no Base URL",
+    { ...CLAUDE, endpoint: { kind: "openai-compatible" } },
+  ],
+  [
+    "a Base URL that is not a URL",
+    { ...CLAUDE, endpoint: { kind: "openai-compatible", baseUrl: "school" } },
+  ],
+  ["a blank label", { ...CLAUDE, label: " " }],
+  ["an empty model list", { ...CLAUDE, models: [] }],
+  [
+    "a blank model id",
+    { ...CLAUDE, models: [{ id: " ", acceptsImages: false }] },
+  ],
+  ["a key", { ...CLAUDE, apiKey: "sk-secret" }],
+])("an AI Provider with %s is refused", (_, provider) => {
+  const settings = { ...WITH_AI, aiProviders: [AZURE, provider] };
+  expect(HubSettingsSchema.safeParse(settings).success).toBe(false);
+});
+
+test.each([
+  [
+    "duplicate labels",
+    { ...WITH_AI, aiProviders: [AZURE, { ...CLAUDE, label: AZURE.label }] },
+  ],
+  [
+    "a default naming a missing provider",
+    {
+      ...WITH_AI,
+      defaultAiProvider: { kind: "chosen", provider: "Gone", model: "gpt-5" },
+    },
+  ],
+  [
+    "a default naming a model its provider lacks",
+    {
+      ...WITH_AI,
+      defaultAiProvider: { kind: "chosen", provider: "Claude", model: "gpt-5" },
+    },
+  ],
+  ["no Default AI Provider", { ...CHOSEN, defaultAiProvider: undefined }],
+])("Hub Settings with %s are refused", (_, settings) => {
+  expect(HubSettingsSchema.safeParse(settings).success).toBe(false);
 });

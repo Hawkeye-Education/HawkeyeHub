@@ -14,6 +14,8 @@ export const FIRST_LAUNCH_SETTINGS: HubSettings = {
   theme: { kind: "company" },
   colourScheme: "system",
   displayLanguage: { kind: "system" },
+  aiProviders: [],
+  defaultAiProvider: { kind: "none" },
 };
 
 /** Writes the whole file, through a temporary file, so a crash mid-write never leaves half of it. */

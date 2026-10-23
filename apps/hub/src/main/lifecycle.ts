@@ -652,9 +652,12 @@ export function createLifecycle({
       colourScheme: stored.colourScheme,
       plugins: listing.plugins.map(({ plugin }) => pluginRefOf(plugin)),
       // ponytail: uv's interpreters are not listed yet; read `uv/python` if support asks. There is
-      // no AI Provider or Auth Provider yet.
+      // no Auth Provider yet.
       pythonVersions: [],
-      aiProviders: [],
+      aiProviders: stored.aiProviders.map(({ label, endpoint }) => ({
+        label,
+        kind: endpoint.kind,
+      })),
       authProvider: { kind: "none" },
     }),
     answer: (answer) => {
