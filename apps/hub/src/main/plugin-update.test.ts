@@ -107,9 +107,9 @@ function hubWith(fetch: RegistryFetch) {
     systemLanguage: "en-HK",
     installed: loadInstalledPlugins(dataDir).loaded,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
-    save: () => {
-      // Never saved here.
-    },
+    keyedAtStart: new Set(),
+    // Never saved here.
+    save: () => new Set(),
     unknownTheme: () => {
       // Only Themes this Hub has.
     },

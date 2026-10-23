@@ -27,6 +27,7 @@ import {
   SHOW_CATALOGUE,
   SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
+  TYPE_AI_KEY,
   UNINSTALL_PLUGIN,
   type DisplayLanguage,
   type HubChromeDialog,
@@ -34,7 +35,11 @@ import {
 import { z } from "zod";
 import { bundleFileName, type Diagnostics } from "./diagnostics";
 import { errorCode } from "./error-code";
-import { HubSettingsSchema } from "../shared/hub-settings";
+import {
+  AiProviderRowSchema,
+  HubSettingsFormSchema,
+} from "../shared/hub-settings";
+import { parseAiProviderKey } from "./ai-keys";
 import type { HubMode } from "./hub-mode";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
 import type { Lifecycle } from "./lifecycle";
@@ -193,7 +198,14 @@ export function openHubWindow(
   });
   ipcMain.handle(EDIT_SETTINGS, (event, form: unknown) => {
     fromHubChrome(EDIT_SETTINGS, event.sender);
-    lifecycle.editSettings(HubSettingsSchema.parse(form));
+    lifecycle.editSettings(HubSettingsFormSchema.parse(form));
+  });
+  ipcMain.handle(TYPE_AI_KEY, (event, row: unknown, key: unknown) => {
+    fromHubChrome(TYPE_AI_KEY, event.sender);
+    lifecycle.typeAiKey(
+      AiProviderRowSchema.parse(row),
+      parseAiProviderKey(z.string().parse(key)),
+    );
   });
   ipcMain.handle(SAVE_SETTINGS, (event) => {
     fromHubChrome(SAVE_SETTINGS, event.sender);

@@ -16,6 +16,7 @@ import {
   SHOW_CATALOGUE,
   SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
+  TYPE_AI_KEY,
   UNINSTALL_PLUGIN,
   type HubChromeApi,
   type HubChromeSnapshot,
@@ -49,6 +50,9 @@ const api: HubChromeApi = {
   },
   editSettings(form) {
     void ipcRenderer.invoke(EDIT_SETTINGS, form);
+  },
+  typeAiKey(row, key) {
+    void ipcRenderer.invoke(TYPE_AI_KEY, row, key);
   },
   saveSettings() {
     void ipcRenderer.invoke(SAVE_SETTINGS);

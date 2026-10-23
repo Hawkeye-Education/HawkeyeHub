@@ -19,6 +19,28 @@ export const AiProviderLabelSchema = NonBlank.transform(
   (raw) => raw as AiProviderLabel,
 );
 
+// The settings the form holds just as they are stored.
+const APPEARANCE_AND_LANGUAGE = {
+  theme: z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("company") }),
+    z.strictObject({
+      kind: z.literal("chosen"),
+      name: z
+        .string()
+        .regex(KEBAB_CASE)
+        .transform((raw) => raw as ThemeName),
+    }),
+  ]),
+  colourScheme: z.enum(COLOUR_SCHEMES),
+  displayLanguage: z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("system") }),
+    z.strictObject({
+      kind: z.literal("chosen"),
+      language: z.enum(DISPLAY_LANGUAGES),
+    }),
+  ]),
+};
+
 /**
  * Strict throughout: a field this Hub does not know makes the whole value invalid. Every field
  * always holds a value: following the company or the OS is a value of its own, never an absent
@@ -27,24 +49,7 @@ export const AiProviderLabelSchema = NonBlank.transform(
  */
 export const HubSettingsSchema = z
   .strictObject({
-    theme: z.discriminatedUnion("kind", [
-      z.strictObject({ kind: z.literal("company") }),
-      z.strictObject({
-        kind: z.literal("chosen"),
-        name: z
-          .string()
-          .regex(KEBAB_CASE)
-          .transform((raw) => raw as ThemeName),
-      }),
-    ]),
-    colourScheme: z.enum(COLOUR_SCHEMES),
-    displayLanguage: z.discriminatedUnion("kind", [
-      z.strictObject({ kind: z.literal("system") }),
-      z.strictObject({
-        kind: z.literal("chosen"),
-        language: z.enum(DISPLAY_LANGUAGES),
-      }),
-    ]),
+    ...APPEARANCE_AND_LANGUAGE,
     // An AI Provider's key is never here: it lives in the key store (`main/ai-keys.ts`).
     aiProviders: z.array(
       z.strictObject({
@@ -94,3 +99,58 @@ export const HubSettingsSchema = z
 export type HubSettings = z.infer<typeof HubSettingsSchema>;
 export type AiProvider = HubSettings["aiProviders"][number];
 export type AiProviderKind = AiProvider["endpoint"]["kind"];
+
+/** A provider's row in the Settings form, so a key typed for it follows it through edits. */
+export type AiProviderRow = Branded<string, "AiProviderRow">;
+export const AiProviderRowSchema = NonBlank.transform(
+  (raw) => raw as AiProviderRow,
+);
+
+/**
+ * The Hub Settings form, as main holds it while staff edit and the Hub Chrome draws it. AI
+ * Providers are drafts, as typed, so they may be invalid: Save refuses the form until it parses as
+ * `HubSettings`. `was` is the stored provider a row was edited from, so a rename moves its key. The
+ * Default AI Provider names its provider by row, so renaming the provider keeps it. No key is here.
+ */
+export const HubSettingsFormSchema = z.strictObject({
+  ...APPEARANCE_AND_LANGUAGE,
+  aiProviders: z
+    .array(
+      z.strictObject({
+        row: AiProviderRowSchema,
+        was: z.discriminatedUnion("kind", [
+          z.strictObject({ kind: z.literal("added") }),
+          z.strictObject({
+            kind: z.literal("stored"),
+            label: AiProviderLabelSchema,
+          }),
+        ]),
+        label: z.string(),
+        endpoint: z.discriminatedUnion("kind", [
+          z.strictObject({
+            kind: z.literal("openai-compatible"),
+            baseUrl: z.string(),
+          }),
+          z.strictObject({ kind: z.literal("anthropic") }),
+        ]),
+        models: z.array(
+          z.strictObject({ id: z.string(), acceptsImages: z.boolean() }),
+        ),
+      }),
+    )
+    .refine(
+      (rows) => new Set(rows.map(({ row }) => row)).size === rows.length,
+      "AI Provider rows repeat",
+    ),
+  defaultAiProvider: z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("none") }),
+    z.strictObject({
+      kind: z.literal("chosen"),
+      provider: AiProviderRowSchema,
+      model: z.string(),
+    }),
+  ]),
+});
+
+export type HubSettingsForm = z.infer<typeof HubSettingsFormSchema>;
+export type AiProviderDraft = HubSettingsForm["aiProviders"][number];

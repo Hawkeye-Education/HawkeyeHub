@@ -2,7 +2,17 @@
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { app, Menu, nativeTheme, net, protocol, session } from "electron";
+import { isDeepStrictEqual } from "node:util";
+import {
+  app,
+  Menu,
+  nativeTheme,
+  net,
+  protocol,
+  safeStorage,
+  session,
+} from "electron";
+import { keysAfterSave, loadAiKeys, saveAiKeys } from "./ai-keys";
 import { killBackendsNow } from "./backend";
 import { openDiagnostics } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
@@ -286,9 +296,18 @@ function runHub(): void {
       systemLanguage: displayLanguageFor(app.getPreferredSystemLanguages()),
       installed: installed.loaded,
       storedAtStart: settings,
-      save: (saved) => {
+      keyedAtStart: new Set(loadAiKeys(hubDataDir, safeStorage).keys()),
+      save: (saved, providerKeys) => {
+        const storedKeys = loadAiKeys(hubDataDir, safeStorage);
+        const keys = keysAfterSave(storedKeys, providerKeys);
+        // Written only when a key changed: safeStorage's own key reaches disk only some time after
+        // first use (seen: a Hub killed after a Save could not decrypt the file on its next start).
+        if (!isDeepStrictEqual(keys, storedKeys)) {
+          saveAiKeys(hubDataDir, safeStorage, keys);
+        }
         saveHubSettings(hubDataDir, saved);
         applyColourScheme(saved);
+        return new Set(keys.keys());
       },
       unknownTheme: (name) => {
         diagnostics.recordHubEvent({ kind: "theme-unknown", name });

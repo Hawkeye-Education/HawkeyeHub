@@ -15,7 +15,11 @@ import type {
   HubSettings,
   ThemeName,
 } from "../shared/hub-chrome-ipc";
+import type { AiProviderDraft, AiProviderRow } from "../shared/hub-settings";
+import { keysAfterSave, parseAiProviderKey, type AiKeys } from "./ai-keys";
 import { FIRST_LAUNCH_SETTINGS } from "./hub-settings";
+import type { AiProviderLabel } from "./ids";
+import { formOf } from "./settings-form";
 import {
   accessOf,
   createLifecycle,
@@ -57,9 +61,8 @@ const NOT_BUSY: Busy = { kind: "not-busy" };
 // Dev mode: no Catalogue and no Registry checks. Most tests are not about the Catalogue.
 const DEV_MODE: LifecycleDeps["registry"] = { kind: "off" };
 const HUB_VERSION = parseHubVersion("1.4.2");
-const ignoreSave = (): void => {
-  // Most tests never save.
-};
+// Most tests never save.
+const ignoreSave = () => new Set<AiProviderLabel>();
 const ignoreUnknownTheme = (): void => {
   // Most tests store only Themes this Hub has.
 };
@@ -77,6 +80,7 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
       systemLanguage: "en-HK",
       installed: plugins,
       storedAtStart: FIRST_LAUNCH_SETTINGS,
+      keyedAtStart: new Set(),
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
       registry: DEV_MODE,
@@ -122,6 +126,7 @@ test("in zh-HK the snapshot uses zh-HK names, falls back to English, and sorts b
       systemLanguage: "zh-HK",
       installed: plugins,
       storedAtStart: FIRST_LAUNCH_SETTINGS,
+      keyedAtStart: new Set(),
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
       registry: DEV_MODE,
@@ -138,6 +143,7 @@ test("showing settings keeps open Plugins open with the front one still in front
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -155,7 +161,9 @@ test("showing settings keeps open Plugins open with the front one still in front
     ...before,
     content: {
       kind: "settings",
-      form: FIRST_LAUNCH_SETTINGS,
+      form: formOf(FIRST_LAUNCH_SETTINGS),
+      keysSet: [],
+      savable: true,
       languageNoteShowing: false,
     },
   });
@@ -166,16 +174,21 @@ const DARK: HubSettings = { ...FIRST_LAUNCH_SETTINGS, colourScheme: "dark" };
 const LIGHT: HubSettings = { ...FIRST_LAUNCH_SETTINGS, colourScheme: "light" };
 
 /** A Lifecycle showing settings, starting from `stored`, and the settings each Save saved. */
-function inSettings(stored: HubSettings) {
+function inSettings(stored: HubSettings, storedKeys: AiKeys = new Map()) {
   const saved: HubSettings[] = [];
   const unknownThemes: string[] = [];
+  // The key store, as main's Save writes it.
+  let keys = storedKeys;
   const lifecycle = createLifecycle({
     hubVersion: HUB_VERSION,
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: stored,
-    save: (settings) => {
+    keyedAtStart: new Set(keys.keys()),
+    save: (settings, providerKeys) => {
       saved.push(settings);
+      keys = keysAfterSave(keys, providerKeys);
+      return new Set(keys.keys());
     },
     unknownTheme: (name) => {
       unknownThemes.push(name);
@@ -183,7 +196,7 @@ function inSettings(stored: HubSettings) {
     registry: DEV_MODE,
   });
   lifecycle.showSettings();
-  return { lifecycle, saved, unknownThemes };
+  return { lifecycle, saved, unknownThemes, keys: () => keys };
 }
 
 const themeNamed = (name: string): HubSettings["theme"] => ({
@@ -204,7 +217,7 @@ test("on first launch the company's Theme, Hawkeye until the Company Configurati
 test("saving a chosen Theme stores it by name and makes it the Theme", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
   const chosen = { ...FIRST_LAUNCH_SETTINGS, theme: themeNamed("hawkeye") };
-  lifecycle.editSettings(chosen);
+  lifecycle.editSettings(formOf(chosen));
   lifecycle.saveSettings();
   expect(saved).toEqual([chosen]);
   expect(lifecycle.snapshot().theme).toBe("hawkeye");
@@ -216,7 +229,7 @@ test("a stored Theme this Hub does not have resolves to Hawkeye, is reported onc
   const { lifecycle, saved, unknownThemes } = inSettings(stored);
   expect(lifecycle.snapshot().theme).toBe("hawkeye");
 
-  lifecycle.editSettings({ ...stored, colourScheme: "dark" });
+  lifecycle.editSettings(formOf({ ...stored, colourScheme: "dark" }));
   lifecycle.saveSettings();
   lifecycle.snapshot();
   expect(unknownThemes).toEqual(["aurora"]);
@@ -229,7 +242,9 @@ test("settings show what is stored", () => {
   const { lifecycle } = inSettings(DARK);
   expect(lifecycle.snapshot().content).toEqual({
     kind: "settings",
-    form: DARK,
+    form: formOf(DARK),
+    keysSet: [],
+    savable: true,
     languageNoteShowing: false,
   });
 });
@@ -241,10 +256,12 @@ test("editing the form changes only the form, and saves nothing", () => {
     seen.push(lifecycle.snapshot().content);
   });
 
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   const edited = {
     kind: "settings",
-    form: DARK,
+    form: formOf(DARK),
+    keysSet: [],
+    savable: true,
     languageNoteShowing: false,
   };
   expect(lifecycle.snapshot().content).toEqual(edited);
@@ -254,13 +271,15 @@ test("editing the form changes only the form, and saves nothing", () => {
 
 test("Save saves the form once and makes it what is stored", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
 
   lifecycle.saveSettings();
   expect(saved).toEqual([DARK]);
   expect(lifecycle.snapshot().content).toEqual({
     kind: "settings",
-    form: DARK,
+    form: formOf(DARK),
+    keysSet: [],
+    savable: true,
     languageNoteShowing: false,
   });
   expect(lifecycle.storedSettings()).toEqual(DARK);
@@ -273,8 +292,8 @@ test("Save does nothing when the form is what is stored, even after edits that u
   const { lifecycle, saved } = inSettings(DARK);
   const before = lifecycle.snapshot();
   lifecycle.saveSettings();
-  lifecycle.editSettings(LIGHT);
-  lifecycle.editSettings({ ...DARK });
+  lifecycle.editSettings(formOf(LIGHT));
+  lifecycle.editSettings(formOf({ ...DARK }));
   lifecycle.saveSettings();
 
   expect(saved).toEqual([]);
@@ -283,12 +302,14 @@ test("Save does nothing when the form is what is stored, even after edits that u
 
 test("Cancel puts the form back to what is stored and stays in settings", () => {
   const { lifecycle, saved } = inSettings(DARK);
-  lifecycle.editSettings(LIGHT);
+  lifecycle.editSettings(formOf(LIGHT));
 
   lifecycle.cancelSettings();
   expect(lifecycle.snapshot().content).toEqual({
     kind: "settings",
-    form: DARK,
+    form: formOf(DARK),
+    keysSet: [],
+    savable: true,
     languageNoteShowing: false,
   });
   expect(saved).toEqual([]);
@@ -296,8 +317,153 @@ test("Cancel puts the form back to what is stored and stays in settings", () => 
 
 test("a fresh snapshot, as a reloaded Hub Chrome fetches, still holds the unsaved form", () => {
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(LIGHT);
-  expect(lifecycle.snapshot().content).toMatchObject({ form: LIGHT });
+  lifecycle.editSettings(formOf(LIGHT));
+  expect(lifecycle.snapshot().content).toMatchObject({ form: formOf(LIGHT) });
+});
+
+// AI Providers in Hub Settings (#106).
+
+const row = (raw: string) => raw as AiProviderRow;
+const label = parseAiProviderLabel;
+const key = parseAiProviderKey;
+const OLLAMA: AiProviderDraft = {
+  row: row("new"),
+  was: { kind: "added" },
+  label: "Ollama",
+  endpoint: { kind: "openai-compatible", baseUrl: "http://localhost:11434/v1" },
+  models: [{ id: "llama4", acceptsImages: false }],
+};
+const WITH_CLAUDE: HubSettings = {
+  ...FIRST_LAUNCH_SETTINGS,
+  aiProviders: [
+    {
+      label: label("Claude"),
+      endpoint: { kind: "anthropic" },
+      models: [{ id: "claude-opus-5-5", acceptsImages: true }],
+    },
+  ],
+  defaultAiProvider: {
+    kind: "chosen",
+    provider: label("Claude"),
+    model: "claude-opus-5-5",
+  },
+};
+const CLAUDE_KEY = new Map([[label("Claude"), key("sk-ant-stored")]]);
+
+test("a provider added with a key is saved, its key goes to the key store, and the form shows only that a key is set", () => {
+  const { lifecycle, saved, keys } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings({
+    ...formOf(FIRST_LAUNCH_SETTINGS),
+    aiProviders: [OLLAMA],
+  });
+  lifecycle.typeAiKey(row("new"), key("sk-typed"));
+  expect(lifecycle.snapshot().content).toMatchObject({
+    keysSet: ["new"],
+    savable: true,
+  });
+  expect(JSON.stringify(lifecycle.snapshot())).not.toContain("sk-typed");
+
+  lifecycle.saveSettings();
+  expect(saved).toEqual([
+    {
+      ...FIRST_LAUNCH_SETTINGS,
+      aiProviders: [
+        {
+          label: "Ollama",
+          endpoint: OLLAMA.endpoint,
+          models: OLLAMA.models,
+        },
+      ],
+    },
+  ]);
+  expect(keys()).toEqual(new Map([["Ollama", "sk-typed"]]));
+  expect(lifecycle.snapshot().content).toMatchObject({
+    form: { aiProviders: [{ was: { kind: "stored", label: "Ollama" } }] },
+    keysSet: ["0"],
+  });
+});
+
+test("a stored provider shows its key as set, and renaming it moves the key and keeps it the default", () => {
+  const { lifecycle, saved, keys } = inSettings(WITH_CLAUDE, CLAUDE_KEY);
+  const form = formOf(WITH_CLAUDE);
+  expect(lifecycle.snapshot().content).toMatchObject({ keysSet: ["0"] });
+  expect(JSON.stringify(lifecycle.snapshot())).not.toContain("sk-ant-stored");
+
+  lifecycle.editSettings({
+    ...form,
+    aiProviders: form.aiProviders.map((each) => ({
+      ...each,
+      label: "Anthropic",
+    })),
+  });
+  lifecycle.saveSettings();
+  expect(saved[0]?.defaultAiProvider).toEqual({
+    kind: "chosen",
+    provider: "Anthropic",
+    model: "claude-opus-5-5",
+  });
+  expect(keys()).toEqual(new Map([["Anthropic", "sk-ant-stored"]]));
+});
+
+test("a typed key replaces the stored one", () => {
+  const { lifecycle, keys } = inSettings(WITH_CLAUDE, CLAUDE_KEY);
+  lifecycle.typeAiKey(row("0"), key("sk-ant-new"));
+  lifecycle.saveSettings();
+  expect(keys()).toEqual(new Map([["Claude", "sk-ant-new"]]));
+});
+
+test("removing the default provider sets the default back to none, and its key goes on Save", () => {
+  const { lifecycle, saved, keys } = inSettings(WITH_CLAUDE, CLAUDE_KEY);
+  lifecycle.editSettings({ ...formOf(WITH_CLAUDE), aiProviders: [] });
+  expect(lifecycle.snapshot().content).toMatchObject({
+    form: { defaultAiProvider: { kind: "none" } },
+    keysSet: [],
+  });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([FIRST_LAUNCH_SETTINGS]);
+  expect(keys()).toEqual(new Map());
+});
+
+test("Save refuses a form that is not valid Hub Settings, and saves nothing", () => {
+  const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings({
+    ...formOf(FIRST_LAUNCH_SETTINGS),
+    aiProviders: [{ ...OLLAMA, label: " ", models: [] }],
+  });
+  expect(lifecycle.snapshot().content).toMatchObject({ savable: false });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([]);
+  expect(lifecycle.snapshot().content).toMatchObject({ savable: false });
+});
+
+test("Cancel drops AI Provider edits and typed keys", () => {
+  const { lifecycle, saved } = inSettings(WITH_CLAUDE);
+  lifecycle.typeAiKey(row("0"), key("sk-ant-typed"));
+  expect(lifecycle.snapshot().content).toMatchObject({ keysSet: ["0"] });
+  lifecycle.cancelSettings();
+  expect(lifecycle.snapshot().content).toMatchObject({
+    form: formOf(WITH_CLAUDE),
+    keysSet: [],
+  });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([]);
+});
+
+test("a typed key alone is an unsaved edit the Discard dialog asks about", () => {
+  const { lifecycle } = inSettings(WITH_CLAUDE);
+  lifecycle.typeAiKey(row("0"), key("sk-ant-typed"));
+  lifecycle.open(id("attendance"));
+  expect(lifecycle.snapshot().dialog).toEqual({ kind: "discard-changes" });
+  lifecycle.answer("discard");
+  lifecycle.showSettings();
+  expect(lifecycle.snapshot().content).toMatchObject({ keysSet: [] });
+});
+
+test("typing a key for a row the form does not have throws", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  expect(() => {
+    lifecycle.typeAiKey(row("0"), key("sk"));
+  }).toThrow();
 });
 
 test("picking a Plugin while settings show leaves them and brings that Plugin forward", () => {
@@ -306,6 +472,7 @@ test("picking a Plugin while settings show leaves them and brings that Plugin fo
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -328,6 +495,7 @@ test("settings stay showing while the Plugins behind them close", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -348,12 +516,13 @@ test("editing, saving or cancelling while settings are not showing throws", () =
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
   });
   expect(() => {
-    lifecycle.editSettings(DARK);
+    lifecycle.editSettings(formOf(DARK));
   }).toThrow();
   expect(() => {
     lifecycle.saveSettings();
@@ -374,6 +543,7 @@ test("opening Plugins brings each forward, and opening an open one brings it for
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -400,6 +570,7 @@ test("closing the foreground Plugin brings forward the most recently foregrounde
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -423,6 +594,7 @@ test("closing a background Plugin leaves the foreground one in front", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -443,6 +615,7 @@ test("every change is announced", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -465,6 +638,7 @@ test("a closed Plugin is closing until its close finishes, cannot be reopened un
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -497,6 +671,7 @@ test("finishing the close of a Plugin that is not closing throws", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -513,6 +688,7 @@ test("a staff close of a Plugin that is not Busy closes it without asking", () =
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -533,6 +709,7 @@ test("a staff close of a Busy Plugin asks with its latest reason; Keep open leav
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -564,6 +741,7 @@ test("Close anyway closes the Busy Plugin, and closing clears its Busy", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -591,6 +769,7 @@ test("a Plugin that clears Busy closes without asking, but a dialog already up s
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -620,6 +799,7 @@ test("a Busy Plugin that closes abnormally while its dialog is up takes the dial
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -641,6 +821,7 @@ test("a Busy Plugin that closes abnormally while the quit dialog is up leaves it
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -670,6 +851,7 @@ test("a Busy reason that changes while its dialog is up leaves the dialog as it 
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -690,6 +872,7 @@ test("Busy from a Plugin that is not open is ignored: it arrived as the Plugin c
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -710,6 +893,7 @@ test("a quit with no Busy Plugin goes ahead without asking", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -730,6 +914,7 @@ test("a quit with Busy Plugins asks once, listing each by name; Keep open stays,
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -771,6 +956,7 @@ test("a quit while a Busy close is asking asks about the quit instead", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -789,6 +975,7 @@ test("an answer that is not one of the pending dialog's buttons, or with no dial
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -810,6 +997,7 @@ test("opening a Plugin that is not installed, or closing one that is not open, t
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -862,6 +1050,7 @@ test("the snapshot marks blocked Plugins, and opening one throws", () => {
       installed("future", "Future", { hubApi: "^99.0.0" }),
     ],
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -890,6 +1079,7 @@ test("installed answers the installed Plugin with an id, and throws for one that
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -900,26 +1090,26 @@ test("installed answers the installed Plugin with an id, and throws for one that
 
 test("picking a Plugin with unsaved edits asks first; Keep editing stays with the edits", () => {
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
 
   lifecycle.open(id("attendance"));
   expect(lifecycle.snapshot()).toMatchObject({
     open: [],
-    content: { kind: "settings", form: DARK },
+    content: { kind: "settings", form: formOf(DARK) },
     dialog: { kind: "discard-changes" },
   });
 
   lifecycle.answer("keep-editing");
   expect(lifecycle.snapshot()).toMatchObject({
     open: [],
-    content: { kind: "settings", form: DARK },
+    content: { kind: "settings", form: formOf(DARK) },
     dialog: null,
   });
 });
 
 test("Discard drops the edits and opens the Plugin that was picked", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   lifecycle.open(id("attendance"));
 
   lifecycle.answer("discard");
@@ -931,15 +1121,15 @@ test("Discard drops the edits and opens the Plugin that was picked", () => {
   });
   lifecycle.showSettings();
   expect(lifecycle.snapshot().content).toMatchObject({
-    form: FIRST_LAUNCH_SETTINGS,
+    form: formOf(FIRST_LAUNCH_SETTINGS),
   });
   expect(saved).toEqual([]);
 });
 
 test("picking a Plugin after edits that were undone or saved asks nothing", () => {
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
-  lifecycle.editSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(formOf(DARK));
+  lifecycle.editSettings(formOf(FIRST_LAUNCH_SETTINGS));
   lifecycle.open(id("attendance"));
   expect(lifecycle.snapshot()).toMatchObject({
     open: ["attendance"],
@@ -947,7 +1137,7 @@ test("picking a Plugin after edits that were undone or saved asks nothing", () =
   });
 
   lifecycle.showSettings();
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   lifecycle.saveSettings();
   lifecycle.open(id("class-timer"));
   expect(lifecycle.snapshot()).toMatchObject({
@@ -962,12 +1152,13 @@ test("picking a blocked Plugin with unsaved edits throws rather than asking", ()
     systemLanguage: "en-HK",
     installed: [installed("future", "Future", { hubApi: "^99.0.0" })],
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
   });
   lifecycle.showSettings();
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   expect(() => {
     lifecycle.open(id("future"));
   }).toThrow();
@@ -976,7 +1167,7 @@ test("picking a blocked Plugin with unsaved edits throws rather than asking", ()
 
 test("quitting with unsaved edits asks first; Keep editing stays, Discard quits when nothing is Busy", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   let quits = 0;
   const quit = () => {
     quits += 1;
@@ -987,7 +1178,7 @@ test("quitting with unsaved edits asks first; Keep editing stays, Discard quits 
   lifecycle.answer("keep-editing");
   expect(quits).toBe(0);
   expect(lifecycle.snapshot()).toMatchObject({
-    content: { kind: "settings", form: DARK },
+    content: { kind: "settings", form: formOf(DARK) },
     dialog: null,
   });
 
@@ -995,7 +1186,7 @@ test("quitting with unsaved edits asks first; Keep editing stays, Discard quits 
   lifecycle.answer("discard");
   expect(quits).toBe(1);
   expect(lifecycle.snapshot()).toMatchObject({
-    content: { form: FIRST_LAUNCH_SETTINGS },
+    content: { form: formOf(FIRST_LAUNCH_SETTINGS) },
     dialog: null,
   });
   expect(saved).toEqual([]);
@@ -1006,7 +1197,7 @@ test("Discard on quit goes on to the Busy dialog when a Plugin is Busy", () => {
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
   lifecycle.showSettings();
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   let quits = 0;
 
   lifecycle.requestQuit(() => {
@@ -1035,7 +1226,7 @@ test("quitting from settings with no unsaved edits asks nothing", () => {
 
 test("the Discard dialog's answers answer only it", () => {
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   lifecycle.open(id("attendance"));
   expect(() => {
     lifecycle.answer("keep-open");
@@ -1062,6 +1253,7 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: IN_CHINESE,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -1078,6 +1270,7 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
       systemLanguage: "zh-HK",
       installed: plugins,
       storedAtStart: FIRST_LAUNCH_SETTINGS,
+      keyedAtStart: new Set(),
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
       registry: DEV_MODE,
@@ -1087,7 +1280,7 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
 
 test("saving a Display Language switches the Hub Chrome and re-sorts Plugin names, with no note when no Plugin is open", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(IN_CHINESE);
+  lifecycle.editSettings(formOf(IN_CHINESE));
   expect(lifecycle.snapshot().displayLanguage).toBe("en-HK");
 
   lifecycle.saveSettings();
@@ -1107,7 +1300,7 @@ test("saving a Display Language with a Plugin open shows the note, until staff l
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
   lifecycle.open(id("attendance"));
   lifecycle.showSettings();
-  lifecycle.editSettings(IN_CHINESE);
+  lifecycle.editSettings(formOf(IN_CHINESE));
   lifecycle.saveSettings();
   expect(lifecycle.snapshot().content).toMatchObject({
     languageNoteShowing: true,
@@ -1125,7 +1318,7 @@ test("the language note goes once the last open Plugin closes while settings sho
   lifecycle.open(id("attendance"));
   lifecycle.open(id("class-timer"));
   lifecycle.showSettings();
-  lifecycle.editSettings(IN_CHINESE);
+  lifecycle.editSettings(formOf(IN_CHINESE));
   lifecycle.saveSettings();
 
   lifecycle.close(id("class-timer"));
@@ -1160,7 +1353,14 @@ test("the system description holds what is stored and drawn, and the installed P
     ],
   };
   const { lifecycle } = inSettings(stored);
-  lifecycle.editSettings({ ...stored, colourScheme: "dark", aiProviders: [] });
+  lifecycle.editSettings(
+    formOf({
+      ...stored,
+      colourScheme: "dark",
+      aiProviders: [],
+      defaultAiProvider: { kind: "none" },
+    }),
+  );
   const os = { name: "win32", version: "10.0.19045", arch: "x64" };
   expect(lifecycle.systemDescription(os)).toEqual({
     hubVersion: "1.4.2",
@@ -1186,7 +1386,7 @@ test("saving anything but the Display Language with a Plugin open shows no note"
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
   lifecycle.open(id("attendance"));
   lifecycle.showSettings();
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   lifecycle.saveSettings();
   expect(lifecycle.snapshot().content).toMatchObject({
     languageNoteShowing: false,
@@ -1197,10 +1397,12 @@ test("choosing the language the OS already gives changes nothing a Plugin sees, 
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
   lifecycle.open(id("attendance"));
   lifecycle.showSettings();
-  lifecycle.editSettings({
-    ...FIRST_LAUNCH_SETTINGS,
-    displayLanguage: { kind: "chosen", language: "en-HK" },
-  });
+  lifecycle.editSettings(
+    formOf({
+      ...FIRST_LAUNCH_SETTINGS,
+      displayLanguage: { kind: "chosen", language: "en-HK" },
+    }),
+  );
   lifecycle.saveSettings();
   expect(lifecycle.snapshot().content).toMatchObject({
     languageNoteShowing: false,
@@ -1253,6 +1455,7 @@ function withRegistry(language: "en-HK" | "zh-HK") {
     systemLanguage: language,
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: {
@@ -1463,6 +1666,7 @@ test("dev mode has no Catalogue: showing it, retrying or answering a check throw
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -1484,11 +1688,11 @@ test("settings and the Catalogue replace each other; leaving settings with unsav
   lifecycle.showCatalogue();
   lifecycle.showSettings();
   expect(lifecycle.snapshot().content).toMatchObject({ kind: "settings" });
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
 
   lifecycle.showCatalogue();
   expect(lifecycle.snapshot()).toMatchObject({
-    content: { kind: "settings", form: DARK },
+    content: { kind: "settings", form: formOf(DARK) },
     dialog: { kind: "discard-changes" },
   });
 
