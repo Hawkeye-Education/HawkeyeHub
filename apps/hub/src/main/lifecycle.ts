@@ -14,6 +14,7 @@ import {
   KEEP_ANSWERS,
   type BusyPlugin,
   type BusyReason,
+  type CurrentModel,
   type Catalogue,
   type CatalogueJob,
   type DialogAnswer,
@@ -480,12 +481,37 @@ export function createLifecycle({
     }
     return talk;
   };
+  // The Default AI Provider's model, for every Panel until per-Plugin choices (#109).
+  const currentModel = (): CurrentModel => {
+    const chosen = stored.defaultAiProvider;
+    if (chosen.kind === "none") return { kind: "none" };
+    const acceptsImages = stored.aiProviders
+      .find(({ label }) => label === chosen.provider)
+      ?.models.find(({ id }) => id === chosen.model)?.acceptsImages;
+    // HubSettingsSchema lets the Default name only a configured provider and model.
+    if (acceptsImages === undefined) {
+      throw new Error("The Default AI Provider names no configured model");
+    }
+    return { ...chosen, acceptsImages };
+  };
   const panelOf = (id: PluginId): AssistantPanel => {
     const talk = talks.get(id);
     if (talk === undefined) return { kind: "none" };
-    return panelsOpen.has(id)
-      ? { kind: "open", conversation: talk.conversation }
-      : { kind: "closed" };
+    if (!panelsOpen.has(id)) return { kind: "closed" };
+    const { assistant } = installedPlugin(id).plugin.manifest;
+    return {
+      kind: "open",
+      conversation: talk.conversation,
+      // A talk is only ever made for a Plugin whose Assistant is enabled.
+      templates:
+        assistant.kind === "enabled"
+          ? assistant.templates.map(({ label, text }) => ({
+              label: displayTextIn(label, listing.language),
+              text: displayTextIn(text, listing.language),
+            }))
+          : [],
+      model: currentModel(),
+    };
   };
   // A chat dropped (by New conversation or a close) is no longer the talk's: nothing more of it
   // shows. A stopped one stays the talk's until it ends, so what had arrived is kept.

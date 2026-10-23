@@ -7,6 +7,7 @@ import type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
 import type { AiContent, AiFailure, AiMessage } from "./ai-call";
 import type { Branded } from "./branded";
 import type {
+  AiProviderLabel,
   AiProviderRow,
   HubSettings,
   HubSettingsForm,
@@ -161,7 +162,31 @@ export const ASSISTANT_PANEL_WIDTH_PX = 400;
 export type AssistantPanel =
   | { kind: "none" }
   | { kind: "closed" }
-  | { kind: "open"; conversation: Conversation };
+  | {
+      kind: "open";
+      conversation: Conversation;
+      /** The Manifest's Prompt Templates, already in the Display Language. */
+      templates: PromptTemplate[];
+      model: CurrentModel;
+    };
+
+export interface PromptTemplate {
+  label: string;
+  text: string;
+}
+
+/**
+ * The model the Panel's messages go to, or none when there is no Default AI Provider. The
+ * composer offers images only when it accepts them.
+ */
+export type CurrentModel =
+  | { kind: "none" }
+  | {
+      kind: "chosen";
+      provider: AiProviderLabel;
+      model: string;
+      acceptsImages: boolean;
+    };
 
 /**
  * An open Plugin's one conversation with its Assistant, held in main and dropped when the Plugin

@@ -1889,7 +1889,12 @@ test("Uninstall throws for a Plugin not installed or already uninstalling, and f
 const helper = installed("regex-helper", "Regex Helper", {
   assistant: {
     kind: "enabled",
-    templates: [{ label: "Draft a regex", text: "Draft a regex for …" }],
+    templates: [
+      {
+        label: { "en-HK": "Draft a regex", "zh-HK": "草擬正則" },
+        text: "Draft a regex for …",
+      },
+    ],
   },
 });
 const HELPER = id("regex-helper");
@@ -1934,15 +1939,18 @@ function drivenChat() {
 }
 
 /** A Lifecycle with the Regex Helper (which has an Assistant) and the others, and its chats. */
-function withAssistant() {
+function withAssistant(
+  stored: HubSettings = FIRST_LAUNCH_SETTINGS,
+  systemLanguage: "en-HK" | "zh-HK" = "en-HK",
+) {
   const requests: AiChatRequest[] = [];
   const chats: ReturnType<typeof drivenChat>["driven"][] = [];
   const read: string[] = [];
   const lifecycle = createLifecycle({
     hubVersion: HUB_VERSION,
-    systemLanguage: "en-HK",
+    systemLanguage,
     installed: [helper, ...plugins],
-    storedAtStart: FIRST_LAUNCH_SETTINGS,
+    storedAtStart: stored,
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
@@ -1991,6 +1999,8 @@ test("the Assistant Panel starts closed, toggles, and is remembered per Plugin, 
   expect(lifecycle.snapshot().assistant).toEqual({
     kind: "open",
     conversation: { messages: [], reply: { kind: "idle" } },
+    templates: [{ label: "Draft a regex", text: "Draft a regex for …" }],
+    model: { kind: "none" },
   });
 
   // Another Plugin in front shows its own; bringing the helper back shows it open still.
@@ -2005,6 +2015,29 @@ test("the Assistant Panel starts closed, toggles, and is remembered per Plugin, 
   expect(lifecycle.snapshot().assistant.kind).toBe("open");
   lifecycle.toggleAssistant(HELPER);
   expect(lifecycle.snapshot().assistant).toEqual({ kind: "closed" });
+});
+
+test("the open Panel offers the Plugin's Prompt Templates in the Display Language", () => {
+  const { lifecycle } = withAssistant(FIRST_LAUNCH_SETTINGS, "zh-HK");
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    templates: [{ label: "草擬正則", text: "Draft a regex for …" }],
+  });
+});
+
+test("the open Panel's current model is the Default AI Provider's, with whether it accepts images", () => {
+  const { lifecycle } = withAssistant(WITH_CLAUDE);
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    model: {
+      kind: "chosen",
+      provider: "Claude",
+      model: "claude-opus-5-5",
+      acceptsImages: true,
+    },
+  });
 });
 
 test("a message streams a reply from the Default AI Provider, with the context read at open", async () => {
