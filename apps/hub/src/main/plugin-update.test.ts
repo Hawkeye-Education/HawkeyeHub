@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { parseManifest, PluginId } from "@hawkeye-hub/plugin-format";
 import { strToU8, zipSync } from "fflate";
 import { beforeEach, expect, test } from "vitest";
+import { BUILT_IN_COMPANY_CONFIGURATION } from "./company-config";
 import { FIRST_LAUNCH_SETTINGS } from "./hub-settings";
 import { parseAbsolutePath, parseHubVersion, type AbsolutePath } from "./ids";
 import { loadInstalledPlugins } from "./installed-plugins";
@@ -107,6 +108,7 @@ function hubWith(fetch: RegistryFetch) {
     systemLanguage: "en-HK",
     installed: loadInstalledPlugins(dataDir).loaded,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: () => {
       // Never saved here.
     },

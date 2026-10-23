@@ -4,6 +4,13 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { app, Menu, nativeTheme, net, protocol, session } from "electron";
 import { killBackendsNow } from "./backend";
+import {
+  cachedCompanyConfiguration,
+  companyConfigurationUrlFrom,
+  readCompanyConfigurationFile,
+  refreshCompanyConfiguration,
+  type CompanyConfiguration,
+} from "./company-config";
 import { openDiagnostics } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
 import { loadHubSettings, saveHubSettings } from "./hub-settings";
@@ -41,9 +48,17 @@ import type { PluginId } from "@hawkeye-hub/plugin-format";
 // 0. Installed, or dev mode (PLUGIN_STANDARD §9.4). Dev mode's Plugins are loaded here, so a bad
 // one stops the Hub before it opens, with why printed in the terminal. Nothing is open yet to log
 // to, so the catch prints and exits rather than letting Electron show its error dialog.
-// The Plugins dev mode loaded ride along in its variant.
+// The Plugins dev mode loaded ride along in its variant, as does a `--company-config` file, read
+// here so a bad one stops the Hub the same way.
 let startedAs:
-  { kind: "installed" } | { kind: "dev"; plugins: InstalledPlugin[] };
+  | { kind: "installed" }
+  | {
+      kind: "dev";
+      plugins: InstalledPlugin[];
+      company:
+        | { kind: "registry" }
+        | { kind: "file"; configuration: CompanyConfiguration };
+    };
 try {
   const hubMode = parseHubMode(
     process.argv,
@@ -55,6 +70,15 @@ try {
       ? {
           kind: "dev",
           plugins: loadDevPlugins(hubMode.pluginsDir, hubMode.ids),
+          company:
+            hubMode.companyConfiguration.kind === "file"
+              ? {
+                  kind: "file",
+                  configuration: readCompanyConfigurationFile(
+                    hubMode.companyConfiguration.path,
+                  ),
+                }
+              : { kind: "registry" },
         }
       : hubMode;
 } catch (error) {
@@ -280,12 +304,20 @@ function runHub(): void {
           lifecycle.uninstallFinished(id);
         });
     };
+    // The Company Configuration (spec #99): dev mode's file as it is, or the cache now and a fetch
+    // that does not hold the window back, whose answer redraws the company Theme. Null is a real
+    // state: no `--company-config` file.
+    const companyFile =
+      startedAs.kind === "dev" && startedAs.company.kind === "file"
+        ? startedAs.company.configuration
+        : null;
     const lifecycle = createLifecycle({
       // package.json's `version`: without one Electron would answer its own version.
       hubVersion: parseHubVersion(app.getVersion()),
       systemLanguage: displayLanguageFor(app.getPreferredSystemLanguages()),
       installed: installed.loaded,
       storedAtStart: settings,
+      companyAtStart: companyFile ?? cachedCompanyConfiguration(hubDataDir),
       save: (saved) => {
         saveHubSettings(hubDataDir, saved);
         applyColourScheme(saved);
@@ -318,6 +350,17 @@ function runHub(): void {
         });
       },
     });
+    // A throw is an unhandled rejection: a Hub crash, as with installs.
+    if (companyFile === null) {
+      void refreshCompanyConfiguration({
+        url: companyConfigurationUrlFrom(registryUrl),
+        fetch: fetchFromWeb,
+        dataDir: hubDataDir,
+        diagnostics,
+      }).then((configuration) => {
+        lifecycle.companyConfigured(configuration);
+      });
+    }
     // At launch and every 4 hours (spec #91); Retry checks through the lifecycle too.
     if (startedAs.kind === "installed") {
       checkRegistryNow();

@@ -10,15 +10,20 @@ import type {
   HubSettings,
   ThemeName,
 } from "../shared/hub-chrome-ipc";
+import {
+  BUILT_IN_COMPANY_CONFIGURATION,
+  type CompanyConfiguration,
+} from "./company-config";
 import { FIRST_LAUNCH_SETTINGS } from "./hub-settings";
 import {
   accessOf,
   createLifecycle,
+  HAWKEYE,
   type Busy,
   type Lifecycle,
   type LifecycleDeps,
 } from "./lifecycle";
-import type { RegistryPlugin } from "./registry";
+import type { RegistryPlugin, WebUrl } from "./registry";
 
 function installed(
   id: string,
@@ -72,6 +77,7 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
       systemLanguage: "en-HK",
       installed: plugins,
       storedAtStart: FIRST_LAUNCH_SETTINGS,
+      companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
       registry: DEV_MODE,
@@ -117,6 +123,7 @@ test("in zh-HK the snapshot uses zh-HK names, falls back to English, and sorts b
       systemLanguage: "zh-HK",
       installed: plugins,
       storedAtStart: FIRST_LAUNCH_SETTINGS,
+      companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
       registry: DEV_MODE,
@@ -133,6 +140,7 @@ test("showing settings keeps open Plugins open with the front one still in front
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -161,7 +169,10 @@ const DARK: HubSettings = { ...FIRST_LAUNCH_SETTINGS, colourScheme: "dark" };
 const LIGHT: HubSettings = { ...FIRST_LAUNCH_SETTINGS, colourScheme: "light" };
 
 /** A Lifecycle showing settings, starting from `stored`, and the settings each Save saved. */
-function inSettings(stored: HubSettings) {
+function inSettings(
+  stored: HubSettings,
+  company: CompanyConfiguration = BUILT_IN_COMPANY_CONFIGURATION,
+) {
   const saved: HubSettings[] = [];
   const unknownThemes: string[] = [];
   const lifecycle = createLifecycle({
@@ -169,6 +180,7 @@ function inSettings(stored: HubSettings) {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: stored,
+    companyAtStart: company,
     save: (settings) => {
       saved.push(settings);
     },
@@ -186,7 +198,7 @@ const themeNamed = (name: string): HubSettings["theme"] => ({
   name: name as ThemeName,
 });
 
-test("on first launch the company's Theme, Hawkeye until the Company Configuration is fetched, is the Theme", () => {
+test("on first launch the company's Theme is the Theme", () => {
   const { lifecycle, unknownThemes } = inSettings(FIRST_LAUNCH_SETTINGS);
   expect(lifecycle.snapshot()).toMatchObject({
     theme: "hawkeye",
@@ -194,6 +206,68 @@ test("on first launch the company's Theme, Hawkeye until the Company Configurati
   });
   expect(lifecycle.storedSettings().theme).toEqual({ kind: "company" });
   expect(unknownThemes).toEqual([]);
+});
+
+const companyWith = (theme: string): CompanyConfiguration => ({
+  ...BUILT_IN_COMPANY_CONFIGURATION,
+  theme: theme as ThemeName,
+});
+
+test("a company Theme this Hub does not have draws Hawkeye, and is reported once", () => {
+  const { lifecycle, unknownThemes } = inSettings(
+    FIRST_LAUNCH_SETTINGS,
+    companyWith("aurora"),
+  );
+  expect(lifecycle.snapshot().theme).toBe("hawkeye");
+  lifecycle.editSettings(DARK);
+  lifecycle.saveSettings();
+  expect(unknownThemes).toEqual(["aurora"]);
+});
+
+test("a chosen Theme is not the company's", () => {
+  const { unknownThemes } = inSettings(
+    { ...FIRST_LAUNCH_SETTINGS, theme: themeNamed("hawkeye") },
+    companyWith("aurora"),
+  );
+  expect(unknownThemes).toEqual([]);
+});
+
+test("a Company Configuration arriving after the window is drawn pushes a new snapshot with its Theme", () => {
+  const { lifecycle, unknownThemes } = inSettings(FIRST_LAUNCH_SETTINGS);
+  let pushed = 0;
+  lifecycle.onChange(() => {
+    pushed += 1;
+  });
+  lifecycle.companyConfigured(companyWith("harbour"));
+  expect(pushed).toBe(1);
+  expect(unknownThemes).toEqual(["harbour"]);
+  expect(lifecycle.snapshot().theme).toBe("hawkeye");
+
+  lifecycle.companyConfigured(companyWith("hawkeye"));
+  expect(pushed).toBe(2);
+  expect(unknownThemes).toEqual(["harbour"]);
+});
+
+test("the system description reports the Company Configuration's Auth Provider, never signed in yet", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  const os = { name: "win32", version: "10.0.19045", arch: "x64" };
+  expect(lifecycle.systemDescription(os).authProvider).toEqual({
+    kind: "none",
+  });
+  lifecycle.companyConfigured({
+    theme: HAWKEYE,
+    authProvider: {
+      kind: "oidc",
+      issuer: "https://sso.hawkeye.example/realms/staff" as WebUrl,
+      clientId: "hawkeye-hub",
+      signInLifetime: { hours: 168 },
+    },
+    roleMapping: [],
+  });
+  expect(lifecycle.systemDescription(os).authProvider).toEqual({
+    kind: "oidc",
+    signedIn: false,
+  });
 });
 
 test("saving a chosen Theme stores it by name and makes it the Theme", () => {
@@ -301,6 +375,7 @@ test("picking a Plugin while settings show leaves them and brings that Plugin fo
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -323,6 +398,7 @@ test("settings stay showing while the Plugins behind them close", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -343,6 +419,7 @@ test("editing, saving or cancelling while settings are not showing throws", () =
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -369,6 +446,7 @@ test("opening Plugins brings each forward, and opening an open one brings it for
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -395,6 +473,7 @@ test("closing the foreground Plugin brings forward the most recently foregrounde
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -418,6 +497,7 @@ test("closing a background Plugin leaves the foreground one in front", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -438,6 +518,7 @@ test("every change is announced", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -460,6 +541,7 @@ test("a closed Plugin is closing until its close finishes, cannot be reopened un
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -492,6 +574,7 @@ test("finishing the close of a Plugin that is not closing throws", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -508,6 +591,7 @@ test("a staff close of a Plugin that is not Busy closes it without asking", () =
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -528,6 +612,7 @@ test("a staff close of a Busy Plugin asks with its latest reason; Keep open leav
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -559,6 +644,7 @@ test("Close anyway closes the Busy Plugin, and closing clears its Busy", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -586,6 +672,7 @@ test("a Plugin that clears Busy closes without asking, but a dialog already up s
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -615,6 +702,7 @@ test("a Busy Plugin that closes abnormally while its dialog is up takes the dial
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -636,6 +724,7 @@ test("a Busy Plugin that closes abnormally while the quit dialog is up leaves it
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -665,6 +754,7 @@ test("a Busy reason that changes while its dialog is up leaves the dialog as it 
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -685,6 +775,7 @@ test("Busy from a Plugin that is not open is ignored: it arrived as the Plugin c
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -705,6 +796,7 @@ test("a quit with no Busy Plugin goes ahead without asking", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -725,6 +817,7 @@ test("a quit with Busy Plugins asks once, listing each by name; Keep open stays,
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -766,6 +859,7 @@ test("a quit while a Busy close is asking asks about the quit instead", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -784,6 +878,7 @@ test("an answer that is not one of the pending dialog's buttons, or with no dial
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -805,6 +900,7 @@ test("opening a Plugin that is not installed, or closing one that is not open, t
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -857,6 +953,7 @@ test("the snapshot marks blocked Plugins, and opening one throws", () => {
       installed("future", "Future", { hubApi: "^99.0.0" }),
     ],
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -885,6 +982,7 @@ test("installed answers the installed Plugin with an id, and throws for one that
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -957,6 +1055,7 @@ test("picking a blocked Plugin with unsaved edits throws rather than asking", ()
     systemLanguage: "en-HK",
     installed: [installed("future", "Future", { hubApi: "^99.0.0" })],
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -1057,6 +1156,7 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: IN_CHINESE,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
@@ -1073,6 +1173,7 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
       systemLanguage: "zh-HK",
       installed: plugins,
       storedAtStart: FIRST_LAUNCH_SETTINGS,
+      companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
       registry: DEV_MODE,
@@ -1227,6 +1328,7 @@ function withRegistry(language: "en-HK" | "zh-HK") {
     systemLanguage: language,
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: {
@@ -1437,6 +1539,7 @@ test("dev mode has no Catalogue: showing it, retrying or answering a check throw
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     registry: DEV_MODE,
