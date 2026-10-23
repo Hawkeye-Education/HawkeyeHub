@@ -170,6 +170,7 @@ export class HubChrome extends LitElement {
                 .conversation=${panel.conversation}
                 .templates=${panel.templates}
                 .model=${panel.model}
+                .providers=${panel.providers}
                 .hub=${window.hubChrome}
               ></assistant-panel>`,
             )

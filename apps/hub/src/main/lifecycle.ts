@@ -28,9 +28,14 @@ import {
   type PluginAccess,
   type ThemeName,
 } from "../shared/hub-chrome-ipc";
-import type { AiChatRequest, AiContent } from "../shared/ai-call";
+import type {
+  AiChatRequest,
+  AiContent,
+  AiModelChoice,
+} from "../shared/ai-call";
 import type { AiProviderRow, HubSettingsForm } from "../shared/hub-settings";
 import { AiCallFailed, type AiChat } from "./ai";
+import type { AssistantModels } from "./assistant-models";
 import type { AiProviderKey, SavedProviderKey } from "./ai-keys";
 import type { SystemDescription } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
@@ -153,7 +158,7 @@ export interface Lifecycle {
   toggleAssistant(id: PluginId): void;
   /**
    * Sends a message in an open Plugin's conversation, with everything before it, and streams the
-   * reply through the Default AI Provider. Throws unless the Plugin is open with an Assistant and
+   * reply through the Plugin's model. Throws unless the Plugin is open with an Assistant and
    * no reply is streaming.
    */
   sendToAssistant(id: PluginId, content: AiContent): void;
@@ -161,6 +166,12 @@ export interface Lifecycle {
   stopAssistant(id: PluginId): void;
   /** Stops any reply and empties the conversation. */
   newConversation(id: PluginId): void;
+  /**
+   * Sets an open Plugin's Assistant model, saved at once outside Save and Cancel. A provider or
+   * model removed later fails its chats with `provider-missing`. Throws unless the Plugin is open
+   * with an Assistant.
+   */
+  chooseModel(id: PluginId, model: AiModelChoice): void;
 }
 
 export interface LifecycleDeps {
@@ -184,6 +195,10 @@ export interface LifecycleDeps {
     context: (plugin: InstalledPlugin, language: DisplayLanguage) => string;
     /** Starts a chat through the call module (`startAiChat`). */
     chat: (request: AiChatRequest) => AiChat;
+    /** Each Plugin's Assistant model as stored (`loadAssistantModels`). */
+    modelsAtStart: AssistantModels;
+    /** Writes every Plugin's Assistant model (`saveAssistantModels`). */
+    saveModels: (models: AssistantModels) => void;
   };
   /** Logs a stored or company Theme this Hub does not have; called once per name. */
   unknownTheme: (name: ThemeName) => void;
@@ -470,6 +485,9 @@ export function createLifecycle({
   const talks = new Map<PluginId, Talk>();
   // The Plugins whose Assistant Panel staff left open, while the Hub runs, across closes.
   const panelsOpen = new Set<PluginId>();
+  const models = new Map(assistant.modelsAtStart);
+  const modelOf = (id: PluginId): AiModelChoice =>
+    models.get(id) ?? { kind: "default" };
   const NEW_CONVERSATION: Conversation = {
     messages: [],
     reply: { kind: "idle" },
@@ -481,18 +499,24 @@ export function createLifecycle({
     }
     return talk;
   };
-  // The Default AI Provider's model, for every Panel until per-Plugin choices (#109).
-  const currentModel = (): CurrentModel => {
-    const chosen = stored.defaultAiProvider;
-    if (chosen.kind === "none") return { kind: "none" };
+  // The Plugin's picker choice resolved against the saved Hub Settings, as the call module does.
+  const currentModel = (id: PluginId): CurrentModel => {
+    const choice = modelOf(id);
+    const chosen =
+      choice.kind === "default" ? stored.defaultAiProvider : choice;
+    if (chosen.kind === "none") return { choice, kind: "none" };
     const acceptsImages = stored.aiProviders
       .find(({ label }) => label === chosen.provider)
-      ?.models.find(({ id }) => id === chosen.model)?.acceptsImages;
-    // HubSettingsSchema lets the Default name only a configured provider and model.
-    if (acceptsImages === undefined) {
-      throw new Error("The Default AI Provider names no configured model");
-    }
-    return { ...chosen, acceptsImages };
+      ?.models.find(({ id: model }) => model === chosen.model)?.acceptsImages;
+    // Only a chosen one can be missing: HubSettingsSchema keeps the Default configured.
+    if (acceptsImages === undefined) return { choice, kind: "missing" };
+    return {
+      choice,
+      kind: "chosen",
+      provider: chosen.provider,
+      model: chosen.model,
+      acceptsImages,
+    };
   };
   const panelOf = (id: PluginId): AssistantPanel => {
     const talk = talks.get(id);
@@ -510,7 +534,11 @@ export function createLifecycle({
               text: displayTextIn(text, listing.language),
             }))
           : [],
-      model: currentModel(),
+      model: currentModel(id),
+      providers: stored.aiProviders.map(({ label, models }) => ({
+        label,
+        models,
+      })),
     };
   };
   // A chat dropped (by New conversation or a close) is no longer the talk's: nothing more of it
@@ -877,9 +905,8 @@ export function createLifecycle({
         ...talk.conversation.messages,
         { role: "user" as const, content },
       ];
-      // ponytail: always the Default AI Provider; the per-Plugin model picker is #109.
       const chat = assistant.chat({
-        model: { kind: "default" },
+        model: modelOf(id),
         system: talk.system,
         messages,
       });
@@ -895,6 +922,12 @@ export function createLifecycle({
       const talk = talkOf(id);
       dropChat(talk);
       talk.conversation = NEW_CONVERSATION;
+      changed();
+    },
+    chooseModel: (id, model) => {
+      talkOf(id);
+      models.set(id, model);
+      assistant.saveModels(models);
       changed();
     },
     answer: (answer) => {

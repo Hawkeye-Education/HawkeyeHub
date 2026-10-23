@@ -30,6 +30,7 @@ import {
   type LifecycleDeps,
 } from "./lifecycle";
 import type { RegistryPlugin } from "./registry";
+import type { AssistantModels } from "./assistant-models";
 
 function installed(
   id: string,
@@ -74,6 +75,10 @@ const NO_ASSISTANT: LifecycleDeps["assistant"] = {
     throw new Error("No Assistant here");
   },
   chat: () => {
+    throw new Error("No Assistant here");
+  },
+  modelsAtStart: new Map(),
+  saveModels: () => {
     throw new Error("No Assistant here");
   },
 };
@@ -1942,8 +1947,10 @@ function drivenChat() {
 function withAssistant(
   stored: HubSettings = FIRST_LAUNCH_SETTINGS,
   systemLanguage: "en-HK" | "zh-HK" = "en-HK",
+  modelsAtStart: AssistantModels = new Map(),
 ) {
   const requests: AiChatRequest[] = [];
+  const saved: AssistantModels[] = [];
   const chats: ReturnType<typeof drivenChat>["driven"][] = [];
   const read: string[] = [];
   const lifecycle = createLifecycle({
@@ -1955,6 +1962,10 @@ function withAssistant(
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
     assistant: {
+      modelsAtStart,
+      saveModels: (models) => {
+        saved.push(new Map(models));
+      },
       context: ({ manifest }, language) => {
         read.push(manifest.id);
         return `Context of ${manifest.id} in ${language}`;
@@ -1973,7 +1984,7 @@ function withAssistant(
     if (driven === undefined) throw new Error(`No chat ${String(at)}`);
     return driven;
   };
-  return { lifecycle, requests, chat, read };
+  return { lifecycle, requests, chat, read, saved };
 }
 
 const said = (text: string) => [{ type: "text" as const, text }];
@@ -2000,7 +2011,8 @@ test("the Assistant Panel starts closed, toggles, and is remembered per Plugin, 
     kind: "open",
     conversation: { messages: [], reply: { kind: "idle" } },
     templates: [{ label: "Draft a regex", text: "Draft a regex for …" }],
-    model: { kind: "none" },
+    model: { choice: { kind: "default" }, kind: "none" },
+    providers: [],
   });
 
   // Another Plugin in front shows its own; bringing the helper back shows it open still.
@@ -2166,4 +2178,90 @@ test("closing the Plugin cancels its reply and drops its conversation", async ()
   expect(lifecycle.snapshot().assistant).toMatchObject({
     conversation: { messages: [], reply: { kind: "idle" } },
   });
+});
+
+test("the model picker saves its choice at once, for its Plugin only, and later messages use it", () => {
+  const local = parseAiProviderLabel("Local");
+  const big = { kind: "chosen" as const, provider: local, model: "big-model" };
+  const other = id("other-helper");
+  const stored: HubSettings = {
+    ...FIRST_LAUNCH_SETTINGS,
+    aiProviders: [
+      {
+        label: local,
+        endpoint: { kind: "openai-compatible", baseUrl: "http://localhost:1" },
+        models: [{ id: "big-model", acceptsImages: true }],
+      },
+    ],
+  };
+  const { lifecycle, requests, saved } = withAssistant(
+    stored,
+    "en-HK",
+    new Map([[other, big]]),
+  );
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    model: { choice: { kind: "default" }, kind: "none" },
+    providers: [
+      {
+        label: "Local",
+        models: [{ id: "big-model", acceptsImages: true }],
+      },
+    ],
+  });
+
+  lifecycle.chooseModel(HELPER, big);
+  expect(saved).toEqual([
+    new Map([
+      [other, big],
+      [HELPER, big],
+    ]),
+  ]);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    model: {
+      choice: big,
+      kind: "chosen",
+      provider: "Local",
+      model: "big-model",
+      acceptsImages: true,
+    },
+  });
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(requests[0]?.model).toEqual(big);
+
+  // After a restart, the saved choice is the Plugin's.
+  const restarted = withAssistant(stored, "en-HK", new Map(saved[0]));
+  restarted.lifecycle.open(HELPER);
+  restarted.lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(restarted.requests[0]?.model).toEqual(big);
+});
+
+test("a chosen provider or model since removed is missing: it offers no images, and its chats fail", () => {
+  const gone = {
+    kind: "chosen" as const,
+    provider: parseAiProviderLabel("Gone"),
+    model: "x",
+  };
+  const { lifecycle, requests } = withAssistant(
+    WITH_CLAUDE,
+    "en-HK",
+    new Map([[HELPER, gone]]),
+  );
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    model: { choice: gone, kind: "missing" },
+  });
+  // The call module answers `provider-missing`: the choice goes to it as is, never the Default.
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(requests[0]?.model).toEqual(gone);
+});
+
+test("choosing a model needs the Plugin open with an Assistant", () => {
+  const { lifecycle } = withAssistant();
+  lifecycle.open(id("class-timer"));
+  expect(() => {
+    lifecycle.chooseModel(id("class-timer"), { kind: "default" });
+  }).toThrow();
 });

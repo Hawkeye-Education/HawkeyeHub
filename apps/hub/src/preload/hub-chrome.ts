@@ -22,6 +22,7 @@ import {
   SEND_TO_ASSISTANT,
   STOP_ASSISTANT,
   NEW_CONVERSATION,
+  CHOOSE_MODEL,
   type HubChromeApi,
   type HubChromeSnapshot,
 } from "../shared/hub-chrome-ipc";
@@ -90,6 +91,9 @@ const api: HubChromeApi = {
   },
   newConversation(id) {
     void ipcRenderer.invoke(NEW_CONVERSATION, id);
+  },
+  chooseModel(id, model) {
+    void ipcRenderer.invoke(CHOOSE_MODEL, id, model);
   },
 };
 

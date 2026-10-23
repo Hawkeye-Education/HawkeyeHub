@@ -4,9 +4,10 @@
 // Types and constants only: the preload is sandboxed and the Hub Chrome has no Node.
 
 import type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
-import type { AiContent, AiFailure, AiMessage } from "./ai-call";
+import type { AiContent, AiFailure, AiMessage, AiModelChoice } from "./ai-call";
 import type { Branded } from "./branded";
 import type {
+  AiProvider,
   AiProviderLabel,
   AiProviderRow,
   HubSettings,
@@ -168,6 +169,8 @@ export type AssistantPanel =
       /** The Manifest's Prompt Templates, already in the Display Language. */
       templates: PromptTemplate[];
       model: CurrentModel;
+      /** The saved AI Providers' labels and models, for the model picker. */
+      providers: Pick<AiProvider, "label" | "models">[];
     };
 
 export interface PromptTemplate {
@@ -176,17 +179,20 @@ export interface PromptTemplate {
 }
 
 /**
- * The model the Panel's messages go to, or none when there is no Default AI Provider. The
- * composer offers images only when it accepts them.
+ * The Plugin's model: its picker's `choice`, and where its messages go. `none` is Default with no
+ * Default AI Provider; `missing` is a chosen provider or model since removed, whose messages fail
+ * with `provider-missing` (no silent switch). The composer offers images only when it accepts them.
  */
-export type CurrentModel =
+export type CurrentModel = { choice: AiModelChoice } & (
   | { kind: "none" }
+  | { kind: "missing" }
   | {
       kind: "chosen";
       provider: AiProviderLabel;
       model: string;
       acceptsImages: boolean;
-    };
+    }
+);
 
 /**
  * An open Plugin's one conversation with its Assistant, held in main and dropped when the Plugin
@@ -295,6 +301,8 @@ export interface HubChromeApi {
   stopAssistant(id: PluginId): void;
   /** Drops the conversation, stopping any reply, and starts again. */
   newConversation(id: PluginId): void;
+  /** Sets an open Plugin's Assistant model, saved at once. */
+  chooseModel(id: PluginId, model: AiModelChoice): void;
 }
 
 /** Hub Chrome → main, `invoke`: answers the current snapshot. */
@@ -335,3 +343,5 @@ export const SEND_TO_ASSISTANT = "hub-chrome:send-to-assistant";
 export const STOP_ASSISTANT = "hub-chrome:stop-assistant";
 /** Hub Chrome → main, `invoke`: the id of an open Plugin whose conversation to start again. */
 export const NEW_CONVERSATION = "hub-chrome:new-conversation";
+/** Hub Chrome → main, `invoke`: an open Plugin's id and the `AiModelChoice` its Assistant uses. */
+export const CHOOSE_MODEL = "hub-chrome:choose-model";

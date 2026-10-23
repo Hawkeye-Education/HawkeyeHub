@@ -2,9 +2,12 @@
 // with an Assistant, toggle its Panel (which narrows the Plugin UI), send a message, watch the
 // reply stream and stop it, then get a Markdown reply and copy its code block. Each branch of the
 // conversation is a Vitest test of the lifecycle. Then the composer (#110): a Prompt Template, and
-// images and a long text pasted from the system clipboard.
+// images and a long text pasted from the system clipboard. Last, the model picker (#109) saves its
+// choice at once.
 
 import type { ElectronApplication } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { startFakeAiServer, writeAiProviders } from "./fake-ai-server";
 import {
   displayLanguageOf,
@@ -27,6 +30,7 @@ const LABELS = {
     send: "Send",
     stop: "Stop",
     copy: "Copy",
+    model: "Model",
     pastedImage: "Pasted image",
     pastedText: "Pasted text",
     remove: "Remove",
@@ -38,6 +42,7 @@ const LABELS = {
     send: "傳送",
     stop: "停止",
     copy: "複製",
+    model: "模型",
     pastedImage: "已貼上的圖片",
     pastedText: "已貼上的文字",
     remove: "移除",
@@ -160,6 +165,23 @@ test("the Assistant Panel streams a Markdown reply, stops one, and copies a code
     await expect(
       hubChrome.getByRole("img", { name: labels.pastedImage }),
     ).toHaveCount(0);
+
+    await hubChrome
+      .getByRole("combobox", { name: labels.model })
+      .selectOption({ label: "Fake · fake-model" });
+    await expect
+      .poll((): unknown =>
+        JSON.parse(
+          readFileSync(join(dataDir, "assistant-models.json"), "utf8"),
+        ),
+      )
+      .toEqual({
+        "regex-helper": {
+          kind: "chosen",
+          provider: "Fake",
+          model: "fake-model",
+        },
+      });
   } finally {
     await hub.close();
     await fake.close();
