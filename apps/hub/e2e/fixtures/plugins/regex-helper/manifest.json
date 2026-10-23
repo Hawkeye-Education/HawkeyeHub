@@ -1,0 +1,20 @@
+{
+  "id": "regex-helper",
+  "version": "1.0.0",
+  "hubApi": "^1.0.0",
+  "name": { "en-HK": "Regex Helper", "zh-HK": "正則助手" },
+  "description": "A smoke-test fixture Plugin with an Assistant.",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "none" },
+  "assistant": {
+    "kind": "enabled",
+    "templates": [
+      {
+        "label": "Draft a regex",
+        "text": "Draft a regex that matches <paste page text here>"
+      }
+    ]
+  }
+}

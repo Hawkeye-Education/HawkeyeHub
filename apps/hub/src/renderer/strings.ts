@@ -86,6 +86,22 @@ export const STRINGS = {
       unpack: "Install failed: the package could not be unpacked",
       environment: "Install failed: Python could not be set up",
     } satisfies Record<InstallFailureCause, string>,
+    assistant: "Assistant",
+    newConversation: "New conversation",
+    message: "Message",
+    send: "Send",
+    stop: "Stop",
+    copy: "Copy",
+    copied: "Copied",
+    you: "You",
+    noProvider: "No AI Provider is set up.",
+    openSettings: "Set one up in Settings",
+    providerMissing:
+      "The AI Provider or model chosen for this Assistant is no longer set up.",
+    providerRejected: (status: number) =>
+      `The AI Provider refused the request (HTTP ${String(status)}). Check its key in Settings.`,
+    providerUnreachable:
+      "The AI Provider could not be reached. Check your network connection.",
   },
   "zh-HK": {
     plugins: "外掛程式",
@@ -164,6 +180,20 @@ export const STRINGS = {
       unpack: "安裝失敗：無法解開套件",
       environment: "安裝失敗：無法設定 Python",
     } satisfies Record<InstallFailureCause, string>,
+    assistant: "助理",
+    newConversation: "新對話",
+    message: "訊息",
+    send: "傳送",
+    stop: "停止",
+    copy: "複製",
+    copied: "已複製",
+    you: "你",
+    noProvider: "未設定任何 AI 供應商。",
+    openSettings: "前往設定",
+    providerMissing: "此助理所選的 AI 供應商或模型已不再設定。",
+    providerRejected: (status: number) =>
+      `AI 供應商拒絕了要求（HTTP ${String(status)}）。請在設定中檢查其金鑰。`,
+    providerUnreachable: "無法連線至 AI 供應商。請檢查你的網絡連線。",
   },
 } satisfies Record<DisplayLanguage, unknown>;
 

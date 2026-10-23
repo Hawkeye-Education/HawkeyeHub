@@ -4,13 +4,14 @@
 
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { AiProviderInfo, HubError } from "@hawkeye-hub/hub-api";
+import type { AiProviderInfo } from "@hawkeye-hub/hub-api";
 import { APICallError, streamText, type LanguageModel } from "ai";
 import type { WebContents } from "electron";
 import { z } from "zod";
 import {
   AiChatCallSchema,
   type AiChatRequest,
+  type AiFailure,
   type AiModelChoice,
 } from "../shared/ai-call";
 import {
@@ -24,19 +25,11 @@ import type { AiProvider, HubSettings } from "../shared/hub-settings";
 import type { AiKeys, AiProviderKey } from "./ai-keys";
 import type { HubEvent } from "./diagnostics";
 
-export type { AiChatRequest, AiModelChoice } from "../shared/ai-call";
-
-/** Why a chat failed, as `hub.ai` rejects with it. There is no fallback to another provider. */
-export type AiFailure = Extract<
-  HubError,
-  {
-    code:
-      | "no-provider"
-      | "provider-missing"
-      | "provider-rejected"
-      | "provider-unreachable";
-  }
->;
+export type {
+  AiChatRequest,
+  AiFailure,
+  AiModelChoice,
+} from "../shared/ai-call";
 
 /** What a chat's `done` rejects with, and its `text` throws, when it fails. */
 export class AiCallFailed extends Error {

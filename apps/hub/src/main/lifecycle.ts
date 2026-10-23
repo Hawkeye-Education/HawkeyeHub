@@ -18,6 +18,8 @@ import {
   type CatalogueJob,
   type DialogAnswer,
   type DisplayLanguage,
+  type AssistantPanel,
+  type Conversation,
   type HubChromeDialog,
   type HubChromeSnapshot,
   type HubSettings,
@@ -25,7 +27,9 @@ import {
   type PluginAccess,
   type ThemeName,
 } from "../shared/hub-chrome-ipc";
+import type { AiChatRequest, AiContent } from "../shared/ai-call";
 import type { AiProviderRow, HubSettingsForm } from "../shared/hub-settings";
+import { AiCallFailed, type AiChat } from "./ai";
 import type { AiProviderKey, SavedProviderKey } from "./ai-keys";
 import type { SystemDescription } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
@@ -141,6 +145,21 @@ export interface Lifecycle {
   storedSettings(): HubSettings;
   /** The installation as a Diagnostics Bundle describes it, on the OS `os`. */
   systemDescription(os: SystemDescription["os"]): SystemDescription;
+  /**
+   * Opens or closes an open Plugin's Assistant Panel, remembered for it while the Hub runs.
+   * Throws unless the Plugin is open and has an Assistant.
+   */
+  toggleAssistant(id: PluginId): void;
+  /**
+   * Sends a message in an open Plugin's conversation, with everything before it, and streams the
+   * reply through the Default AI Provider. Throws unless the Plugin is open with an Assistant and
+   * no reply is streaming.
+   */
+  sendToAssistant(id: PluginId, content: AiContent): void;
+  /** Stops a streaming reply, keeping what has arrived. Does nothing when none is streaming. */
+  stopAssistant(id: PluginId): void;
+  /** Stops any reply and empties the conversation. */
+  newConversation(id: PluginId): void;
 }
 
 export interface LifecycleDeps {
@@ -159,6 +178,12 @@ export interface LifecycleDeps {
     settings: HubSettings,
     keys: readonly SavedProviderKey[],
   ) => ReadonlySet<AiProviderLabel>;
+  assistant: {
+    /** An installed Plugin's Assistant context (`assistantContext`), read as the Plugin opens. */
+    context: (plugin: InstalledPlugin, language: DisplayLanguage) => string;
+    /** Starts a chat through the call module (`startAiChat`). */
+    chat: (request: AiChatRequest) => AiChat;
+  };
   /** Logs a stored or company Theme this Hub does not have; called once per name. */
   unknownTheme: (name: ThemeName) => void;
   /**
@@ -247,6 +272,7 @@ export function createLifecycle({
   save,
   unknownTheme,
   registry,
+  assistant,
 }: LifecycleDeps): Lifecycle {
   const languageOf = ({ displayLanguage }: HubSettings): DisplayLanguage => {
     switch (displayLanguage.kind) {
@@ -433,6 +459,80 @@ export function createLifecycle({
     kind: "uninstall",
     plugin: { id, name: installedPlugin(id).listed.name },
   });
+  // Each open Plugin with an Assistant: its context, read at open, its conversation, and the chat
+  // streaming the reply, if one is.
+  interface Talk {
+    system: string;
+    conversation: Conversation;
+    chat: AiChat | null;
+  }
+  const talks = new Map<PluginId, Talk>();
+  // The Plugins whose Assistant Panel staff left open, while the Hub runs, across closes.
+  const panelsOpen = new Set<PluginId>();
+  const NEW_CONVERSATION: Conversation = {
+    messages: [],
+    reply: { kind: "idle" },
+  };
+  const talkOf = (id: PluginId): Talk => {
+    const talk = talks.get(id);
+    if (talk === undefined) {
+      throw new Error(`${id} is not open with an Assistant`);
+    }
+    return talk;
+  };
+  const panelOf = (id: PluginId): AssistantPanel => {
+    const talk = talks.get(id);
+    if (talk === undefined) return { kind: "none" };
+    return panelsOpen.has(id)
+      ? { kind: "open", conversation: talk.conversation }
+      : { kind: "closed" };
+  };
+  // A chat dropped (by New conversation or a close) is no longer the talk's: nothing more of it
+  // shows. A stopped one stays the talk's until it ends, so what had arrived is kept.
+  const dropChat = (talk: Talk): void => {
+    talk.chat?.cancel();
+    talk.chat = null;
+  };
+  const streamReply = async (talk: Talk, chat: AiChat): Promise<void> => {
+    let text = "";
+    try {
+      for await (const delta of chat.text) {
+        if (talk.chat !== chat) return;
+        text += delta;
+        talk.conversation = {
+          ...talk.conversation,
+          reply: { kind: "streaming", text },
+        };
+        // ponytail: a snapshot per delta; batch per animation frame if long replies drag.
+        changed();
+      }
+      const reply = await chat.done;
+      if (talk.chat !== chat) return;
+      talk.chat = null;
+      const { messages } = talk.conversation;
+      talk.conversation = {
+        // A reply stopped before anything arrived leaves nothing to keep.
+        messages:
+          reply === ""
+            ? messages
+            : [
+                ...messages,
+                { role: "assistant", content: [{ type: "text", text: reply }] },
+              ],
+        reply: { kind: "idle" },
+      };
+    } catch (error) {
+      // Anything but a failure is a Hub bug: an unhandled rejection, so a Hub crash.
+      if (!(error instanceof AiCallFailed)) throw error;
+      if (talk.chat !== chat) return;
+      talk.chat = null;
+      talk.conversation = {
+        ...talk.conversation,
+        reply: { kind: "failed", failure: error.failure },
+      };
+    }
+    changed();
+  };
   const close = (id: PluginId): void => {
     if (!open.includes(id)) {
       throw new Error(`No open Plugin has the id ${JSON.stringify(id)}`);
@@ -440,6 +540,9 @@ export function createLifecycle({
     open = open.filter((other) => other !== id);
     closing = [...closing, id];
     busyReasons.delete(id);
+    const talk = talks.get(id);
+    if (talk !== undefined) dropChat(talk);
+    talks.delete(id);
     asking = askUninstallOnClose.delete(id)
       ? uninstallDialog(id)
       : askingWithout(id);
@@ -478,6 +581,7 @@ export function createLifecycle({
       theme,
       themes: [...THEMES],
       catalogue: catalogueIn(listing.language),
+      assistant: open[0] === undefined ? { kind: "none" } : panelOf(open[0]),
     }),
     installed: (id) => installedPlugin(id).plugin,
     running,
@@ -502,6 +606,17 @@ export function createLifecycle({
         throw new Error(`${id} is uninstalling`);
       }
       discardingEditsFirst(() => {
+        const { plugin } = installedPlugin(id);
+        if (
+          !open.includes(id) &&
+          plugin.manifest.assistant.kind === "enabled"
+        ) {
+          talks.set(id, {
+            system: assistant.context(plugin, listing.language),
+            conversation: NEW_CONVERSATION,
+            chat: null,
+          });
+        }
         open = [id, ...open.filter((other) => other !== id)];
         content = { kind: "plugin" };
         changed();
@@ -722,6 +837,40 @@ export function createLifecycle({
       })),
       authProvider: { kind: "none" },
     }),
+    toggleAssistant: (id) => {
+      talkOf(id);
+      if (!panelsOpen.delete(id)) panelsOpen.add(id);
+      changed();
+    },
+    sendToAssistant: (id, content) => {
+      const talk = talkOf(id);
+      if (talk.chat !== null) {
+        throw new Error(`${id}'s Assistant is still replying`);
+      }
+      const messages = [
+        ...talk.conversation.messages,
+        { role: "user" as const, content },
+      ];
+      // ponytail: always the Default AI Provider; the per-Plugin model picker is #109.
+      const chat = assistant.chat({
+        model: { kind: "default" },
+        system: talk.system,
+        messages,
+      });
+      talk.chat = chat;
+      talk.conversation = { messages, reply: { kind: "streaming", text: "" } };
+      changed();
+      void streamReply(talk, chat);
+    },
+    stopAssistant: (id) => {
+      talkOf(id).chat?.cancel();
+    },
+    newConversation: (id) => {
+      const talk = talkOf(id);
+      dropChat(talk);
+      talk.conversation = NEW_CONVERSATION;
+      changed();
+    },
     answer: (answer) => {
       const pending = asking;
       if (pending === null)

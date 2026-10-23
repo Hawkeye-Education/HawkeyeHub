@@ -113,6 +113,15 @@ function hubWith(fetch: RegistryFetch) {
     unknownTheme: () => {
       // Only Themes this Hub has.
     },
+    // No Plugin with an Assistant is opened here.
+    assistant: {
+      context: () => {
+        throw new Error("No Assistant here");
+      },
+      chat: () => {
+        throw new Error("No Assistant here");
+      },
+    },
     registry: {
       kind: "on",
       check: () => {
