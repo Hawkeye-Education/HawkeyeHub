@@ -108,32 +108,37 @@ test("watch reports what another Plugin and a Backend change, and stops when ask
   expect(changes).toHaveLength(seen);
 });
 
-test("a burst of changes too big for the OS to name one by one leaves the watch running", async () => {
-  const stores = createStores(dataDir, [kb]);
-  const changes: StoreChange[] = [];
-  const stop = stores.watch("kb", (change) => changes.push(change));
+// Only Windows names no file on overflow; Linux's recursive watch is emulated in JS and takes
+// far longer than the test timeout to take in the burst.
+test.runIf(process.platform === "win32")(
+  "a burst of changes too big for the OS to name one by one leaves the watch running",
+  async () => {
+    const stores = createStores(dataDir, [kb]);
+    const changes: StoreChange[] = [];
+    const stop = stores.watch("kb", (change) => changes.push(change));
 
-  // Synchronously, so the watch cannot drain them: on Windows they overflow its buffer, and the
-  // watch hears of a change with no file name.
-  for (let i = 0; i < 2000; i++) {
-    writeFileSync(
-      join(
-        dataDir,
-        "stores",
-        "kb",
-        `a-long-name-to-fill-the-buffer-${String(i)}.md`,
-      ),
-      "x",
-    );
-  }
-  await new Promise((resolve) => setTimeout(resolve, WATCH_QUIET_MS));
-  await stores.writeText("kb", "after.md", "a");
+    // Synchronously, so the watch cannot drain them: on Windows they overflow its buffer, and the
+    // watch hears of a change with no file name.
+    for (let i = 0; i < 2000; i++) {
+      writeFileSync(
+        join(
+          dataDir,
+          "stores",
+          "kb",
+          `a-long-name-to-fill-the-buffer-${String(i)}.md`,
+        ),
+        "x",
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, WATCH_QUIET_MS));
+    await stores.writeText("kb", "after.md", "a");
 
-  await vi.waitFor(() => {
-    expect(changes).toContainEqual({ path: "after.md", kind: "changed" });
-  });
-  stop();
-});
+    await vi.waitFor(() => {
+      expect(changes).toContainEqual({ path: "after.md", kind: "changed" });
+    });
+    stop();
+  },
+);
 
 test("watching a store not in the Manifest's stores is refused with store-not-declared", () => {
   const stores = createStores(dataDir, [kb]);
