@@ -9,10 +9,14 @@ import {
   EDIT_SETTINGS,
   EXPORT_DIAGNOSTICS,
   GET_SNAPSHOT,
+  INSTALL_PLUGIN,
   OPEN_PLUGIN,
+  RETRY_REGISTRY,
   SAVE_SETTINGS,
+  SHOW_CATALOGUE,
   SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
+  UNINSTALL_PLUGIN,
   type HubChromeApi,
   type HubChromeSnapshot,
 } from "../shared/hub-chrome-ipc";
@@ -54,6 +58,18 @@ const api: HubChromeApi = {
   },
   exportDiagnostics() {
     void ipcRenderer.invoke(EXPORT_DIAGNOSTICS);
+  },
+  showCatalogue() {
+    void ipcRenderer.invoke(SHOW_CATALOGUE);
+  },
+  retryRegistry() {
+    void ipcRenderer.invoke(RETRY_REGISTRY);
+  },
+  install(id) {
+    void ipcRenderer.invoke(INSTALL_PLUGIN, id);
+  },
+  uninstall(id) {
+    void ipcRenderer.invoke(UNINSTALL_PLUGIN, id);
   },
 };
 

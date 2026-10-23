@@ -2,7 +2,7 @@
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { app, Menu, nativeTheme, protocol, session } from "electron";
+import { app, Menu, nativeTheme, net, protocol, session } from "electron";
 import { killBackendsNow } from "./backend";
 import { openDiagnostics } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
@@ -13,12 +13,30 @@ import { parseHubMode } from "./hub-mode";
 import {
   loadDevPlugins,
   loadInstalledPlugins,
+  pluginRefOf,
+  sweepLeftovers,
   type InstalledPlugin,
 } from "./installed-plugins";
+import { createJobQueue } from "./job-queue";
 import { createLifecycle } from "./lifecycle";
+import { installPlugin } from "./plugin-install";
+import { uninstallPlugin, type UninstallData } from "./plugin-uninstall";
+import { createUpdater } from "./plugin-update";
 import type { HubSettings } from "../shared/hub-settings";
+import { HUB_API_VERSION } from "./hub-api-version";
 import { PLUGIN_ICON_SCHEME, servePluginIcons } from "./plugin-icons";
+import {
+  checkRegistry,
+  REGISTRY_CHECK_INTERVAL_MS,
+  registryUrlFrom,
+  type HostPlatform,
+  type RegistryFetch,
+  type RegistryPlugin,
+  type WebUrl,
+} from "./registry";
 import { PLUGIN_SCHEME } from "./plugin-scheme";
+import { createUv } from "./uv";
+import type { PluginId } from "@hawkeye-hub/plugin-format";
 
 // 0. Installed, or dev mode (PLUGIN_STANDARD §9.4). Dev mode's Plugins are loaded here, so a bad
 // one stops the Hub before it opens, with why printed in the terminal. Nothing is open yet to log
@@ -145,7 +163,12 @@ function runHub(): void {
     );
     // Here, not before `ready`: a record that does not parse throws, and a throw in this callback
     // is an unhandled rejection, which the listener above logs as a Hub crash. Dev mode never
-    // reads or writes the record.
+    // reads or writes the record, so it never sweeps. The sweep runs before loading (spec #91).
+    if (startedAs.kind === "installed") {
+      for (const { plugin, partial } of sweepLeftovers(hubDataDir)) {
+        diagnostics.recordHubEvent({ kind: "plugin-swept", plugin, partial });
+      }
+    }
     const installed =
       startedAs.kind === "dev"
         ? { loaded: startedAs.plugins, leftOut: [] }
@@ -153,10 +176,23 @@ function runHub(): void {
     for (const { plugin, reason } of installed.leftOut) {
       diagnostics.recordHubEvent({ kind: "plugin-left-out", plugin, reason });
     }
+    // Electron's fetch, through the OS's proxy settings, as schools need.
+    const fetchFromWeb: RegistryFetch = (url, init) => net.fetch(url, init);
+    const platform: HostPlatform = `${process.platform}-${process.arch}`;
+    // uv for Python Backends, downloaded with the first one (ADR 0011).
+    const uv = createUv({ dataDir: hubDataDir, fetch: fetchFromWeb, platform });
+    // The Registry's icon of each Plugin the latest Registry check offered.
+    let registryIcons: ReadonlyMap<PluginId, WebUrl> = new Map();
     // The Hub Chrome has no partition, so its session is the default one.
     session.defaultSession.protocol.handle(
       PLUGIN_ICON_SCHEME,
-      servePluginIcons(installed.loaded),
+      servePluginIcons(
+        // Read on each request, after the lifecycle exists: an install adds to it.
+        () =>
+          lifecycle.snapshot().plugins.map(({ id }) => lifecycle.installed(id)),
+        () => registryIcons,
+        fetchFromWeb,
+      ),
     );
     // The Colour Scheme drives `prefers-color-scheme` in every view (ADR 0006), so it is applied
     // before the window opens, and again on every Save.
@@ -165,6 +201,85 @@ function runHub(): void {
     };
     const settings = loadHubSettings(hubDataDir, diagnostics);
     applyColourScheme(settings);
+    // Parsed here, so a bad HAWKEYE_HUB_REGISTRY_URL is logged as a crash. Only an installed Hub
+    // checks it.
+    const registryUrl = registryUrlFrom(process.env);
+    // One failed check is one `registry-check-failed` line; installed Plugins are left alone.
+    // ponytail: two checks in flight answer in whatever order they finish; drop a stale answer if
+    // a hung check ever outlives the next one.
+    const checkRegistryNow = (): void => {
+      void checkRegistry({
+        url: registryUrl,
+        fetch: fetchFromWeb,
+        platform,
+        hubApiVersion: HUB_API_VERSION,
+      }).then((check) => {
+        if (check.kind === "failed") {
+          diagnostics.recordHubEvent({
+            kind: "registry-check-failed",
+            failure: check.failure,
+          });
+        } else {
+          registryIcons = new Map(
+            check.plugins.map(({ manifest, iconUrl }) => [
+              manifest.id,
+              iconUrl,
+            ]),
+          );
+        }
+        lifecycle.registryChecked(check);
+        // A throw is an unhandled rejection: a Hub crash, as with installs.
+        void updater.registryChecked(check);
+      });
+    };
+    // Installs, updates and uninstalls run one at a time (spec #91). A job that throws,
+    // rather than answering a failure cause, is an unhandled rejection: a Hub crash.
+    const jobs = createJobQueue();
+    const installNow = (plugin: RegistryPlugin): void => {
+      void jobs
+        .run(() =>
+          installPlugin(
+            { dataDir: hubDataDir, fetch: fetchFromWeb, uv },
+            plugin,
+          ),
+        )
+        .then((outcome) => {
+          if (outcome.kind === "failed") {
+            const { kind: _failed, ...failure } = outcome;
+            diagnostics.recordHubEvent({
+              kind: "plugin-install-failed",
+              plugin: pluginRefOf(plugin),
+              ...failure,
+            });
+          }
+          lifecycle.installFinished(plugin.manifest.id, outcome);
+        });
+    };
+    // The partition plugin-views opens the Plugin in.
+    const partitionOf = (id: PluginId) =>
+      session.fromPartition(`persist:plugin-${id}`);
+    const uninstallNow = (
+      plugin: InstalledPlugin,
+      data: UninstallData,
+    ): void => {
+      const { id } = plugin.manifest;
+      void jobs
+        .run(() =>
+          uninstallPlugin(
+            {
+              dataDir: hubDataDir,
+              uv,
+              clearPartition: (cleared) =>
+                partitionOf(cleared).clearStorageData(),
+            },
+            plugin,
+            data,
+          ),
+        )
+        .then(() => {
+          lifecycle.uninstallFinished(id);
+        });
+    };
     const lifecycle = createLifecycle({
       // package.json's `version`: without one Electron would answer its own version.
       hubVersion: parseHubVersion(app.getVersion()),
@@ -178,7 +293,36 @@ function runHub(): void {
       unknownTheme: (name) => {
         diagnostics.recordHubEvent({ kind: "theme-unknown", name });
       },
+      // Dev mode runs no Registry checks (PLUGIN_STANDARD §9.4).
+      registry:
+        startedAs.kind === "dev"
+          ? { kind: "off" }
+          : {
+              kind: "on",
+              check: checkRegistryNow,
+              install: installNow,
+              uninstall: uninstallNow,
+            },
     });
+    // Silent updates after each check, through the same job queue (spec #91).
+    const updater = createUpdater({
+      dataDir: hubDataDir,
+      fetch: fetchFromWeb,
+      uv,
+      jobs,
+      lifecycle,
+      updateFailed: (failure) => {
+        diagnostics.recordHubEvent({
+          kind: "plugin-update-failed",
+          ...failure,
+        });
+      },
+    });
+    // At launch and every 4 hours (spec #91); Retry checks through the lifecycle too.
+    if (startedAs.kind === "installed") {
+      checkRegistryNow();
+      setInterval(checkRegistryNow, REGISTRY_CHECK_INTERVAL_MS);
+    }
     return openHubWindow(
       diagnostics,
       now,

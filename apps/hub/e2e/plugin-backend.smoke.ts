@@ -83,7 +83,7 @@ test("the Backend starts in its backend folder, without LANG or LC_*, and gets i
           "class-lists": join(dataDir, "stores", "class-lists"),
           seating: join(dataDir, "stores", "seating"),
         },
-        hubApi: "1.0.0",
+        hubApi: "1.1.0",
       },
       dataDirExists: true,
       storesExist: { "class-lists": true, seating: true },

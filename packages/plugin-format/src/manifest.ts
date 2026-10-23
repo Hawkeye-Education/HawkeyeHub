@@ -11,7 +11,7 @@ const kebabName = z.string().max(ID_MAX_LENGTH).regex(KEBAB_CASE);
 
 // The one definition of a Plugin id and version: the Hub parses its own inputs with these too.
 export const PluginId = kebabName.brand<"PluginId">();
-const StoreName = kebabName.brand<"StoreName">();
+export const StoreName = kebabName.brand<"StoreName">();
 export const PluginVersion = z
   .string()
   .refine((raw) => semver.valid(raw) === raw, "must be a semver version")
@@ -68,6 +68,8 @@ const Manifest = z.strictObject({
 export type Manifest = z.infer<typeof Manifest>;
 export type PluginId = z.infer<typeof PluginId>;
 export type PluginVersion = z.infer<typeof PluginVersion>;
+export type StoreName = z.infer<typeof StoreName>;
+export type PythonMinor = z.infer<typeof PythonMinor>;
 export type DisplayText = z.infer<typeof DisplayText>;
 
 export type ManifestParse =

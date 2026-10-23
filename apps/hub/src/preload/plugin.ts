@@ -1,12 +1,15 @@
 // The Plugin preload: builds each Plugin UI's one frozen `window.hub` (ADR 0009) before any Plugin
 // code runs. Sandboxed, so it may import only `electron` (anything else is bundled) and is built as
-// CommonJS. `displayLanguage`, `busy`, and `backend` when the Plugin has one.
+// CommonJS. `displayLanguage`, `busy`, `backend` when the Plugin has one, and `stores` when it
+// declares any.
 
 import type {
   HubBackend,
   HubBusy,
   HubError,
+  HubStores,
   RpcError,
+  StoreChange,
 } from "@hawkeye-hub/hub-api";
 import { contextBridge, ipcRenderer } from "electron";
 import {
@@ -14,8 +17,14 @@ import {
   BUSY,
   DISPLAY_LANGUAGE_ARG,
   HAS_BACKEND_ARG,
+  HAS_STORES_ARG,
+  STORES,
+  STORES_CHANGED,
   type BusyMessage,
+  type StoreAnswer,
+  type StoreChanged,
 } from "../shared/plugin-preload";
+import type { StoreCall } from "../shared/store-call";
 
 /** A JSON-RPC response or notification from the Backend, as main relays it. */
 type BackendMessage =
@@ -46,12 +55,68 @@ const busy: HubBusy = {
 
 contextBridge.exposeInMainWorld(
   "hub",
-  Object.freeze(
-    process.argv.includes(HAS_BACKEND_ARG)
-      ? { displayLanguage, busy, backend: connectBackend() }
-      : { displayLanguage, busy },
-  ),
+  Object.freeze({
+    displayLanguage,
+    busy,
+    ...(process.argv.includes(HAS_BACKEND_ARG)
+      ? { backend: connectBackend() }
+      : {}),
+    ...(process.argv.includes(HAS_STORES_ARG)
+      ? { stores: connectStores() }
+      : {}),
+  }),
 );
+
+/**
+ * `hub.stores`: each call answered by main, which refuses what the Plugin got wrong with the
+ * `HubError` the call rejects with. An Error thrown in main, or one thrown here synchronously,
+ * would reach the page as a bare message (the smoke suite showed both), so every call is a promise.
+ */
+function connectStores(): HubStores {
+  // Main is trusted, so its answer is not re-validated; `Value` is what main returns for `call`.
+  const answer = async <Value>(call: StoreCall): Promise<Value> => {
+    const answered = await ipcRenderer
+      .invoke(STORES, call)
+      .then((received: StoreAnswer<Value>) => received);
+    // A HubError is a plain object by design (ADR 0009), as `hub.backend` rejects with too.
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    if (answered.kind === "refused") throw answered.refusal;
+    return answered.value;
+  };
+
+  const handlers = new Map<number, (change: StoreChange) => void>();
+  ipcRenderer.on(STORES_CHANGED, (_event, { id, change }: StoreChanged) => {
+    // A change sent before the stop arrived in main is dropped.
+    handlers.get(id)?.(change);
+  });
+  let lastWatch = 0;
+
+  return {
+    list: (store) => answer({ call: "list", store }),
+    readText: (store, path) => answer({ call: "readText", store, path }),
+    readBytes: (store, path) => answer({ call: "readBytes", store, path }),
+    writeText: (store, path, text) =>
+      answer({ call: "writeText", store, path, text }),
+    writeBytes: (store, path, bytes) =>
+      answer({ call: "writeBytes", store, path, bytes }),
+    async watch(store, handler) {
+      lastWatch += 1;
+      const id = lastWatch;
+      // Set first: main may send a change before its answer arrives.
+      handlers.set(id, handler);
+      try {
+        await answer({ call: "watch", store, id });
+      } catch (refusal) {
+        handlers.delete(id);
+        throw refusal;
+      }
+      return () => {
+        if (!handlers.delete(id)) return;
+        void answer({ call: "unwatch", id });
+      };
+    },
+  };
+}
 
 /**
  * `hub.backend`: a JSON-RPC client over the MessagePort main hands over once the Backend's

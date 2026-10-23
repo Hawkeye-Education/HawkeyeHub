@@ -86,6 +86,10 @@ _Avoid_: Store, marketplace, repository
 One published version of a Plugin as a single downloadable file, the same for every Supported Platform.
 _Avoid_: Bundle, build, release
 
+**Plugin Catalogue**:
+The Hub Chrome screen listing every Plugin the Registry offers, from which staff install and uninstall Plugins and see why one cannot be installed.
+_Avoid_: Store, marketplace, app list
+
 **Company Configuration**:
 The company-wide settings every Hub installation shares, such as its Auth Provider, Role Mapping and Sign-in Lifetime; it holds no secrets.
 _Avoid_: Hub config, settings, tenant config

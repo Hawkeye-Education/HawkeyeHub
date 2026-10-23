@@ -1,9 +1,18 @@
 // The record of installed Plugins: `installed-plugins.json` in the Hub's data folder, a JSON array of
 // `{id, version}` naming each Plugin's active version, beside one `<id>@<version>` folder per
-// installed version. Install and update write it later; this spec only reads it. Dev mode's
-// Plugins load from their own folders through the same Manifest checks, without the record.
+// installed version. The record is the only source of truth: the job queue writes it whole and
+// atomically, and the launch sweep deletes every Plugin folder it does not name. Dev mode's Plugins
+// load from their own folders through the same Manifest checks, without the record.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import {
   parseManifest,
@@ -27,25 +36,59 @@ export interface InstalledPlugin {
   manifest: Manifest;
 }
 
-/** The Plugin as Diagnostics names it. */
-export function pluginRefOf({ manifest }: InstalledPlugin): PluginRef {
+/** The Plugin, installed or offered by the Registry, as Diagnostics names it. */
+export function pluginRefOf({
+  manifest,
+}: Pick<InstalledPlugin, "manifest">): PluginRef {
   return { id: manifest.id, version: manifest.version };
 }
 
-export interface LeftOutPlugin {
-  plugin: PluginRef;
-  reason: PluginLeftOutReason;
+/** The folder one installed version is unpacked into, beside the record. */
+export function versionFolder(
+  dataDir: AbsolutePath,
+  { id, version }: PluginRef,
+): AbsolutePath {
+  return parseAbsolutePath(join(dataDir, `${id}@${version}`));
 }
 
 /**
- * Reads the record and each entry's Manifest. An absent record means a fresh Hub and is written as
- * `[]`. A record that does not parse, or names an id twice, throws: the Hub must never forget what
- * is installed. An entry that cannot be loaded is left out, with why.
+ * Where a job building `ref` downloads its Plugin Package and unpacks it, before the rename to
+ * `versionFolder`. The launch sweep deletes both.
  */
-export function loadInstalledPlugins(dataDir: AbsolutePath): {
-  loaded: InstalledPlugin[];
-  leftOut: LeftOutPlugin[];
-} {
+export function buildPaths(
+  dataDir: AbsolutePath,
+  ref: PluginRef,
+): { download: AbsolutePath; partial: AbsolutePath } {
+  const folder = versionFolder(dataDir, ref);
+  return {
+    download: parseAbsolutePath(`${folder}.download`),
+    partial: parseAbsolutePath(`${folder}.partial`),
+  };
+}
+
+const VERSION_ENTRY =
+  /^(?<id>[^@]+)@(?<version>.+?)(?<build>\.partial|\.download)?$/;
+
+/** The data-folder entry `name`, if `versionFolder` or `buildPaths` named it; `partial` for a build's. */
+export function versionEntryOf(
+  name: string,
+): { plugin: PluginRef; partial: boolean } | null {
+  const groups = VERSION_ENTRY.exec(name)?.groups;
+  if (groups === undefined) return null;
+  const id = PluginId.safeParse(groups["id"]);
+  const version = PluginVersion.safeParse(groups["version"]);
+  if (!id.success || !version.success) return null;
+  return {
+    plugin: { id: id.data, version: version.data },
+    partial: groups["build"] !== undefined,
+  };
+}
+
+/**
+ * The record's entries. An absent record means a fresh Hub and is written as `[]`. A record that
+ * does not parse, or names an id twice, throws: the Hub must never forget what is installed.
+ */
+export function readRecord(dataDir: AbsolutePath): PluginRef[] {
   const recordPath = join(dataDir, RECORD_FILE);
   if (!existsSync(recordPath)) {
     mkdirSync(dataDir, { recursive: true });
@@ -58,11 +101,68 @@ export function loadInstalledPlugins(dataDir: AbsolutePath): {
   if (ids.size !== entries.length) {
     throw new Error(`${RECORD_FILE} names a Plugin id twice`);
   }
+  return entries;
+}
 
+/**
+ * Replaces the record atomically: a temp file renamed over it, so a crash leaves the old record or
+ * the new, never part of either. Only the job queue writes it, one job at a time, so one temp name
+ * serves.
+ */
+export function writeRecord(
+  dataDir: AbsolutePath,
+  entries: readonly PluginRef[],
+): void {
+  const recordPath = join(dataDir, RECORD_FILE);
+  const temp = `${recordPath}.tmp`;
+  writeFileSync(
+    temp,
+    JSON.stringify(entries.map(({ id, version }) => ({ id, version }))) + "\n",
+  );
+  renameSync(temp, recordPath);
+}
+
+/** What the launch sweep deleted: a build's leftover (`partial`), or a version the record does not name. */
+export interface SweptFolder {
+  plugin: PluginRef;
+  partial: boolean;
+}
+
+/**
+ * At launch, before loading (spec #91): deletes every build's leftover (`buildPaths`), left by a
+ * job cut short, and every `<id>@<version>` folder the record does not name. Nothing else in the
+ * data folder is touched.
+ */
+export function sweepLeftovers(dataDir: AbsolutePath): SweptFolder[] {
+  const recorded = new Set<string>(
+    readRecord(dataDir).map((ref) => versionFolder(dataDir, ref)),
+  );
+  return readdirSync(dataDir).flatMap((name) => {
+    const swept = versionEntryOf(name);
+    const path = join(dataDir, name);
+    if (swept === null || (!swept.partial && recorded.has(path))) return [];
+    rmSync(path, { recursive: true, force: true });
+    return [swept];
+  });
+}
+
+export interface LeftOutPlugin {
+  plugin: PluginRef;
+  reason: PluginLeftOutReason;
+}
+
+/**
+ * Reads the record (`readRecord`) and each entry's Manifest. An entry that cannot be loaded is
+ * left out, with why.
+ */
+export function loadInstalledPlugins(dataDir: AbsolutePath): {
+  loaded: InstalledPlugin[];
+  leftOut: LeftOutPlugin[];
+} {
   const loaded: InstalledPlugin[] = [];
   const leftOut: LeftOutPlugin[] = [];
-  for (const plugin of entries) {
-    const result = loadEntry(dataDir, plugin);
+  for (const plugin of readRecord(dataDir)) {
+    const result = loadVersion(versionFolder(dataDir, plugin), plugin);
     if (result.kind === "loaded") loaded.push(result.plugin);
     else leftOut.push({ plugin, reason: result.reason });
   }
@@ -88,17 +188,18 @@ export function loadDevPlugins(
   });
 }
 
-function loadEntry(
-  dataDir: AbsolutePath,
+/** Reads `folder`, which must hold Plugin `id` at `version`. */
+export function loadVersion(
+  folder: AbsolutePath,
   { id, version }: PluginRef,
 ): LoadResult {
   return loadFolder(
-    parseAbsolutePath(join(dataDir, `${id}@${version}`)),
+    folder,
     (manifest) => manifest.id === id && manifest.version === version,
   );
 }
 
-type LoadResult =
+export type LoadResult =
   | { kind: "loaded"; plugin: InstalledPlugin }
   | { kind: "left-out"; reason: PluginLeftOutReason };
 

@@ -3,7 +3,7 @@
 // snapshot, so a reloaded Hub Chrome redraws the same state by fetching it again.
 // Types and constants only: the preload is sandboxed and the Hub Chrome has no Node.
 
-import type { PluginId } from "@hawkeye-hub/plugin-format";
+import type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
 import type { Branded } from "./branded";
 import type { HubSettings } from "./hub-settings";
 
@@ -22,18 +22,73 @@ export const SWITCHER_WIDTH_PX = 240;
  */
 export type BlockedReason = "needs-sign-in" | "needs-different-hub";
 
+/**
+ * Why the Plugin Catalogue cannot install a Plugin: none of its Supported Platforms is this
+ * computer, or a reason it could not be opened once installed.
+ */
+export type CatalogueBlockedReason = "not-for-this-computer" | BlockedReason;
+
+/** Whether staff can install a Plugin the Registry offers, and if not, why. */
+export type CatalogueAccess =
+  { kind: "installable" } | { kind: "blocked"; reason: CatalogueBlockedReason };
+
 /** Whether staff can open an installed Plugin, and if not, why. */
 export type PluginAccess =
   { kind: "openable" } | { kind: "blocked"; reason: BlockedReason };
+
+/** An icon on main's `hawkeye-icon` scheme, which only main's `plugin-icons` makes. */
+export type IconUrl = Branded<string, "IconUrl">;
 
 export interface SwitcherPlugin {
   id: PluginId;
   /** Already in the Display Language. */
   name: string;
   /** The Plugin's `icon.svg`, served to the Hub Chrome only as a CSS mask (spec #44 story 53). */
-  iconUrl: string;
+  iconUrl: IconUrl;
   access: PluginAccess;
 }
+
+/** Why an install failed (spec #91): `environment` is a Python Backend's venv that would not build. */
+export type InstallFailureCause =
+  "download" | "checksum" | "unpack" | "environment";
+
+/** Whether a Plugin the Catalogue lists is installed, and at which version. */
+export type CatalogueInstalled =
+  { kind: "not-installed" } | { kind: "installed"; version: PluginVersion };
+
+/**
+ * The job queued or running for a Plugin the Catalogue lists, or how its last install failed, which
+ * shows until staff try again. Update adds its own. `uninstalling` starts once staff confirm, while
+ * an open Plugin is still closing.
+ */
+export type CatalogueJob =
+  | { kind: "none" }
+  | { kind: "installing" }
+  | { kind: "install-failed"; cause: InstallFailureCause }
+  | { kind: "uninstalling" };
+
+/** A Plugin the Registry offers, at the version the Catalogue would install. */
+export interface CataloguePlugin {
+  id: PluginId;
+  /** Already in the Display Language, as is the description. */
+  name: string;
+  description: string;
+  /** The Registry's icon, served through the icon scheme as the Switcher's are. */
+  iconUrl: IconUrl;
+  access: CatalogueAccess;
+  installed: CatalogueInstalled;
+  job: CatalogueJob;
+}
+
+/**
+ * What the Plugin Catalogue lists: `off` in dev mode, which has no Catalogue; `checking` until a
+ * Registry check answers; `unreachable` after one failed, until Retry.
+ */
+export type Catalogue =
+  | { kind: "off" }
+  | { kind: "checking" }
+  | { kind: "unreachable" }
+  | { kind: "listed"; plugins: CataloguePlugin[] };
 
 /** The Hub's own version (semver), as main parses it. */
 export type HubVersion = Branded<string, "HubVersion">;
@@ -47,11 +102,12 @@ export type ColourScheme = (typeof COLOUR_SCHEMES)[number];
 
 /**
  * What the content area shows: the front Plugin's UI (or the empty state when none is open), or
- * Hub Settings, with the open Plugins still running hidden behind them. Settings carry the unsaved
- * form, held in main, so a reloaded Hub Chrome redraws it.
+ * Hub Settings or the Plugin Catalogue, with the open Plugins still running hidden behind them.
+ * Settings carry the unsaved form, held in main, so a reloaded Hub Chrome redraws it.
  */
 export type HubChromeContent =
   | { kind: "plugin" }
+  | { kind: "catalogue" }
   | {
       kind: "settings";
       form: HubSettings;
@@ -81,6 +137,7 @@ export interface HubChromeSnapshot {
   theme: ThemeName;
   /** The Themes this Hub has, for the Theme picker. */
   themes: ThemeName[];
+  catalogue: Catalogue;
 }
 
 /** A Plugin's own Busy reason, in the Display Language. Never empty: main parses it so. */
@@ -97,15 +154,18 @@ export interface BusyPlugin {
  * A Hub Chrome dialog. Its Busy reasons are those at the time it was asked: a Plugin clearing or
  * changing Busy leaves the dialog as it is (spec #44). A Plugin that closes leaves it.
  * `discard-changes` asks before picking a Plugin or quitting drops unsaved Hub Settings edits.
+ * `uninstall` confirms an uninstall, with its "Also delete my data" checkbox.
  */
 export type HubChromeDialog =
   | { kind: "busy-close"; plugin: BusyPlugin }
   | { kind: "busy-quit"; plugins: BusyPlugin[] }
-  | { kind: "discard-changes" };
+  | { kind: "discard-changes" }
+  | { kind: "uninstall"; plugin: { id: PluginId; name: string } };
 
 /**
  * Staff's answers to the pending dialog: **Keep open**, or **Close anyway** / **Quit anyway**, to
- * a Busy dialog; **Keep editing** or **Discard** to the Discard dialog.
+ * a Busy dialog; **Keep editing** or **Discard** to the Discard dialog; **Keep installed**, or
+ * **Uninstall** with the checkbox unticked or ticked, to the uninstall dialog.
  */
 export const DIALOG_ANSWERS = [
   "keep-open",
@@ -113,6 +173,9 @@ export const DIALOG_ANSWERS = [
   "quit-anyway",
   "keep-editing",
   "discard",
+  "keep-installed",
+  "uninstall",
+  "uninstall-and-delete-data",
 ] as const;
 export type DialogAnswer = (typeof DIALOG_ANSWERS)[number];
 
@@ -121,6 +184,7 @@ export const KEEP_ANSWERS = {
   "busy-close": "keep-open",
   "busy-quit": "keep-open",
   "discard-changes": "keep-editing",
+  uninstall: "keep-installed",
 } as const satisfies Record<HubChromeDialog["kind"], DialogAnswer>;
 
 /** What the Hub Chrome preload exposes as `window.hubChrome`. */
@@ -146,6 +210,14 @@ export interface HubChromeApi {
   cancelSettings(): void;
   /** Exports a Diagnostics Bundle to where staff choose in a native save dialog. */
   exportDiagnostics(): void;
+  /** Shows the Plugin Catalogue in the content area. */
+  showCatalogue(): void;
+  /** Checks the Registry again after a failed check. */
+  retryRegistry(): void;
+  /** Installs a Plugin the Catalogue lists as installable and not installed. */
+  install(id: PluginId): void;
+  /** Asks to uninstall an installed Plugin, through the uninstall dialog. */
+  uninstall(id: PluginId): void;
 }
 
 /** Hub Chrome → main, `invoke`: answers the current snapshot. */
@@ -168,3 +240,11 @@ export const SAVE_SETTINGS = "hub-chrome:save-settings";
 export const CANCEL_SETTINGS = "hub-chrome:cancel-settings";
 /** Hub Chrome → main, `invoke`: exports a Diagnostics Bundle through a native save dialog. */
 export const EXPORT_DIAGNOSTICS = "hub-chrome:export-diagnostics";
+/** Hub Chrome → main, `invoke`: shows the Plugin Catalogue. */
+export const SHOW_CATALOGUE = "hub-chrome:show-catalogue";
+/** Hub Chrome → main, `invoke`: checks the Registry again. */
+export const RETRY_REGISTRY = "hub-chrome:retry-registry";
+/** Hub Chrome → main, `invoke`: the id of a Plugin to install from the Catalogue. */
+export const INSTALL_PLUGIN = "hub-chrome:install-plugin";
+/** Hub Chrome → main, `invoke`: the id of a Plugin to uninstall from the Catalogue. */
+export const UNINSTALL_PLUGIN = "hub-chrome:uninstall-plugin";

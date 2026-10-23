@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   _electron,
   chromium,
@@ -25,10 +26,22 @@ import { errorCode } from "../src/main/error-code";
 // The package directory, so Electron reads package.json's `main` and `productName`.
 export const HUB_DIR = join(import.meta.dirname, "..");
 
-/** The environment a Hub runs in: this one plus its data folder. */
+/**
+ * A Registry offering no Plugins, which every Hub checks unless a test names another: a smoke test
+ * never reaches the real Registry, and its check logs nothing.
+ */
+export const EMPTY_REGISTRY = pathToFileURL(
+  join(import.meta.dirname, "fixtures", "registry", "empty.json"),
+).href;
+
+/** The environment a Hub runs in: this one plus its data folder and the empty Registry. */
 // Inferred: _electron.launch's env type is narrower than NodeJS.ProcessEnv but accepts the spread.
 export function hubEnv(dataDir: string) {
-  return { ...process.env, HAWKEYE_HUB_DATA_DIR: dataDir };
+  return {
+    ...process.env,
+    HAWKEYE_HUB_DATA_DIR: dataDir,
+    HAWKEYE_HUB_REGISTRY_URL: EMPTY_REGISTRY,
+  };
 }
 
 export function launchHub(dataDir: string): Promise<ElectronApplication> {
