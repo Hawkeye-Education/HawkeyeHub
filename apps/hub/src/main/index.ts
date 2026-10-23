@@ -15,6 +15,7 @@ import {
 import { startAiChat } from "./ai";
 import { keysAfterSave, loadAiKeys, saveAiKeys } from "./ai-keys";
 import { assistantContext } from "./assistant-context";
+import { loadAssistantModels, saveAssistantModels } from "./assistant-models";
 import { aiCallDeps } from "./plugin-views";
 import { killBackendsNow } from "./backend";
 import { openDiagnostics } from "./diagnostics";
@@ -318,6 +319,10 @@ function runHub(): void {
       // With the Hub Settings and keys saved when each chat starts, as `hub.ai`'s are.
       assistant: {
         context: ({ folder }, language) => assistantContext(folder, language),
+        modelsAtStart: loadAssistantModels(hubDataDir),
+        saveModels: (models) => {
+          saveAssistantModels(hubDataDir, models);
+        },
         chat: (request) =>
           startAiChat(
             aiCallDeps(hubDataDir, diagnostics, lifecycle.storedSettings()),

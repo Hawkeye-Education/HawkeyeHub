@@ -1,8 +1,10 @@
 // The Assistant Panel (#108) against a local fake OpenAI-compatible server: open a fixture Plugin
 // with an Assistant, toggle its Panel (which narrows the Plugin UI), send a message, watch the
-// reply stream and stop it, then get a Markdown reply and copy its code block. Each branch of the
-// conversation is a Vitest test of the lifecycle.
+// reply stream and stop it, then get a Markdown reply and copy its code block, and pick a model
+// (#109), which is saved at once. Each branch of the conversation is a Vitest test of the lifecycle.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { startFakeAiServer, writeAiProviders } from "./fake-ai-server";
 import {
   displayLanguageOf,
@@ -25,6 +27,7 @@ const LABELS = {
     send: "Send",
     stop: "Stop",
     copy: "Copy",
+    model: "Model",
   },
   "zh-HK": {
     plugin: "正則助手",
@@ -33,6 +36,7 @@ const LABELS = {
     send: "傳送",
     stop: "停止",
     copy: "複製",
+    model: "模型",
   },
 };
 
@@ -117,6 +121,23 @@ test("the Assistant Panel streams a Markdown reply, stops one, and copies a code
     await expect
       .poll(() => hub.evaluate(({ clipboard }) => clipboard.readText()))
       .toBe("^Page \\d+$");
+
+    await hubChrome
+      .getByRole("combobox", { name: labels.model })
+      .selectOption({ label: "Fake · fake-model" });
+    await expect
+      .poll(() =>
+        JSON.parse(
+          readFileSync(join(dataDir, "assistant-models.json"), "utf8"),
+        ),
+      )
+      .toEqual({
+        "regex-helper": {
+          kind: "chosen",
+          provider: "Fake",
+          model: "fake-model",
+        },
+      });
   } finally {
     await hub.close();
     await fake.close();

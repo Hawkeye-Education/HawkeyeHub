@@ -5,8 +5,12 @@
 import type { PluginId } from "@hawkeye-hub/plugin-format";
 import { LitElement, css, html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import type { AiContent, AiFailure } from "../shared/ai-call";
-import type { Conversation, HubChromeApi } from "../shared/hub-chrome-ipc";
+import type { AiContent, AiFailure, AiModelChoice } from "../shared/ai-call";
+import type {
+  AssistantPanel as Panel,
+  Conversation,
+  HubChromeApi,
+} from "../shared/hub-chrome-ipc";
 import { replyHtml } from "./reply-markdown";
 import type { Strings } from "./strings";
 
@@ -15,6 +19,11 @@ function textOf(content: AiContent): string {
   return content
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
     .join("\n\n");
+}
+
+function sameChoice(a: AiModelChoice, b: AiModelChoice): boolean {
+  if (a.kind === "default" || b.kind === "default") return a.kind === b.kind;
+  return a.provider === b.provider && a.model === b.model;
 }
 
 export class AssistantPanel extends LitElement {
@@ -86,12 +95,16 @@ export class AssistantPanel extends LitElement {
     strings: { attribute: false },
     pluginId: { attribute: false },
     conversation: { attribute: false },
+    model: { attribute: false },
+    providers: { attribute: false },
     hub: { attribute: false },
     draft: { state: true },
   };
   declare strings: Strings;
   declare pluginId: PluginId;
   declare conversation: Conversation;
+  declare model: AiModelChoice;
+  declare providers: Extract<Panel, { kind: "open" }>["providers"];
   declare hub: HubChromeApi;
   // What staff are typing. Kept here, not in main: a Hub Chrome reload loses only an unsent draft.
   declare draft: string;
@@ -137,6 +150,44 @@ export class AssistantPanel extends LitElement {
     if (event.target.closest("a") !== null) event.preventDefault();
   };
 
+  // Default, every saved provider's models, and the Plugin's choice if it has since been removed,
+  // so staff see which one fails (no silent switch).
+  private modelPicker() {
+    const { strings, model } = this;
+    const listed: AiModelChoice[] = [
+      { kind: "default" },
+      ...this.providers.flatMap(({ label, models }) =>
+        models.map(({ id }) => ({
+          kind: "chosen" as const,
+          provider: label,
+          model: id,
+        })),
+      ),
+    ];
+    const choices = listed.some((choice) => sameChoice(choice, model))
+      ? listed
+      : [...listed, model];
+    return html`<select
+      aria-label=${strings.model}
+      @change=${(event: Event) => {
+        if (!(event.target instanceof HTMLSelectElement)) return;
+        const choice = choices[event.target.selectedIndex];
+        if (choice !== undefined) this.hub.chooseModel(this.pluginId, choice);
+      }}
+    >
+      ${choices.map(
+        (choice) =>
+          html`<option ?selected=${sameChoice(choice, model)}>
+            ${
+              choice.kind === "default"
+                ? strings.defaultModel
+                : `${choice.provider} · ${choice.model}`
+            }
+          </option>`,
+      )}
+    </select>`;
+  }
+
   private failureText(failure: AiFailure) {
     const { strings } = this;
     switch (failure.code) {
@@ -167,6 +218,7 @@ export class AssistantPanel extends LitElement {
     const streaming = reply.kind === "streaming";
     return html`<header>
         <h2>${strings.assistant}</h2>
+        ${this.modelPicker()}
         <button
           type="button"
           @click=${() => {

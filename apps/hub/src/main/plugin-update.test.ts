@@ -121,6 +121,10 @@ function hubWith(fetch: RegistryFetch) {
       chat: () => {
         throw new Error("No Assistant here");
       },
+      modelsAtStart: new Map(),
+      saveModels: () => {
+        throw new Error("No Assistant here");
+      },
     },
     registry: {
       kind: "on",

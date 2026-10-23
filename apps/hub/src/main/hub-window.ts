@@ -33,10 +33,11 @@ import {
   SEND_TO_ASSISTANT,
   STOP_ASSISTANT,
   NEW_CONVERSATION,
+  CHOOSE_MODEL,
   type DisplayLanguage,
   type HubChromeDialog,
 } from "../shared/hub-chrome-ipc";
-import { AiContentSchema } from "../shared/ai-call";
+import { AiContentSchema, AiModelChoiceSchema } from "../shared/ai-call";
 import { z } from "zod";
 import { bundleFileName, type Diagnostics } from "./diagnostics";
 import { errorCode } from "./error-code";
@@ -254,6 +255,10 @@ export function openHubWindow(
   ipcMain.handle(NEW_CONVERSATION, (event, id: unknown) => {
     fromHubChrome(NEW_CONVERSATION, event.sender);
     lifecycle.newConversation(PluginId.parse(id));
+  });
+  ipcMain.handle(CHOOSE_MODEL, (event, id: unknown, model: unknown) => {
+    fromHubChrome(CHOOSE_MODEL, event.sender);
+    lifecycle.chooseModel(PluginId.parse(id), AiModelChoiceSchema.parse(model));
   });
   ipcMain.handle(EXPORT_DIAGNOSTICS, async (event) => {
     fromHubChrome(EXPORT_DIAGNOSTICS, event.sender);
