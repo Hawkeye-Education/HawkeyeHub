@@ -16,6 +16,7 @@ import {
   type Rectangle,
 } from "electron";
 import {
+  ASSISTANT_PANEL_WIDTH_PX,
   SWITCHER_WIDTH_PX,
   type BusyReason,
   type DisplayLanguage,
@@ -28,7 +29,8 @@ import {
   HAS_BACKEND_ARG,
   HAS_STORES_ARG,
 } from "../shared/plugin-preload";
-import { serveAi } from "./ai";
+import type { HubSettings } from "../shared/hub-settings";
+import { serveAi, type AiCallDeps } from "./ai";
 import { loadAiKeys } from "./ai-keys";
 import { startBackend } from "./backend";
 import type { Diagnostics, NetErrorCode, PluginCrash } from "./diagnostics";
@@ -100,13 +102,17 @@ export function createPluginViews(
 ): PluginViews {
   const opened = new Map<PluginId, OpenPlugin>();
 
-  // Beside the Plugin Switcher.
+  // Whether the front Plugin's Assistant Panel is open, as the latest snapshot says.
+  let panelOpen = false;
+  // Beside the Plugin Switcher, and left of the Assistant Panel while it is open. Only the front
+  // view shows, so every view takes the front one's bounds.
   const contentArea = (): Rectangle => {
     const { width, height } = contentAreaOf(window);
+    const panel = panelOpen ? ASSISTANT_PANEL_WIDTH_PX : 0;
     return {
       x: SWITCHER_WIDTH_PX,
       y: 0,
-      width: width - SWITCHER_WIDTH_PX,
+      width: width - SWITCHER_WIDTH_PX - panel,
       height,
     };
   };
@@ -178,14 +184,9 @@ export function createPluginViews(
       serveStores(view.webContents, hubDataDir, manifest.stores);
     }
     // `hub.ai`, for every Plugin, with the Hub Settings and keys saved when each chat starts.
-    serveAi(view.webContents, () => ({
-      settings: lifecycle.storedSettings(),
-      keys: loadAiKeys(hubDataDir, safeStorage),
-      fetch: aiFetch,
-      recordHubEvent: (event) => {
-        diagnostics.recordHubEvent(event);
-      },
-    }));
+    serveAi(view.webContents, () =>
+      aiCallDeps(hubDataDir, diagnostics, lifecycle.storedSettings()),
+    );
     // A Plugin's beforeunload never holds a close (ADR 0009): Busy is how it asks to stay open.
     view.webContents.on("will-prevent-unload", (event) => {
       event.preventDefault();
@@ -267,7 +268,8 @@ export function createPluginViews(
   };
 
   return {
-    follow({ open: openIds, foreground, content, displayLanguage }) {
+    follow({ open: openIds, foreground, content, displayLanguage, assistant }) {
+      panelOpen = assistant.kind === "open";
       for (const [id, plugin] of opened) {
         if (!openIds.includes(id)) close(id, plugin);
       }
@@ -275,6 +277,7 @@ export function createPluginViews(
         const openPlugin =
           opened.get(id) ?? open(lifecycle.installed(id), displayLanguage);
         opened.set(id, openPlugin);
+        openPlugin.view.setBounds(contentArea());
         // A hidden view stays alive; Chromium throttles it and the page sees visibilitychange.
         // Hub Settings hide the front one too, so the Hub Chrome beneath draws them.
         openPlugin.view.setVisible(
@@ -284,6 +287,25 @@ export function createPluginViews(
     },
     layout() {
       for (const { view } of opened.values()) view.setBounds(contentArea());
+    },
+  };
+}
+
+/**
+ * What a chat with an AI Provider needs, for `hub.ai` and the Assistant Panel alike: the saved Hub
+ * Settings, the keys saved with them, read now, and Chromium's fetch.
+ */
+export function aiCallDeps(
+  hubDataDir: AbsolutePath,
+  diagnostics: Diagnostics,
+  settings: HubSettings,
+): AiCallDeps {
+  return {
+    settings,
+    keys: loadAiKeys(hubDataDir, safeStorage),
+    fetch: aiFetch,
+    recordHubEvent: (event) => {
+      diagnostics.recordHubEvent(event);
     },
   };
 }

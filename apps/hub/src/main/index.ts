@@ -12,7 +12,10 @@ import {
   safeStorage,
   session,
 } from "electron";
+import { startAiChat } from "./ai";
 import { keysAfterSave, loadAiKeys, saveAiKeys } from "./ai-keys";
+import { assistantContext } from "./assistant-context";
+import { aiCallDeps } from "./plugin-views";
 import { killBackendsNow } from "./backend";
 import { openDiagnostics } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
@@ -311,6 +314,15 @@ function runHub(): void {
       },
       unknownTheme: (name) => {
         diagnostics.recordHubEvent({ kind: "theme-unknown", name });
+      },
+      // With the Hub Settings and keys saved when each chat starts, as `hub.ai`'s are.
+      assistant: {
+        context: ({ folder }, language) => assistantContext(folder, language),
+        chat: (request) =>
+          startAiChat(
+            aiCallDeps(hubDataDir, diagnostics, lifecycle.storedSettings()),
+            request,
+          ),
       },
       // Dev mode runs no Registry checks (PLUGIN_STANDARD §9.4).
       registry:

@@ -29,9 +29,14 @@ import {
   SNAPSHOT_CHANGED,
   TYPE_AI_KEY,
   UNINSTALL_PLUGIN,
+  TOGGLE_ASSISTANT,
+  SEND_TO_ASSISTANT,
+  STOP_ASSISTANT,
+  NEW_CONVERSATION,
   type DisplayLanguage,
   type HubChromeDialog,
 } from "../shared/hub-chrome-ipc";
+import { AiContentSchema } from "../shared/ai-call";
 import { z } from "zod";
 import { bundleFileName, type Diagnostics } from "./diagnostics";
 import { errorCode } from "./error-code";
@@ -230,6 +235,25 @@ export function openHubWindow(
   ipcMain.handle(UNINSTALL_PLUGIN, (event, id: unknown) => {
     fromHubChrome(UNINSTALL_PLUGIN, event.sender);
     lifecycle.uninstall(PluginId.parse(id));
+  });
+  ipcMain.handle(TOGGLE_ASSISTANT, (event, id: unknown) => {
+    fromHubChrome(TOGGLE_ASSISTANT, event.sender);
+    lifecycle.toggleAssistant(PluginId.parse(id));
+  });
+  ipcMain.handle(SEND_TO_ASSISTANT, (event, id: unknown, content: unknown) => {
+    fromHubChrome(SEND_TO_ASSISTANT, event.sender);
+    lifecycle.sendToAssistant(
+      PluginId.parse(id),
+      AiContentSchema.parse(content),
+    );
+  });
+  ipcMain.handle(STOP_ASSISTANT, (event, id: unknown) => {
+    fromHubChrome(STOP_ASSISTANT, event.sender);
+    lifecycle.stopAssistant(PluginId.parse(id));
+  });
+  ipcMain.handle(NEW_CONVERSATION, (event, id: unknown) => {
+    fromHubChrome(NEW_CONVERSATION, event.sender);
+    lifecycle.newConversation(PluginId.parse(id));
   });
   ipcMain.handle(EXPORT_DIAGNOSTICS, async (event) => {
     fromHubChrome(EXPORT_DIAGNOSTICS, event.sender);

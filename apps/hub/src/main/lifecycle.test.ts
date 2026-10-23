@@ -3,7 +3,9 @@ import {
   PluginId,
   type Manifest,
 } from "@hawkeye-hub/plugin-format";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import type { AiChatRequest } from "../shared/ai-call";
+import { AiCallFailed, type AiChat, type AiFailure } from "./ai";
 import {
   parseAbsolutePath,
   parseAiProviderLabel,
@@ -32,7 +34,7 @@ import type { RegistryPlugin } from "./registry";
 function installed(
   id: string,
   name: unknown,
-  overrides: { hubApi?: string; identity?: unknown } = {},
+  overrides: { hubApi?: string; identity?: unknown; assistant?: unknown } = {},
 ) {
   const parsed = parseManifest({
     id,
@@ -66,6 +68,15 @@ const ignoreSave = () => new Set<AiProviderLabel>();
 const ignoreUnknownTheme = (): void => {
   // Most tests store only Themes this Hub has.
 };
+// Most tests open no Plugin with an Assistant.
+const NO_ASSISTANT: LifecycleDeps["assistant"] = {
+  context: () => {
+    throw new Error("No Assistant here");
+  },
+  chat: () => {
+    throw new Error("No Assistant here");
+  },
+};
 
 const plugins = [
   installed("class-timer", { "en-HK": "Timer", "zh-HK": "計時器" }),
@@ -83,6 +94,7 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
       keyedAtStart: new Set(),
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
+      assistant: NO_ASSISTANT,
       registry: DEV_MODE,
     }).snapshot(),
   ).toEqual({
@@ -116,6 +128,7 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
     theme: "hawkeye",
     themes: ["hawkeye"],
     catalogue: { kind: "off" },
+    assistant: { kind: "none" },
   });
 });
 
@@ -129,6 +142,7 @@ test("in zh-HK the snapshot uses zh-HK names, falls back to English, and sorts b
       keyedAtStart: new Set(),
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
+      assistant: NO_ASSISTANT,
       registry: DEV_MODE,
     })
       .snapshot()
@@ -146,6 +160,7 @@ test("showing settings keeps open Plugins open with the front one still in front
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -193,6 +208,7 @@ function inSettings(stored: HubSettings, storedKeys: AiKeys = new Map()) {
     unknownTheme: (name) => {
       unknownThemes.push(name);
     },
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.showSettings();
@@ -475,6 +491,7 @@ test("picking a Plugin while settings show leaves them and brings that Plugin fo
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -498,6 +515,7 @@ test("settings stay showing while the Plugins behind them close", () => {
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("attendance"));
@@ -519,6 +537,7 @@ test("editing, saving or cancelling while settings are not showing throws", () =
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(() => {
@@ -546,6 +565,7 @@ test("opening Plugins brings each forward, and opening an open one brings it for
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(openAndForeground(lifecycle)).toEqual({ open: [], foreground: null });
@@ -573,6 +593,7 @@ test("closing the foreground Plugin brings forward the most recently foregrounde
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -597,6 +618,7 @@ test("closing a background Plugin leaves the foreground one in front", () => {
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -618,6 +640,7 @@ test("every change is announced", () => {
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   const seen: (string | null)[] = [];
@@ -641,6 +664,7 @@ test("a closed Plugin is closing until its close finishes, cannot be reopened un
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -674,6 +698,7 @@ test("finishing the close of a Plugin that is not closing throws", () => {
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("attendance"));
@@ -691,6 +716,7 @@ test("a staff close of a Plugin that is not Busy closes it without asking", () =
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("attendance"));
@@ -712,6 +738,7 @@ test("a staff close of a Busy Plugin asks with its latest reason; Keep open leav
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -744,6 +771,7 @@ test("Close anyway closes the Busy Plugin, and closing clears its Busy", () => {
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -772,6 +800,7 @@ test("a Plugin that clears Busy closes without asking, but a dialog already up s
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -802,6 +831,7 @@ test("a Busy Plugin that closes abnormally while its dialog is up takes the dial
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -824,6 +854,7 @@ test("a Busy Plugin that closes abnormally while the quit dialog is up leaves it
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -854,6 +885,7 @@ test("a Busy reason that changes while its dialog is up leaves the dialog as it 
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -875,6 +907,7 @@ test("Busy from a Plugin that is not open is ignored: it arrived as the Plugin c
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -896,6 +929,7 @@ test("a quit with no Busy Plugin goes ahead without asking", () => {
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -917,6 +951,7 @@ test("a quit with Busy Plugins asks once, listing each by name; Keep open stays,
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -959,6 +994,7 @@ test("a quit while a Busy close is asking asks about the quit instead", () => {
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -978,6 +1014,7 @@ test("an answer that is not one of the pending dialog's buttons, or with no dial
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(() => {
@@ -1000,6 +1037,7 @@ test("opening a Plugin that is not installed, or closing one that is not open, t
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(() => {
@@ -1053,6 +1091,7 @@ test("the snapshot marks blocked Plugins, and opening one throws", () => {
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(
@@ -1082,6 +1121,7 @@ test("installed answers the installed Plugin with an id, and throws for one that
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(lifecycle.installed(id("attendance"))).toBe(plugins[1]);
@@ -1155,6 +1195,7 @@ test("picking a blocked Plugin with unsaved edits throws rather than asking", ()
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.showSettings();
@@ -1256,6 +1297,7 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   }).snapshot();
   expect(chosen.displayLanguage).toBe("zh-HK");
@@ -1273,6 +1315,7 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
       keyedAtStart: new Set(),
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
+      assistant: NO_ASSISTANT,
       registry: DEV_MODE,
     }).snapshot().displayLanguage,
   ).toBe("zh-HK");
@@ -1458,6 +1501,7 @@ function withRegistry(language: "en-HK" | "zh-HK") {
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: {
       kind: "on",
       check: () => {
@@ -1669,6 +1713,7 @@ test("dev mode has no Catalogue: showing it, retrying or answering a check throw
     keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(lifecycle.snapshot().catalogue).toEqual({ kind: "off" });
@@ -1837,4 +1882,255 @@ test("Uninstall throws for a Plugin not installed or already uninstalling, and f
   expect(() => {
     lifecycle.uninstall(id("class-timer"));
   }).toThrow();
+});
+
+// The Assistant Panel (#108).
+
+const helper = installed("regex-helper", "Regex Helper", {
+  assistant: {
+    kind: "enabled",
+    templates: [{ label: "Draft a regex", text: "Draft a regex for …" }],
+  },
+});
+const HELPER = id("regex-helper");
+
+/** A chat the test drives: `delta`, `finish` or `fail` it, and see whether it was cancelled. */
+function drivenChat() {
+  let controller: ReadableStreamDefaultController<string> | undefined;
+  const [text, forDone] = new ReadableStream<string>({
+    start: (started) => {
+      controller = started;
+    },
+  }).tee();
+  if (controller === undefined) throw new Error("start runs at once");
+  const stream = controller;
+  const done = (async () => {
+    let reply = "";
+    for await (const delta of forDone) reply += delta;
+    return reply;
+  })();
+  done.catch(() => undefined);
+  const driven = {
+    cancelled: false,
+    delta: (delta: string) => {
+      stream.enqueue(delta);
+    },
+    finish: () => {
+      stream.close();
+    },
+    fail: (failure: AiFailure) => {
+      stream.error(new AiCallFailed(failure));
+    },
+  };
+  const chat: AiChat = {
+    text,
+    done,
+    cancel: () => {
+      driven.cancelled = true;
+      stream.close();
+    },
+  };
+  return { driven, chat };
+}
+
+/** A Lifecycle with the Regex Helper (which has an Assistant) and the others, and its chats. */
+function withAssistant() {
+  const requests: AiChatRequest[] = [];
+  const chats: ReturnType<typeof drivenChat>["driven"][] = [];
+  const read: string[] = [];
+  const lifecycle = createLifecycle({
+    hubVersion: HUB_VERSION,
+    systemLanguage: "en-HK",
+    installed: [helper, ...plugins],
+    storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
+    save: ignoreSave,
+    unknownTheme: ignoreUnknownTheme,
+    assistant: {
+      context: ({ manifest }, language) => {
+        read.push(manifest.id);
+        return `Context of ${manifest.id} in ${language}`;
+      },
+      chat: (request) => {
+        requests.push(request);
+        const { driven, chat } = drivenChat();
+        chats.push(driven);
+        return chat;
+      },
+    },
+    registry: DEV_MODE,
+  });
+  const chat = (at: number) => {
+    const driven = chats[at];
+    if (driven === undefined) throw new Error(`No chat ${String(at)}`);
+    return driven;
+  };
+  return { lifecycle, requests, chat, read };
+}
+
+const said = (text: string) => [{ type: "text" as const, text }];
+
+test("a Plugin without an Assistant has no Panel, and toggling one throws, as for a Plugin not open", () => {
+  const { lifecycle } = withAssistant();
+  lifecycle.open(id("class-timer"));
+  expect(lifecycle.snapshot().assistant).toEqual({ kind: "none" });
+  expect(() => {
+    lifecycle.toggleAssistant(id("class-timer"));
+  }).toThrow();
+  expect(() => {
+    lifecycle.toggleAssistant(HELPER);
+  }).toThrow();
+});
+
+test("the Assistant Panel starts closed, toggles, and is remembered per Plugin, across a close", () => {
+  const { lifecycle } = withAssistant();
+  lifecycle.open(HELPER);
+  expect(lifecycle.snapshot().assistant).toEqual({ kind: "closed" });
+
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toEqual({
+    kind: "open",
+    conversation: { messages: [], reply: { kind: "idle" } },
+  });
+
+  // Another Plugin in front shows its own; bringing the helper back shows it open still.
+  lifecycle.open(id("class-timer"));
+  expect(lifecycle.snapshot().assistant).toEqual({ kind: "none" });
+  lifecycle.open(HELPER);
+  expect(lifecycle.snapshot().assistant.kind).toBe("open");
+
+  lifecycle.close(HELPER);
+  lifecycle.closed(HELPER);
+  lifecycle.open(HELPER);
+  expect(lifecycle.snapshot().assistant.kind).toBe("open");
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toEqual({ kind: "closed" });
+});
+
+test("a message streams a reply from the Default AI Provider, with the context read at open", async () => {
+  const { lifecycle, requests, chat, read } = withAssistant();
+  lifecycle.open(HELPER);
+  expect(read).toEqual(["regex-helper"]);
+  lifecycle.toggleAssistant(HELPER);
+
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(requests).toEqual([
+    {
+      model: { kind: "default" },
+      system: "Context of regex-helper in en-HK",
+      messages: [{ role: "user", content: said("Hi") }],
+    },
+  ]);
+  chat(0).delta("Hello");
+  chat(0).delta(" there");
+  await vi.waitFor(() => {
+    expect(lifecycle.snapshot().assistant).toMatchObject({
+      conversation: {
+        messages: [{ role: "user", content: said("Hi") }],
+        reply: { kind: "streaming", text: "Hello there" },
+      },
+    });
+  });
+  // One reply at a time.
+  expect(() => {
+    lifecycle.sendToAssistant(HELPER, said("And?"));
+  }).toThrow();
+
+  chat(0).finish();
+  await vi.waitFor(() => {
+    expect(lifecycle.snapshot().assistant).toMatchObject({
+      conversation: {
+        messages: [
+          { role: "user", content: said("Hi") },
+          { role: "assistant", content: said("Hello there") },
+        ],
+        reply: { kind: "idle" },
+      },
+    });
+  });
+
+  // The next message carries the conversation so far; the context is not read again.
+  lifecycle.sendToAssistant(HELPER, said("Thanks"));
+  expect(requests[1]?.messages).toHaveLength(3);
+  expect(read).toEqual(["regex-helper"]);
+});
+
+test("Stop keeps what had arrived, and New conversation starts again", async () => {
+  const { lifecycle, chat } = withAssistant();
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  chat(0).delta("Partial");
+  await vi.waitFor(() => {
+    expect(lifecycle.snapshot().assistant).toMatchObject({
+      conversation: { reply: { kind: "streaming", text: "Partial" } },
+    });
+  });
+
+  lifecycle.stopAssistant(HELPER);
+  expect(chat(0).cancelled).toBe(true);
+  await vi.waitFor(() => {
+    expect(lifecycle.snapshot().assistant).toMatchObject({
+      conversation: {
+        messages: [
+          { role: "user", content: said("Hi") },
+          { role: "assistant", content: said("Partial") },
+        ],
+        reply: { kind: "idle" },
+      },
+    });
+  });
+  // Stopping with nothing streaming does nothing: staff may click as the reply ends.
+  lifecycle.stopAssistant(HELPER);
+
+  lifecycle.sendToAssistant(HELPER, said("Again"));
+  lifecycle.newConversation(HELPER);
+  expect(chat(1).cancelled).toBe(true);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    conversation: { messages: [], reply: { kind: "idle" } },
+  });
+});
+
+test("a failed reply shows its failure until the next message", async () => {
+  const { lifecycle, chat } = withAssistant();
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  chat(0).fail({ code: "provider-rejected", status: 401 });
+  await vi.waitFor(() => {
+    expect(lifecycle.snapshot().assistant).toMatchObject({
+      conversation: {
+        messages: [{ role: "user", content: said("Hi") }],
+        reply: {
+          kind: "failed",
+          failure: { code: "provider-rejected", status: 401 },
+        },
+      },
+    });
+  });
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    conversation: { reply: { kind: "streaming", text: "" } },
+  });
+});
+
+test("closing the Plugin cancels its reply and drops its conversation", async () => {
+  const { lifecycle, chat } = withAssistant();
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  chat(0).delta("Partial");
+
+  lifecycle.close(HELPER);
+  expect(chat(0).cancelled).toBe(true);
+  expect(() => {
+    lifecycle.sendToAssistant(HELPER, said("Hi"));
+  }).toThrow();
+  lifecycle.closed(HELPER);
+  lifecycle.open(HELPER);
+  // Let the cancelled chat end: nothing of it comes back.
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    conversation: { messages: [], reply: { kind: "idle" } },
+  });
 });

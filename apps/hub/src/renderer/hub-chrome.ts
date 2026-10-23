@@ -4,11 +4,14 @@
 // pending dialog.
 
 import { LitElement, css, html, nothing, unsafeCSS } from "lit";
+import { keyed } from "lit/directives/keyed.js";
 import {
+  ASSISTANT_PANEL_WIDTH_PX,
   SWITCHER_WIDTH_PX,
   type HubChromeApi,
   type HubChromeSnapshot,
 } from "../shared/hub-chrome-ipc";
+import "./assistant-panel";
 import "./hub-dialog";
 import "./hub-settings";
 import "./plugin-catalogue";
@@ -51,6 +54,11 @@ export class HubChrome extends LitElement {
     }
     .gear[aria-current="page"] {
       font-weight: bold;
+    }
+    :host([panel]) {
+      grid-template-columns:
+        ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr
+        ${unsafeCSS(ASSISTANT_PANEL_WIDTH_PX)}px;
     }
     main {
       min-height: 0;
@@ -95,8 +103,13 @@ export class HubChrome extends LitElement {
             .hub=${window.hubChrome}
           ></hub-dialog>`;
     }
-    const { content, foreground } = this.snapshot;
+    const { content, foreground, assistant } = this.snapshot;
     const settingsShowing = content.kind === "settings";
+    // The front Plugin's, while it shows.
+    const front =
+      content.kind === "plugin" && foreground !== null ? foreground : null;
+    const panel = front === null ? { kind: "none" as const } : assistant;
+    this.toggleAttribute("panel", panel.kind === "open");
     return html`<aside>
         <h1>Hawkeye Hub</h1>
         <plugin-switcher
@@ -107,6 +120,19 @@ export class HubChrome extends LitElement {
           .foreground=${content.kind === "plugin" ? foreground : null}
           .hub=${window.hubChrome}
         ></plugin-switcher>
+        ${
+          front === null || panel.kind === "none"
+            ? nothing
+            : html`<button
+                class="gear"
+                aria-pressed=${panel.kind === "open" ? "true" : "false"}
+                @click=${() => {
+                  window.hubChrome.toggleAssistant(front);
+                }}
+              >
+                ${strings.assistant}
+              </button>`
+        }
         ${
           // Dev mode has no Catalogue (PLUGIN_STANDARD §9.4).
           this.snapshot.catalogue.kind === "off"
@@ -131,7 +157,21 @@ export class HubChrome extends LitElement {
           <span aria-hidden="true">⚙</span> ${strings.settings}
         </button>
       </aside>
-      <main>${this.renderContent(strings)}</main>`;
+      <main>${this.renderContent(strings)}</main>
+      ${
+        front === null || panel.kind !== "open"
+          ? nothing
+          : // Keyed, so one Plugin's unsent draft never shows in another's Panel.
+            keyed(
+              front,
+              html`<assistant-panel
+                .strings=${strings}
+                .pluginId=${front}
+                .conversation=${panel.conversation}
+                .hub=${window.hubChrome}
+              ></assistant-panel>`,
+            )
+      }`;
   }
 
   // The front Plugin's UI is a view main lays over the content area, so with one in front this
