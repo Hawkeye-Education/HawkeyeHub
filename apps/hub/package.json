@@ -27,6 +27,9 @@
     "zod": "4.6.7"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.87",
+    "@ai-sdk/openai-compatible": "3.0.77",
+    "ai": "7.0.150",
     "fflate": "0.8.2"
   }
 }

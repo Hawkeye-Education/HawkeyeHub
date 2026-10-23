@@ -8,6 +8,8 @@ import type { PluginId } from "@hawkeye-hub/plugin-format";
 import { z } from "zod";
 import {
   MessageChannelMain,
+  net,
+  safeStorage,
   session,
   WebContentsView,
   type BaseWindow,
@@ -26,6 +28,8 @@ import {
   HAS_BACKEND_ARG,
   HAS_STORES_ARG,
 } from "../shared/plugin-preload";
+import { serveAi } from "./ai";
+import { loadAiKeys } from "./ai-keys";
 import { startBackend } from "./backend";
 import type { Diagnostics, NetErrorCode, PluginCrash } from "./diagnostics";
 import { errorCode } from "./error-code";
@@ -87,7 +91,10 @@ export function createPluginViews(
    * (`closed`: its page destroyed and its Backend, if any, exited), and of its page's Busy. Asked
    * for each installed Plugin it opens.
    */
-  lifecycle: Pick<Lifecycle, "installed" | "close" | "closed" | "setBusy">,
+  lifecycle: Pick<
+    Lifecycle,
+    "installed" | "close" | "closed" | "setBusy" | "storedSettings"
+  >,
   /** Dev mode gives each Plugin UI DevTools, and copies each Backend's stderr to the terminal. */
   mode: HubMode["kind"],
 ): PluginViews {
@@ -170,6 +177,15 @@ export function createPluginViews(
     if (manifest.stores.length > 0) {
       serveStores(view.webContents, hubDataDir, manifest.stores);
     }
+    // `hub.ai`, for every Plugin, with the Hub Settings and keys saved when each chat starts.
+    serveAi(view.webContents, () => ({
+      settings: lifecycle.storedSettings(),
+      keys: loadAiKeys(hubDataDir, safeStorage),
+      fetch: aiFetch,
+      recordHubEvent: (event) => {
+        diagnostics.recordHubEvent(event);
+      },
+    }));
     // A Plugin's beforeunload never holds a close (ADR 0009): Busy is how it asks to stay open.
     view.webContents.on("will-prevent-unload", (event) => {
       event.preventDefault();
@@ -271,6 +287,23 @@ export function createPluginViews(
     },
   };
 }
+
+/**
+ * Chromium's fetch, so AI calls go through the OS proxy as Registry checks do. It fails to connect
+ * with an Error saying `net::ERR_…`, which the AI SDK does not know as a network failure, so it is
+ * rethrown as Node's fetch throws one (`TypeError('fetch failed')` with the cause), which the SDK
+ * does. An abort stays as it is. The smoke suite's refused connection covers it.
+ */
+const aiFetch: typeof globalThis.fetch = async (input, init) => {
+  try {
+    return await net.fetch(input instanceof URL ? input.href : input, init);
+  } catch (error) {
+    if (error instanceof Error && error.name !== "AbortError") {
+      throw new TypeError("fetch failed", { cause: error });
+    }
+    throw error;
+  }
+};
 
 /** The net error a rejected `loadURL` carries: Electron's rejection is an Error with its `code`. */
 function netErrorCodeOf(error: unknown): NetErrorCode {
