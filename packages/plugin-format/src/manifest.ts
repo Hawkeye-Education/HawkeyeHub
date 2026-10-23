@@ -25,7 +25,7 @@ const PythonMinor = z
   .string()
   .regex(/^3\.(0|[1-9]\d*)$/)
   .brand<"PythonMinor">();
-const RoleName = z.string().min(1).brand<"RoleName">();
+export const RoleName = z.string().min(1).brand<"RoleName">();
 
 // Display text (ADR 0007): a plain English string, or a map of exact Display Language tags that
 // includes `en-HK`. `zh-HK` is absent until a translation exists.
@@ -68,6 +68,7 @@ const Manifest = z.strictObject({
 export type Manifest = z.infer<typeof Manifest>;
 export type PluginId = z.infer<typeof PluginId>;
 export type PluginVersion = z.infer<typeof PluginVersion>;
+export type RoleName = z.infer<typeof RoleName>;
 export type StoreName = z.infer<typeof StoreName>;
 export type PythonMinor = z.infer<typeof PythonMinor>;
 export type DisplayText = z.infer<typeof DisplayText>;
