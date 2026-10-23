@@ -1,6 +1,6 @@
 // A Hub Chrome dialog, drawn on the dialog overlay: a modal <dialog> over a dimmed window. Its
-// first button keeps things as they are (**Keep open**, or **Keep editing**), focused, so Enter
-// picks it, and Esc picks it too.
+// first button keeps things as they are (**Keep open**, **Keep editing** or **Keep installed**),
+// focused, so Enter picks it, and Esc picks it too.
 
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import {
@@ -48,12 +48,20 @@ export class HubDialog extends LitElement {
     dialog: { attribute: false },
     strings: { attribute: false },
     hub: { attribute: false },
+    deleteData: { state: true },
   };
   // `declare`: a class field would shadow Lit's reactive accessor. The Hub Chrome sets them all
   // through its template before the first render.
   declare dialog: HubChromeDialog;
   declare strings: Strings;
   declare hub: HubChromeApi;
+  // The uninstall dialog's "Also delete my data" checkbox: unticked until staff tick it.
+  declare deleteData: boolean;
+
+  constructor() {
+    super();
+    this.deleteData = false;
+  }
 
   override firstUpdated(): void {
     this.renderRoot.querySelector("dialog")?.showModal();
@@ -96,6 +104,27 @@ export class HubDialog extends LitElement {
           body: nothing,
           keepLabel: strings.keepEditing,
           anyway: { answer: "discard", label: strings.discard },
+        };
+      case "uninstall":
+        return {
+          heading: strings.uninstallQuestion(dialog.plugin.name),
+          body: html`<label
+            ><input
+              type="checkbox"
+              .checked=${this.deleteData}
+              @change=${(event: Event) => {
+                if (event.target instanceof HTMLInputElement) {
+                  this.deleteData = event.target.checked;
+                }
+              }}
+            />
+            ${strings.alsoDeleteData}</label
+          >`,
+          keepLabel: strings.keepInstalled,
+          anyway: {
+            answer: this.deleteData ? "uninstall-and-delete-data" : "uninstall",
+            label: strings.uninstall,
+          },
         };
       default:
         return dialog satisfies never;

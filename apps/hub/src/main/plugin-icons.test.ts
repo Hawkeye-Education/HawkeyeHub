@@ -4,12 +4,20 @@ import { join } from "node:path";
 import { parseManifest, PluginId } from "@hawkeye-hub/plugin-format";
 import { beforeAll, expect, test } from "vitest";
 import { parseAbsolutePath } from "./ids";
-import { pluginIconUrl, servePluginIcons } from "./plugin-icons";
+import type { InstalledPlugin } from "./installed-plugins";
+import {
+  pluginIconUrl,
+  registryIconUrl,
+  servePluginIcons,
+} from "./plugin-icons";
+import { WebUrl } from "./registry";
 
 const CLASS_TIMER = PluginId.parse("class-timer");
 const ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"/>';
 
 let serve: (request: Request) => Promise<Response>;
+// The installed Plugins: the handler reads them on every request, so an install shows at once.
+let installedPlugins: InstalledPlugin[];
 
 beforeAll(() => {
   const dataDir = mkdtempSync(join(tmpdir(), "hub-icons-"));
@@ -32,9 +40,52 @@ beforeAll(() => {
     assistant: { kind: "none" },
   });
   if (parsed.kind === "invalid") throw new Error(parsed.reason);
-  serve = servePluginIcons([
+  installedPlugins = [
     { folder: parseAbsolutePath(folder), manifest: parsed.manifest },
+  ];
+  serve = servePluginIcons(
+    () => installedPlugins,
+    () => registryIcons,
+    (url) =>
+      Promise.resolve(
+        url === REMOTE_ICON
+          ? new Response(REGISTRY_ICON, {
+              headers: { "content-type": "application/octet-stream" },
+            })
+          : new Response("missing", { status: 404 }),
+      ),
+  );
+});
+
+const ATTENDANCE = PluginId.parse("attendance");
+const REMOTE_ICON = WebUrl.parse("https://registry.example/attendance.svg");
+const REGISTRY_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>';
+// What the latest Registry check offered: the handler reads it on every request.
+let registryIcons = new Map<PluginId, WebUrl>();
+
+test("a Plugin the Registry offers has its Registry icon served as SVG, readable cross-origin", async () => {
+  registryIcons = new Map([[ATTENDANCE, REMOTE_ICON]]);
+  const response = await serve(new Request(registryIconUrl(ATTENDANCE)));
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe("image/svg+xml");
+  expect(response.headers.get("access-control-allow-origin")).toBe("*");
+  expect(await response.text()).toBe(REGISTRY_ICON);
+});
+
+test("a Registry icon the Registry does not serve, or a Plugin it no longer offers, is refused", async () => {
+  registryIcons = new Map([
+    [ATTENDANCE, WebUrl.parse("https://registry.example/gone.svg")],
   ]);
+  expect((await serve(new Request(registryIconUrl(ATTENDANCE)))).status).toBe(
+    404,
+  );
+
+  registryIcons = new Map();
+  expect((await serve(new Request(registryIconUrl(ATTENDANCE)))).status).toBe(
+    404,
+  );
 });
 
 test("an installed Plugin's icon URL serves its icon.svg as SVG, readable cross-origin", async () => {
@@ -44,6 +95,22 @@ test("an installed Plugin's icon URL serves its icon.svg as SVG, readable cross-
   expect(response.headers.get("content-type")).toBe("image/svg+xml");
   expect(response.headers.get("access-control-allow-origin")).toBe("*");
   expect(await response.text()).toBe(ICON);
+});
+
+test("a Plugin installed after the handler was made has its icon served", async () => {
+  const [classTimer] = installedPlugins;
+  if (classTimer === undefined) throw new Error("no fixture");
+  const before = installedPlugins;
+  installedPlugins = [
+    ...before,
+    { ...classTimer, manifest: { ...classTimer.manifest, id: ATTENDANCE } },
+  ];
+  try {
+    const response = await serve(new Request(pluginIconUrl(ATTENDANCE)));
+    expect(await response.text()).toBe(ICON);
+  } finally {
+    installedPlugins = before;
+  }
 });
 
 test.each([

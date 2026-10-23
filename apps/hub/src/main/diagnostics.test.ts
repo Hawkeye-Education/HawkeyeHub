@@ -158,6 +158,80 @@ const cases: [string, HubEvent, unknown][] = [
     pluginLine("error", "initialize failed: timed out"),
   ],
   [
+    "Registry check returned an HTTP error",
+    {
+      kind: "registry-check-failed",
+      failure: { kind: "http-status", status: 503 },
+    },
+    hubLine("warn", "Registry check failed: returned HTTP 503"),
+  ],
+  [
+    "Registry check got no response",
+    { kind: "registry-check-failed", failure: { kind: "no-response" } },
+    hubLine("warn", "Registry check failed: gave no response"),
+  ],
+  [
+    "Registry check got an invalid index",
+    { kind: "registry-check-failed", failure: { kind: "invalid" } },
+    hubLine("warn", "Registry check failed: sent an invalid index"),
+  ],
+  [
+    "install failed on its download",
+    { kind: "plugin-install-failed", plugin, cause: "download" },
+    pluginLine("error", "Plugin install failed: download"),
+  ],
+  [
+    "install failed on its checksum",
+    { kind: "plugin-install-failed", plugin, cause: "checksum" },
+    pluginLine("error", "Plugin install failed: checksum"),
+  ],
+  [
+    "install failed to unpack",
+    { kind: "plugin-install-failed", plugin, cause: "unpack" },
+    pluginLine("error", "Plugin install failed: unpack"),
+  ],
+  [
+    "install failed to build its venv, with the end of uv's stderr",
+    {
+      kind: "plugin-install-failed",
+      plugin,
+      cause: "environment",
+      stderr: "error: lock file is invalid\nhint: run uv lock",
+    },
+    pluginLine(
+      "error",
+      "Plugin install failed: environment\nerror: lock file is invalid\nhint: run uv lock",
+    ),
+  ],
+  [
+    "update failed to build its venv",
+    {
+      kind: "plugin-update-failed",
+      plugin,
+      cause: "environment",
+      stderr: "error: no Python 3.99",
+    },
+    pluginLine(
+      "error",
+      "Plugin update failed: environment\nerror: no Python 3.99",
+    ),
+  ],
+  [
+    "update failed to unpack",
+    { kind: "plugin-update-failed", plugin, cause: "unpack" },
+    pluginLine("error", "Plugin update failed: unpack"),
+  ],
+  [
+    "a partial folder swept",
+    { kind: "plugin-swept", plugin, partial: true },
+    pluginLine("warn", "Plugin folder swept: partial"),
+  ],
+  [
+    "an unrecorded version swept",
+    { kind: "plugin-swept", plugin, partial: false },
+    pluginLine("warn", "Plugin folder swept: not in the record"),
+  ],
+  [
     "AI Provider returned an HTTP error",
     {
       kind: "ai-provider-call-failed",

@@ -279,6 +279,7 @@ export function explain(e: unknown): string {
       return i18next.t(`error.${reason}`, { detail: err.rpc.message });
     }
     case 'store-not-declared':
+    case 'not-found':
     case 'provider-missing':
     case 'bad-path':
       throw err; // this Plugin declares no stores and makes no AI calls
@@ -546,8 +547,8 @@ A Shared Store is how two Plugins work on the same data: an ownerless folder tha
 - **Declaring.** Add the name to the Manifest's `stores`. The first Plugin to declare a new store also adds `stores/<name>.md` in the same PR, describing its layout and every file format. Packaging refuses a store without its document.
 - **Formats change additively.** New files and new fields are fine, and older readers ignore them. Renaming, removing or retyping is a breaking change, which means a new store name (`kb-2`) that Plugins move to when ready. Update `stores/<name>.md` with every change.
 - **Writes are atomic, and the last writer wins.** The Plugin UI's `hub.stores.writeText` / `writeBytes` already replace atomically. A Backend writes a temp file in the same folder, then calls `os.replace`. There are no locks: lay out data that must merge as one item per file (one note per file, one receipt per file), never one shared index that two Plugins rewrite.
-- **Paths** given to `hub.stores` are relative and POSIX-style (`notes/2026/a.md`). `..` and absolute paths are refused.
-- Watch with `hub.stores.watch(store, handler)`, which sends `{path, kind: 'changed' | 'removed'}`, and call the returned function to stop.
+- **Paths** given to `hub.stores` are relative and POSIX-style (`notes/2026/a.md`). `..` and absolute paths are refused with `bad-path`, a store the Manifest does not declare with `store-not-declared`, and reading a file that is not there with `not-found`. `list(store)` gives every file in the store.
+- Watch with `await hub.stores.watch(store, handler)`, which sends `{path, kind: 'changed' | 'removed'}` for changes any Plugin or Backend makes, and resolves, once watching, to the function that stops it.
 - A store whose other Plugins aren't installed is simply empty. Handle the empty folder as a normal state.
 
 ## 7. Identity and Roles

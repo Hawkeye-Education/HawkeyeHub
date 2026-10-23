@@ -28,6 +28,7 @@ import {
   SPAWN_DETACHED,
   venvPython,
 } from "./platform";
+import { pluginDataFolder, storeFolder } from "./stores";
 
 export interface Backend {
   /** Resolves once `initialize` has succeeded; never, if it does not (the Plugin then closes). */
@@ -117,10 +118,9 @@ export function startBackend(
 ): Backend {
   const { folder, manifest } = installed;
   const plugin = pluginRefOf(installed);
-  // Keyed by id, never version, so they survive updates (ADR 0008).
-  const dataDir = join(hubDataDir, "plugin-data", manifest.id);
+  const dataDir = pluginDataFolder(hubDataDir, manifest.id);
   const stores = Object.fromEntries(
-    manifest.stores.map((name) => [name, join(hubDataDir, "stores", name)]),
+    manifest.stores.map((name) => [name, storeFolder(hubDataDir, name)]),
   );
   for (const dir of [dataDir, ...Object.values(stores)]) {
     mkdirSync(dir, { recursive: true });

@@ -15,6 +15,8 @@ import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
 import type { DisplayLanguage, ThemeName } from "../shared/hub-chrome-ipc";
 import { HAWKEYE } from "./lifecycle";
+import type { InstallFailure } from "./plugin-install";
+import type { RegistryCheckFailure } from "./registry";
 import type {
   AbsolutePath,
   AiProviderKind,
@@ -176,6 +178,14 @@ export type HubEvent =
       outcome:
         { kind: "http-status"; status: number } | { kind: "no-response" };
     }
+  // A Registry check that failed: only how, never the index's contents.
+  | { kind: "registry-check-failed"; failure: RegistryCheckFailure }
+  // An `environment` failure carries the end of uv's stderr, which says what went wrong.
+  | ({ kind: "plugin-install-failed"; plugin: PluginRef } & InstallFailure)
+  // A silent update's version that failed to build; the installed version is kept.
+  | ({ kind: "plugin-update-failed"; plugin: PluginRef } & InstallFailure)
+  // A Plugin folder the launch sweep deleted: `.partial`, or a version the record does not name.
+  | { kind: "plugin-swept"; plugin: PluginRef; partial: boolean }
   | {
       kind: "uncaught-exception";
       origin: NodeJS.UncaughtExceptionOrigin;
@@ -481,6 +491,12 @@ function pluginLogPath(id: PluginId): string {
 
 const NO_PLUGIN: LineSubject = { pluginId: null, pluginVersion: null };
 
+function describeInstallFailure(failure: InstallFailure): string {
+  return failure.cause === "environment"
+    ? `${failure.cause}\n${failure.stderr}`
+    : failure.cause;
+}
+
 function subjectOf(plugin: PluginRef): LineSubject {
   return { pluginId: plugin.id, pluginVersion: plugin.version };
 }
@@ -556,6 +572,30 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
         }`,
         subject: NO_PLUGIN,
       };
+    case "registry-check-failed":
+      return {
+        level: "warn",
+        message: `Registry check failed: ${describeRegistryFailure(event.failure)}`,
+        subject: NO_PLUGIN,
+      };
+    case "plugin-install-failed":
+      return {
+        level: "error",
+        message: `Plugin install failed: ${describeInstallFailure(event)}`,
+        subject: subjectOf(event.plugin),
+      };
+    case "plugin-update-failed":
+      return {
+        level: "error",
+        message: `Plugin update failed: ${describeInstallFailure(event)}`,
+        subject: subjectOf(event.plugin),
+      };
+    case "plugin-swept":
+      return {
+        level: "warn",
+        message: `Plugin folder swept: ${event.partial ? "partial" : "not in the record"}`,
+        subject: subjectOf(event.plugin),
+      };
     case "uncaught-exception":
       return {
         level: "error",
@@ -600,6 +640,19 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
       };
     default:
       return event satisfies never;
+  }
+}
+
+function describeRegistryFailure(failure: RegistryCheckFailure): string {
+  switch (failure.kind) {
+    case "http-status":
+      return `returned HTTP ${String(failure.status)}`;
+    case "no-response":
+      return "gave no response";
+    case "invalid":
+      return "sent an invalid index";
+    default:
+      return failure satisfies never;
   }
 }
 

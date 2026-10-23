@@ -24,6 +24,7 @@ import {
   BUSY,
   DISPLAY_LANGUAGE_ARG,
   HAS_BACKEND_ARG,
+  HAS_STORES_ARG,
 } from "../shared/plugin-preload";
 import { startBackend } from "./backend";
 import type { Diagnostics, NetErrorCode, PluginCrash } from "./diagnostics";
@@ -34,6 +35,7 @@ import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
+import { serveStores } from "./stores";
 
 // What the preload sends on `BUSY`. An empty reason would show staff nothing, so it is refused. A
 // brand cannot be narrowed to, so the `as` after the check is where the type is granted.
@@ -124,6 +126,7 @@ export function createPluginViews(
         additionalArguments: [
           `${DISPLAY_LANGUAGE_ARG}${displayLanguage}`,
           ...(hasBackend ? [HAS_BACKEND_ARG] : []),
+          ...(manifest.stores.length > 0 ? [HAS_STORES_ARG] : []),
         ],
       },
     });
@@ -163,6 +166,10 @@ export function createPluginViews(
       const busy = BusyMessage.parse(raw);
       if (opened.get(id)?.view === view) lifecycle.setBusy(id, busy);
     });
+    // `hub.stores`, for the stores the Manifest declares.
+    if (manifest.stores.length > 0) {
+      serveStores(view.webContents, hubDataDir, manifest.stores);
+    }
     // A Plugin's beforeunload never holds a close (ADR 0009): Busy is how it asks to stay open.
     view.webContents.on("will-prevent-unload", (event) => {
       event.preventDefault();

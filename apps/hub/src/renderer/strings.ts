@@ -1,9 +1,10 @@
 // Everything the Hub Chrome says, in each Display Language (ADR 0007).
 
 import type {
-  BlockedReason,
+  CatalogueBlockedReason,
   ColourScheme,
   DisplayLanguage,
+  InstallFailureCause,
 } from "../shared/hub-chrome-ipc";
 
 export const STRINGS = {
@@ -39,10 +40,30 @@ export const STRINGS = {
     about: "About",
     hubVersion: "Version",
     exportDiagnostics: "Export diagnostics",
+    catalogue: "Plugin Catalogue",
+    checkingRegistry: "Checking the Registry…",
+    registryUnreachable: "Can't reach the Registry",
+    retry: "Retry",
+    noPluginsOffered: "The Registry offers no Plugins",
     blocked: {
+      "not-for-this-computer": "Not for this computer",
       "needs-sign-in": "Needs sign-in",
       "needs-different-hub": "Needs a different Hub",
-    } satisfies Record<BlockedReason, string>,
+    } satisfies Record<CatalogueBlockedReason, string>,
+    install: "Install",
+    installing: "Installing…",
+    uninstall: "Uninstall",
+    uninstalling: "Uninstalling…",
+    uninstallQuestion: (name: string) => `Uninstall ${name}?`,
+    keepInstalled: "Keep installed",
+    alsoDeleteData: "Also delete my data",
+    installedVersion: (version: string) => `Installed: version ${version}`,
+    installFailed: {
+      download: "Install failed: the download did not finish",
+      checksum: "Install failed: the download was damaged",
+      unpack: "Install failed: the package could not be unpacked",
+      environment: "Install failed: Python could not be set up",
+    } satisfies Record<InstallFailureCause, string>,
   },
   "zh-HK": {
     plugins: "外掛程式",
@@ -76,10 +97,30 @@ export const STRINGS = {
     about: "關於",
     hubVersion: "版本",
     exportDiagnostics: "匯出診斷資料",
+    catalogue: "外掛程式目錄",
+    checkingRegistry: "正在檢查外掛程式庫…",
+    registryUnreachable: "無法連線至外掛程式庫",
+    retry: "重試",
+    noPluginsOffered: "外掛程式庫未有提供任何外掛程式",
     blocked: {
+      "not-for-this-computer": "不適用於這部電腦",
       "needs-sign-in": "需要登入",
       "needs-different-hub": "需要另一版本的 Hawkeye Hub",
-    } satisfies Record<BlockedReason, string>,
+    } satisfies Record<CatalogueBlockedReason, string>,
+    install: "安裝",
+    installing: "正在安裝…",
+    uninstall: "解除安裝",
+    uninstalling: "正在解除安裝…",
+    uninstallQuestion: (name: string) => `解除安裝 ${name}？`,
+    keepInstalled: "保留",
+    alsoDeleteData: "同時刪除我的資料",
+    installedVersion: (version: string) => `已安裝：版本 ${version}`,
+    installFailed: {
+      download: "安裝失敗：下載未能完成",
+      checksum: "安裝失敗：下載的檔案已損壞",
+      unpack: "安裝失敗：無法解開套件",
+      environment: "安裝失敗：無法設定 Python",
+    } satisfies Record<InstallFailureCause, string>,
   },
 } satisfies Record<DisplayLanguage, unknown>;
 
