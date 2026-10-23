@@ -59,6 +59,7 @@ Rules:
 - Test behaviour through the public interface, not internals (see `/tdd`).
 - A bug fix lands with a regression test that fails without the fix.
 - Tooling: Vitest for TS (Plugin UIs run under happy-dom against `@hawkeye-hub/fake-hub`), pytest for Python (Backends through `hawkeye_hub.testing`, which drives the Backend over real stdio), and a small Playwright `_electron` smoke suite for the Hub end to end.
+- A smoke test proves wiring only Electron or a real process can show: IPC, a window, a renderer, a process tree. Each branch of the logic behind it is a Vitest test of its module, not another smoke test. Wait out a real timeout in one smoke test at most; its timing belongs on fake time.
 - The Hub's suite covers the Hub API, the Backend bridge, the Python SDK, the Hub Kit, and install and update.
 - Every part a Plugin has (Plugin UI, Backend) has at least one test. Publishing runs them and refuses on failure. There is no coverage threshold.
 

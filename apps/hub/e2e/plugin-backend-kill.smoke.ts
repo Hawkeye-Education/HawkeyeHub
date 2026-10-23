@@ -135,18 +135,20 @@ test("a Backend that exits on shutdown by itself still has the child it left beh
   }
 });
 
-test("quitting with two Backend Plugins open leaves neither Backend running and logs Hub closing once", async ({
+// Not the stubborn Backend: the grace period is waited out once, in the first test, and its timing
+// is backend.test.ts's. The leaving Backend still has a child for the quit to kill.
+test("quitting with two Backend Plugins open leaves neither Backend nor a child running and logs Hub closing once", async ({
   dataDir,
 }) => {
   installFixturePlugins(dataDir, [
     fixtureInstall("echo-backend"),
-    fixtureInstall("stubborn-backend"),
+    fixtureInstall("leaving-backend"),
   ]);
   const hub = await launchHub(dataDir);
   const echo = await openPlugin(hub, "Echo", "echo-backend");
   const echoPid = (await report<{ pid: number }>(echo)).pid;
-  const stubborn = await openPlugin(hub, "Stubborn", "stubborn-backend");
-  const { pid, childPid } = await report<StubbornReport>(stubborn);
+  const leaving = await openPlugin(hub, "Leaving", "leaving-backend");
+  const { pid, childPid } = await report<StubbornReport>(leaving);
 
   await hub.close();
 

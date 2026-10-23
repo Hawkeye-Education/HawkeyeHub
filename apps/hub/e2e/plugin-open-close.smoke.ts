@@ -163,38 +163,6 @@ test("opening a second Plugin hides the first, and bringing the first forward sh
   }
 });
 
-test("clicking an open Plugin never opens a second copy", async ({
-  dataDir,
-}) => {
-  const { hub, hubChrome, words } = await hubWithTwoPlugins(dataDir);
-  try {
-    await pluginButton(hubChrome, words.timer).click();
-    await pluginPage(() => hub.windows(), "class-timer");
-
-    await pluginButton(hubChrome, words.timer).click();
-    await pluginButton(hubChrome, words.attendance).click();
-    await pluginPage(() => hub.windows(), "attendance");
-    await pluginButton(hubChrome, words.timer).click();
-
-    await expect(pluginButton(hubChrome, words.timer)).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(
-      await hub.evaluate(
-        ({ webContents }) =>
-          webContents
-            .getAllWebContents()
-            .filter((contents) =>
-              contents.getURL().startsWith("hawkeye-plugin://class-timer/"),
-            ).length,
-      ),
-    ).toBe(1);
-  } finally {
-    await hub.close();
-  }
-});
-
 test("closing a Plugin fires its pagehide, removes its view and brings the previous one forward; closing the last shows the empty state", async ({
   dataDir,
 }) => {

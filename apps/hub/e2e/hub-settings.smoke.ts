@@ -1,15 +1,13 @@
 // Hub Settings end to end (#73): the Colour Scheme applies only on Save, reaches open Plugin UIs,
 // and survives a restart; the Display Language (#75) switches the Hub Chrome on Save and reaches
-// Plugins opened after it; a damaged settings file never stops the Hub starting.
+// Plugins opened after it. A damaged settings file and an unknown Theme are hub-settings.test.ts's
+// and lifecycle.test.ts's: nothing about them needs a window.
 
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import {
   displayLanguageOf,
   expect,
   fixtureInstall,
-  hubLogLines,
   installFixturePlugins,
   launchHub,
   launchHubOverCdp,
@@ -146,57 +144,4 @@ test("a Display Language switches the Hub Chrome on Save, reaches Plugins opened
     other.language,
   );
   await second.close();
-});
-
-test("a settings file that is not JSON is logged and replaced, and the Hub starts", async ({
-  dataDir,
-}) => {
-  // The Hub's data folder is HAWKEYE_HUB_DATA_DIR itself.
-  const file = join(dataDir, "hub-settings.json");
-  writeFileSync(file, "{ colourScheme: dark");
-  const hub = await launchHub(dataDir);
-  await expect(
-    (await hub.firstWindow()).getByText("Hawkeye Hub"),
-  ).toBeVisible();
-
-  expect(hubLogLines(dataDir)).toContainEqual(
-    expect.objectContaining({
-      level: "warn",
-      message: "Hub Settings replaced with first-launch values: not JSON",
-    }),
-  );
-  expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({
-    theme: { kind: "company" },
-    colourScheme: "system",
-    displayLanguage: { kind: "system" },
-  });
-  await hub.close();
-});
-
-test("a stored Theme this Hub does not have shows Hawkeye, is logged once, and stays stored", async ({
-  dataDir,
-}) => {
-  const file = join(dataDir, "hub-settings.json");
-  const stored = {
-    theme: { kind: "chosen", name: "aurora" },
-    colourScheme: "system",
-    displayLanguage: { kind: "system" },
-  };
-  writeFileSync(file, JSON.stringify(stored));
-  const hub = await launchHub(dataDir);
-  const hubChrome = await hub.firstWindow();
-  const words = WORDS[await displayLanguageOf(hubChrome)];
-
-  await hubChrome.getByRole("button", { name: words.settings }).click();
-  await expect(hubChrome.getByRole("radio", { name: "Hawkeye" })).toBeChecked();
-  const unknownTheme = "Theme aurora unknown to this Hub, using hawkeye";
-  const lines = hubLogLines(dataDir);
-  expect(lines).toContainEqual(
-    expect.objectContaining({ level: "warn", message: unknownTheme }),
-  );
-  expect(
-    lines.filter((line) => JSON.stringify(line).includes(unknownTheme)),
-  ).toHaveLength(1);
-  expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(stored);
-  await hub.close();
 });
