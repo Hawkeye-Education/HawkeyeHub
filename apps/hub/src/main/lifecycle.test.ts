@@ -1894,7 +1894,12 @@ test("Uninstall throws for a Plugin not installed or already uninstalling, and f
 const helper = installed("regex-helper", "Regex Helper", {
   assistant: {
     kind: "enabled",
-    templates: [{ label: "Draft a regex", text: "Draft a regex for …" }],
+    templates: [
+      {
+        label: { "en-HK": "Draft a regex", "zh-HK": "草擬正則" },
+        text: "Draft a regex for …",
+      },
+    ],
   },
 });
 const HELPER = id("regex-helper");
@@ -1940,13 +1945,9 @@ function drivenChat() {
 
 /** A Lifecycle with the Regex Helper (which has an Assistant) and the others, and its chats. */
 function withAssistant(
-  {
-    stored,
-    modelsAtStart,
-  }: { stored: HubSettings; modelsAtStart: AssistantModels } = {
-    stored: FIRST_LAUNCH_SETTINGS,
-    modelsAtStart: new Map(),
-  },
+  stored: HubSettings = FIRST_LAUNCH_SETTINGS,
+  systemLanguage: "en-HK" | "zh-HK" = "en-HK",
+  modelsAtStart: AssistantModels = new Map(),
 ) {
   const requests: AiChatRequest[] = [];
   const saved: AssistantModels[] = [];
@@ -1954,7 +1955,7 @@ function withAssistant(
   const read: string[] = [];
   const lifecycle = createLifecycle({
     hubVersion: HUB_VERSION,
-    systemLanguage: "en-HK",
+    systemLanguage,
     installed: [helper, ...plugins],
     storedAtStart: stored,
     keyedAtStart: new Set(),
@@ -2009,7 +2010,8 @@ test("the Assistant Panel starts closed, toggles, and is remembered per Plugin, 
   expect(lifecycle.snapshot().assistant).toEqual({
     kind: "open",
     conversation: { messages: [], reply: { kind: "idle" } },
-    model: { kind: "default" },
+    templates: [{ label: "Draft a regex", text: "Draft a regex for …" }],
+    model: { choice: { kind: "default" }, kind: "none" },
     providers: [],
   });
 
@@ -2025,6 +2027,29 @@ test("the Assistant Panel starts closed, toggles, and is remembered per Plugin, 
   expect(lifecycle.snapshot().assistant.kind).toBe("open");
   lifecycle.toggleAssistant(HELPER);
   expect(lifecycle.snapshot().assistant).toEqual({ kind: "closed" });
+});
+
+test("the open Panel offers the Plugin's Prompt Templates in the Display Language", () => {
+  const { lifecycle } = withAssistant(FIRST_LAUNCH_SETTINGS, "zh-HK");
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    templates: [{ label: "草擬正則", text: "Draft a regex for …" }],
+  });
+});
+
+test("the open Panel's current model is the Default AI Provider's, with whether it accepts images", () => {
+  const { lifecycle } = withAssistant(WITH_CLAUDE);
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    model: {
+      kind: "chosen",
+      provider: "Claude",
+      model: "claude-opus-5-5",
+      acceptsImages: true,
+    },
+  });
 });
 
 test("a message streams a reply from the Default AI Provider, with the context read at open", async () => {
@@ -2169,14 +2194,15 @@ test("the model picker saves its choice at once, for its Plugin only, and later 
       },
     ],
   };
-  const { lifecycle, requests, saved } = withAssistant({
+  const { lifecycle, requests, saved } = withAssistant(
     stored,
-    modelsAtStart: new Map([[other, big]]),
-  });
+    "en-HK",
+    new Map([[other, big]]),
+  );
   lifecycle.open(HELPER);
   lifecycle.toggleAssistant(HELPER);
   expect(lifecycle.snapshot().assistant).toMatchObject({
-    model: { kind: "default" },
+    model: { choice: { kind: "default" }, kind: "none" },
     providers: [
       {
         label: "Local",
@@ -2192,15 +2218,44 @@ test("the model picker saves its choice at once, for its Plugin only, and later 
       [HELPER, big],
     ]),
   ]);
-  expect(lifecycle.snapshot().assistant).toMatchObject({ model: big });
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    model: {
+      choice: big,
+      kind: "chosen",
+      provider: "Local",
+      model: "big-model",
+      acceptsImages: true,
+    },
+  });
   lifecycle.sendToAssistant(HELPER, said("Hi"));
   expect(requests[0]?.model).toEqual(big);
 
   // After a restart, the saved choice is the Plugin's.
-  const restarted = withAssistant({ stored, modelsAtStart: new Map(saved[0]) });
+  const restarted = withAssistant(stored, "en-HK", new Map(saved[0]));
   restarted.lifecycle.open(HELPER);
   restarted.lifecycle.sendToAssistant(HELPER, said("Hi"));
   expect(restarted.requests[0]?.model).toEqual(big);
+});
+
+test("a chosen provider or model since removed is missing: it offers no images, and its chats fail", () => {
+  const gone = {
+    kind: "chosen" as const,
+    provider: parseAiProviderLabel("Gone"),
+    model: "x",
+  };
+  const { lifecycle, requests } = withAssistant(
+    WITH_CLAUDE,
+    "en-HK",
+    new Map([[HELPER, gone]]),
+  );
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    model: { choice: gone, kind: "missing" },
+  });
+  // The call module answers `provider-missing`: the choice goes to it as is, never the Default.
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(requests[0]?.model).toEqual(gone);
 });
 
 test("choosing a model needs the Plugin open with an Assistant", () => {

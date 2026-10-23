@@ -8,6 +8,7 @@ import type { AiContent, AiFailure, AiMessage, AiModelChoice } from "./ai-call";
 import type { Branded } from "./branded";
 import type {
   AiProvider,
+  AiProviderLabel,
   AiProviderRow,
   HubSettings,
   HubSettingsForm,
@@ -165,11 +166,33 @@ export type AssistantPanel =
   | {
       kind: "open";
       conversation: Conversation;
-      /** The Plugin's model, as its picker last chose: it may name a provider since removed. */
-      model: AiModelChoice;
-      /** The saved AI Providers' labels and models, for the picker. */
+      /** The Manifest's Prompt Templates, already in the Display Language. */
+      templates: PromptTemplate[];
+      model: CurrentModel;
+      /** The saved AI Providers' labels and models, for the model picker. */
       providers: Pick<AiProvider, "label" | "models">[];
     };
+
+export interface PromptTemplate {
+  label: string;
+  text: string;
+}
+
+/**
+ * The Plugin's model: its picker's `choice`, and where its messages go. `none` is Default with no
+ * Default AI Provider; `missing` is a chosen provider or model since removed, whose messages fail
+ * with `provider-missing` (no silent switch). The composer offers images only when it accepts them.
+ */
+export type CurrentModel = { choice: AiModelChoice } & (
+  | { kind: "none" }
+  | { kind: "missing" }
+  | {
+      kind: "chosen";
+      provider: AiProviderLabel;
+      model: string;
+      acceptsImages: boolean;
+    }
+);
 
 /**
  * An open Plugin's one conversation with its Assistant, held in main and dropped when the Plugin

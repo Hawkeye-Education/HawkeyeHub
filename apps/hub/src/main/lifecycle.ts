@@ -14,6 +14,7 @@ import {
   KEEP_ANSWERS,
   type BusyPlugin,
   type BusyReason,
+  type CurrentModel,
   type Catalogue,
   type CatalogueJob,
   type DialogAnswer,
@@ -498,20 +499,47 @@ export function createLifecycle({
     }
     return talk;
   };
+  // The Plugin's picker choice resolved against the saved Hub Settings, as the call module does.
+  const currentModel = (id: PluginId): CurrentModel => {
+    const choice = modelOf(id);
+    const chosen =
+      choice.kind === "default" ? stored.defaultAiProvider : choice;
+    if (chosen.kind === "none") return { choice, kind: "none" };
+    const acceptsImages = stored.aiProviders
+      .find(({ label }) => label === chosen.provider)
+      ?.models.find(({ id: model }) => model === chosen.model)?.acceptsImages;
+    // Only a chosen one can be missing: HubSettingsSchema keeps the Default configured.
+    if (acceptsImages === undefined) return { choice, kind: "missing" };
+    return {
+      choice,
+      kind: "chosen",
+      provider: chosen.provider,
+      model: chosen.model,
+      acceptsImages,
+    };
+  };
   const panelOf = (id: PluginId): AssistantPanel => {
     const talk = talks.get(id);
     if (talk === undefined) return { kind: "none" };
-    return panelsOpen.has(id)
-      ? {
-          kind: "open",
-          conversation: talk.conversation,
-          model: modelOf(id),
-          providers: stored.aiProviders.map(({ label, models }) => ({
-            label,
-            models,
-          })),
-        }
-      : { kind: "closed" };
+    if (!panelsOpen.has(id)) return { kind: "closed" };
+    const { assistant } = installedPlugin(id).plugin.manifest;
+    return {
+      kind: "open",
+      conversation: talk.conversation,
+      // A talk is only ever made for a Plugin whose Assistant is enabled.
+      templates:
+        assistant.kind === "enabled"
+          ? assistant.templates.map(({ label, text }) => ({
+              label: displayTextIn(label, listing.language),
+              text: displayTextIn(text, listing.language),
+            }))
+          : [],
+      model: currentModel(id),
+      providers: stored.aiProviders.map(({ label, models }) => ({
+        label,
+        models,
+      })),
+    };
   };
   // A chat dropped (by New conversation or a close) is no longer the talk's: nothing more of it
   // shows. A stopped one stays the talk's until it ends, so what had arrived is kept.
