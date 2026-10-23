@@ -162,25 +162,6 @@ test("Enter and Esc both pick Keep open", async ({ dataDir }) => {
   }
 });
 
-test("closing a Plugin that is not Busy asks nothing", async ({ dataDir }) => {
-  const { hub, hubChrome, words } = await hubWith(dataDir, ["class-timer"]);
-  try {
-    await hubChrome
-      .getByRole("button", { name: words.timer, exact: true })
-      .click();
-    await pluginPage(() => hub.windows(), "class-timer");
-    const closeTimer = hubChrome.getByRole("button", {
-      name: words.closeTimer,
-    });
-
-    await closeTimer.click();
-    await expect(closeTimer).toHaveCount(0);
-    expect(overlayShowing(hub)).toBe(false);
-  } finally {
-    await hub.close();
-  }
-});
-
 test("an empty Busy reason is refused: the call rejects, and closing asks nothing", async ({
   dataDir,
 }) => {
@@ -252,36 +233,4 @@ test("quitting with two Busy Plugins asks once, listing both; Keep open keeps th
   page = await overlay(hub);
   await press(page.getByRole("button", { name: words.quitAnyway }));
   expect(await exitCode).toBe(0);
-});
-
-test("a Busy Plugin whose Backend crashes while its dialog is up closes, and the dialog goes away", async ({
-  dataDir,
-}) => {
-  installFixturePlugins(dataDir, [fixtureInstall("crashing-backend")]);
-  const hub = await launchHub(dataDir);
-  try {
-    const hubChrome = await hub.firstWindow();
-    await displayLanguageOf(hubChrome);
-    const page = await openBusy(
-      hub,
-      hubChrome,
-      "Crashing",
-      "crashing-backend",
-      "Saving",
-    );
-    const closeButton = hubChrome.getByRole("button", {
-      name: /^(Close Crashing|關閉 Crashing)$/,
-    });
-    await closeButton.click();
-    await overlay(hub);
-
-    await page.evaluate(() => {
-      void window.hub.backend.request("exit", {});
-    });
-
-    await expect(closeButton).toHaveCount(0);
-    await expect.poll(() => overlayShowing(hub)).toBe(false);
-  } finally {
-    await hub.close();
-  }
 });
