@@ -268,6 +268,19 @@ export function pluginPages(pages: Page[], id: string): Page[] {
   );
 }
 
+/**
+ * Answers the dialog on the overlay `page` with `key` going down only: the key answers as it goes
+ * down. The answer can take the overlay away before even the keydown is acknowledged (seen on
+ * macOS CI), so a closed page is not an error here; callers check what the answer did.
+ */
+export async function answerWithKey(page: Page, key: string): Promise<void> {
+  try {
+    await page.keyboard.down(key);
+  } catch (error) {
+    if (!page.isClosed()) throw error;
+  }
+}
+
 /** The messages in a Plugin's log, oldest first, or none if it has no log yet. */
 export function pluginLogMessages(dataDir: string, id: string): string[] {
   const log = join(dataDir, "logs", "plugins", `${id}.log`);

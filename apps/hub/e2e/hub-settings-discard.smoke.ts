@@ -1,8 +1,10 @@
 // Leaving Hub Settings with unsaved edits asks "Discard unsaved changes?" first, on the dialog
-// overlay, before picking a Plugin and before quitting (#74). Answered from the keyboard.
+// overlay, before picking a Plugin and before quitting (#74). Answered from the keyboard. Only the
+// quit is driven here, as it chains a second overlay; picking a Plugin is lifecycle.test.ts's.
 
 import type { ElectronApplication, Page } from "@playwright/test";
 import {
+  answerWithKey,
   displayLanguageOf,
   exitCodeOf,
   expect,
@@ -70,51 +72,8 @@ function overlayShowing(hub: ElectronApplication): boolean {
  */
 async function press(page: Page, name: string): Promise<void> {
   await page.getByRole("dialog").getByRole("button", { name }).focus();
-  await page.keyboard.down("Enter");
+  await answerWithKey(page, "Enter");
 }
-
-test("picking a Plugin with unsaved edits asks first: Keep editing stays, Discard opens it", async ({
-  dataDir,
-}) => {
-  installFixturePlugins(dataDir, [fixtureInstall("class-timer")]);
-  const hub = await launchHub(dataDir);
-  try {
-    const hubChrome = await hub.firstWindow();
-    const words = WORDS[await displayLanguageOf(hubChrome)];
-    const timer = hubChrome.getByRole("button", {
-      name: words.timer,
-      exact: true,
-    });
-    const dark = hubChrome.getByRole("radio", { name: words.dark });
-
-    // No edits: nothing is asked.
-    await hubChrome.getByRole("button", { name: words.settings }).click();
-    await timer.click();
-    await pluginPage(() => hub.windows(), "class-timer");
-    await expect(dark).toHaveCount(0);
-    expect(overlayShowing(hub)).toBe(false);
-
-    await hubChrome.getByRole("button", { name: words.settings }).click();
-    await dark.check();
-    await timer.click();
-    let page = await overlay(hub);
-    await expect(page.getByRole("dialog")).toContainText(words.discardQuestion);
-    await press(page, words.keepEditing);
-    await expect.poll(() => overlayShowing(hub)).toBe(false);
-    await expect(dark).toBeChecked();
-
-    await timer.click();
-    page = await overlay(hub);
-    await press(page, words.discard);
-    await expect.poll(() => overlayShowing(hub)).toBe(false);
-    await expect(dark).toHaveCount(0);
-
-    await hubChrome.getByRole("button", { name: words.settings }).click();
-    await expect(dark).not.toBeChecked();
-  } finally {
-    await hub.close();
-  }
-});
 
 test("quitting with unsaved edits asks first: Esc keeps editing, Discard goes on to the Busy dialog", async ({
   dataDir,
@@ -138,8 +97,7 @@ test("quitting with unsaved edits asks first: Esc keeps editing, Discard goes on
   });
   let page = await overlay(hub);
   await expect(page.getByRole("dialog")).toContainText(words.discardQuestion);
-  // Down only: the key answers as it goes down, and the overlay is gone before it comes up.
-  await page.keyboard.down("Escape");
+  await answerWithKey(page, "Escape");
   await expect.poll(() => overlayShowing(hub)).toBe(false);
   await expect(dark).toBeChecked();
 
