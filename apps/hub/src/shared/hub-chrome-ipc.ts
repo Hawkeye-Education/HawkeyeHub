@@ -5,9 +5,13 @@
 
 import type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
 import type { Branded } from "./branded";
-import type { HubSettings } from "./hub-settings";
+import type {
+  AiProviderRow,
+  HubSettings,
+  HubSettingsForm,
+} from "./hub-settings";
 
-export type { HubSettings };
+export type { AiProviderRow, HubSettings, HubSettingsForm };
 
 /** The languages the Hub draws in (ADR 0007): adding one is a Hub release. */
 export const DISPLAY_LANGUAGES = ["en-HK", "zh-HK"] as const;
@@ -110,7 +114,11 @@ export type HubChromeContent =
   | { kind: "catalogue" }
   | {
       kind: "settings";
-      form: HubSettings;
+      form: HubSettingsForm;
+      /** The rows whose provider has a key, stored or typed: a key itself never leaves main. */
+      keysSet: AiProviderRow[];
+      /** Whether the form parses as Hub Settings: Save refuses it until it does. */
+      savable: boolean;
       /**
        * A Save changed the Display Language while a Plugin was open: open Plugin UIs keep the one
        * they were opened with until reopened (ADR 0007). Cleared on leaving settings, or once no
@@ -203,7 +211,9 @@ export interface HubChromeApi {
   /** Shows Hub Settings in the content area. */
   showSettings(): void;
   /** Replaces the unsaved Hub Settings form. */
-  editSettings(form: HubSettings): void;
+  editSettings(form: HubSettingsForm): void;
+  /** Types a new key for the provider in `row`, replacing its key on Save. */
+  typeAiKey(row: AiProviderRow, key: string): void;
   /** Saves the form and applies it, unless it is what is stored. */
   saveSettings(): void;
   /** Puts the form back to what is stored. */
@@ -234,6 +244,8 @@ export const ANSWER_DIALOG = "hub-chrome:answer-dialog";
 export const SHOW_SETTINGS = "hub-chrome:show-settings";
 /** Hub Chrome → main, `invoke`: the `HubSettings` that replace the unsaved form. */
 export const EDIT_SETTINGS = "hub-chrome:edit-settings";
+/** Hub Chrome → main, `invoke`: a provider's row and the key typed for it. */
+export const TYPE_AI_KEY = "hub-chrome:type-ai-key";
 /** Hub Chrome → main, `invoke`: saves the form. */
 export const SAVE_SETTINGS = "hub-chrome:save-settings";
 /** Hub Chrome → main, `invoke`: puts the form back to what is stored. */

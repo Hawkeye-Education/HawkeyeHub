@@ -25,9 +25,12 @@ import {
   type PluginAccess,
   type ThemeName,
 } from "../shared/hub-chrome-ipc";
+import type { AiProviderRow, HubSettingsForm } from "../shared/hub-settings";
+import type { AiProviderKey, SavedProviderKey } from "./ai-keys";
 import type { SystemDescription } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
-import type { HubApiVersion } from "./ids";
+import type { AiProviderLabel, HubApiVersion } from "./ids";
+import { formOf, settingsFrom } from "./settings-form";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import { pluginIconUrl, registryIconUrl } from "./plugin-icons";
 import type { InstallOutcome } from "./plugin-install";
@@ -116,14 +119,23 @@ export interface Lifecycle {
    * next open. Throws unless that Plugin is installed and neither open nor closing.
    */
   updated(plugin: InstalledPlugin): void;
-  /** Replaces the unsaved form. Throws if settings are not showing. */
-  editSettings(form: HubSettings): void;
+  /**
+   * Replaces the unsaved form. Removing the Default AI Provider's provider sets the default back to
+   * `none`, and drops any key typed for it. Throws if settings are not showing.
+   */
+  editSettings(form: HubSettingsForm): void;
+  /**
+   * Holds a key typed for the provider in `row`, which replaces its key on Save. Throws if settings
+   * are not showing or the form has no such row.
+   */
+  typeAiKey(row: AiProviderRow, key: AiProviderKey): void;
   /**
    * Saves the form through the save callback and makes it what is stored. Does nothing when the
-   * form is what is stored. Throws if settings are not showing.
+   * form is what is stored and no key was typed, or when it is not valid Hub Settings (the form
+   * shows it is not savable). Throws if settings are not showing.
    */
   saveSettings(): void;
-  /** Puts the form back to what is stored. Throws if settings are not showing. */
+  /** Puts the form back to what is stored, dropping typed keys. Throws if settings are not showing. */
   cancelSettings(): void;
   /** The Hub Settings as last saved, whatever the form holds. */
   storedSettings(): HubSettings;
@@ -137,8 +149,16 @@ export interface LifecycleDeps {
   systemLanguage: DisplayLanguage;
   installed: readonly InstalledPlugin[];
   storedAtStart: HubSettings;
-  /** Writes saved Hub Settings and applies them; called only when they changed. */
-  save: (settings: HubSettings) => void;
+  /** The labels of the stored AI Providers that have a key in the key store. */
+  keyedAtStart: ReadonlySet<AiProviderLabel>;
+  /**
+   * Writes saved Hub Settings, and each provider's key as `keys` says, and applies them; called
+   * only when they changed. Answers the labels that have a key after it.
+   */
+  save: (
+    settings: HubSettings,
+    keys: readonly SavedProviderKey[],
+  ) => ReadonlySet<AiProviderLabel>;
   /** Logs a stored or company Theme this Hub does not have; called once per name. */
   unknownTheme: (name: ThemeName) => void;
   /**
@@ -223,6 +243,7 @@ export function createLifecycle({
   systemLanguage,
   installed,
   storedAtStart,
+  keyedAtStart,
   save,
   unknownTheme,
   registry,
@@ -335,12 +356,27 @@ export function createLifecycle({
     return registry;
   };
   let stored = storedAtStart;
+  let keyed = keyedAtStart;
   // The unsaved form: what is stored until staff edit it.
-  let form = storedAtStart;
+  let form = formOf(storedAtStart);
+  // Keys typed in the form, by row. Held here only: the Hub Chrome learns just which rows have one.
+  let typedKeys = new Map<AiProviderRow, AiProviderKey>();
+  const resetForm = (): void => {
+    form = formOf(stored);
+    typedKeys = new Map();
+  };
+  const edited = (): boolean =>
+    typedKeys.size > 0 || !isDeepStrictEqual(form, formOf(stored));
+  const keysSet = (): AiProviderRow[] =>
+    form.aiProviders.flatMap(({ row, was }) =>
+      typedKeys.has(row) || (was.kind === "stored" && keyed.has(was.label))
+        ? [row]
+        : [],
+    );
   // Picking a Plugin or quitting with unsaved edits asks the Discard dialog first. Edits are only
   // made while settings show, and can only be left behind through **Discard**.
   const discardingEditsFirst = (proceed: () => void): void => {
-    if (isDeepStrictEqual(form, stored)) {
+    if (!edited()) {
       proceed();
       return;
     }
@@ -428,7 +464,15 @@ export function createLifecycle({
       open: [...open],
       closing: [...closing],
       foreground: open[0] ?? null,
-      content: content.kind === "settings" ? { ...content, form } : content,
+      content:
+        content.kind === "settings"
+          ? {
+              ...content,
+              form,
+              keysSet: keysSet(),
+              savable: settingsFrom(form, typedKeys).kind === "valid",
+            }
+          : content,
       dialog: dialogOf(asking),
       hubVersion,
       theme,
@@ -618,16 +662,34 @@ export function createLifecycle({
       listing = listingIn(listing.language);
       changed();
     },
-    editSettings: (edited) => {
+    editSettings: (next) => {
       settingsShowing("editSettings");
-      form = edited;
+      const rows = new Set(next.aiProviders.map(({ row }) => row));
+      const { defaultAiProvider } = next;
+      form =
+        defaultAiProvider.kind === "chosen" &&
+        !rows.has(defaultAiProvider.provider)
+          ? { ...next, defaultAiProvider: { kind: "none" } }
+          : next;
+      typedKeys = new Map([...typedKeys].filter(([row]) => rows.has(row)));
+      changed();
+    },
+    typeAiKey: (row, key) => {
+      settingsShowing("typeAiKey");
+      if (!form.aiProviders.some((each) => each.row === row)) {
+        throw new Error(`The form has no AI Provider row ${row}`);
+      }
+      typedKeys.set(row, key);
       changed();
     },
     saveSettings: () => {
       const showing = settingsShowing("saveSettings");
-      if (isDeepStrictEqual(form, stored)) return;
-      save(form);
-      stored = form;
+      if (!edited()) return;
+      const valid = settingsFrom(form, typedKeys);
+      if (valid.kind === "invalid") return;
+      keyed = save(valid.settings, valid.keys);
+      stored = valid.settings;
+      resetForm();
       const language = languageOf(stored);
       if (language !== listing.language) {
         listing = listingIn(language);
@@ -640,7 +702,7 @@ export function createLifecycle({
     },
     cancelSettings: () => {
       settingsShowing("cancelSettings");
-      form = stored;
+      resetForm();
       changed();
     },
     storedSettings: () => stored,
@@ -691,7 +753,7 @@ export function createLifecycle({
       }
       if (pending.kind === "discard-changes" && answer === "discard") {
         asking = null;
-        form = stored;
+        resetForm();
         // Announced before going ahead, as **Quit anyway** is: the Busy quit dialog it may ask
         // next comes up on a fresh overlay.
         changed();
