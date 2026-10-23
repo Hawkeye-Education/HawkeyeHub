@@ -2,6 +2,7 @@
 
 import type { ElectronApplication, Locator, Page } from "@playwright/test";
 import {
+  answerWithKey,
   displayLanguageOf,
   exitCodeOf,
   expect,
@@ -85,12 +86,11 @@ async function overlay(hub: ElectronApplication): Promise<Page> {
 
 /**
  * Presses a dialog button with Enter going down only. Its answer takes the overlay away, so a mouse
- * click can lose its page before the mouseup that fired it is acknowledged (seen on macOS CI); the
- * key answers as it goes down, as in the Enter and Esc test below.
+ * click can lose its page before the mouseup that fired it is acknowledged (seen on macOS CI).
  */
 async function press(button: Locator): Promise<void> {
   await button.focus();
-  await button.page().keyboard.down("Enter");
+  await answerWithKey(button.page(), "Enter");
 }
 
 /** Whether the dialog overlay is showing. */
@@ -150,8 +150,7 @@ test("Enter and Esc both pick Keep open", async ({ dataDir }) => {
       await closeTimer.click();
       const page = await overlay(hub);
       await expect(page.getByRole("dialog")).toBeVisible();
-      // Down only: the key answers as it goes down, and the overlay is gone before it comes up.
-      await page.keyboard.down(key);
+      await answerWithKey(page, key);
       await expect.poll(() => overlayShowing(hub)).toBe(false);
       await expect(closeTimer).toBeVisible();
     }
