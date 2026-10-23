@@ -189,8 +189,18 @@ const cases: [string, HubEvent, unknown][] = [
     hubLine("warn", "Company Configuration invalid: the cached copy"),
   ],
   [
+    "Company Configuration cache unreadable",
+    { kind: "company-config-cache-unreadable", code: "EACCES" },
+    hubLine("warn", "Company Configuration cache unreadable: EACCES"),
+  ],
+  [
+    "Company Configuration cache unwritable",
+    { kind: "company-config-cache-unwritable", code: "ENOSPC" },
+    hubLine("warn", "Company Configuration could not be cached: ENOSPC"),
+  ],
+  [
     "Company Configuration fell back to the cache",
-    { kind: "company-config-fallback", to: "cache" },
+    { kind: "company-config-fallback", to: "cached" },
     hubLine("warn", "Company Configuration: using the cached copy"),
   ],
   [

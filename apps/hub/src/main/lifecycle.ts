@@ -25,7 +25,10 @@ import {
   type PluginAccess,
   type ThemeName,
 } from "../shared/hub-chrome-ipc";
-import type { CompanyConfiguration } from "./company-config";
+import {
+  describeAuthProvider,
+  type CompanyConfiguration,
+} from "./company-config";
 import type { SystemDescription } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
 import type { HubApiVersion } from "./ids";
@@ -667,10 +670,7 @@ export function createLifecycle({
       // no AI Provider yet, and no sign-in until the sign-in spec.
       pythonVersions: [],
       aiProviders: [],
-      authProvider:
-        company.authProvider.kind === "none"
-          ? { kind: "none" }
-          : { kind: company.authProvider.kind, signedIn: false },
+      authProvider: describeAuthProvider(company.authProvider),
     }),
     answer: (answer) => {
       const pending = asking;

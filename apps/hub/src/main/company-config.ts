@@ -7,11 +7,16 @@ import { join } from "node:path";
 import { RoleName } from "@hawkeye-hub/plugin-format";
 import { z } from "zod";
 import { ThemeNameSchema } from "../shared/hub-settings";
-import type { Diagnostics, HubEvent } from "./diagnostics";
+import type { Diagnostics, HubEvent, SystemDescription } from "./diagnostics";
 import { errorCode } from "./error-code";
 import type { AbsolutePath } from "./ids";
 import { HAWKEYE } from "./lifecycle";
-import { WebUrl, type RegistryFetch } from "./registry";
+import { WebUrl, type FetchFailure, type RegistryFetch } from "./registry";
+
+/** The OIDC client the Hub signs in as, registered with the Auth Provider. */
+const ClientId = z.string().min(1).brand<"ClientId">();
+/** A group in the Auth Provider, as its token names it, that the Role Mapping maps to Roles. */
+const GroupName = z.string().min(1).brand<"GroupName">();
 
 /**
  * Strict throughout: an older Hub rejects a field it does not know and falls back to its cache, so
@@ -26,17 +31,18 @@ const CompanyConfigurationSchema = z.strictObject({
     z.strictObject({
       kind: z.literal("oidc"),
       issuer: WebUrl,
-      clientId: z.string().min(1),
+      clientId: ClientId,
       // Only with an Auth Provider: it means nothing without one.
       signInLifetime: z.strictObject({ hours: z.number().int().positive() }),
     }),
   ]),
   roleMapping: z.array(
-    z.strictObject({ group: z.string().min(1), roles: z.array(RoleName) }),
+    z.strictObject({ group: GroupName, roles: z.array(RoleName) }),
   ),
 });
 
 export type CompanyConfiguration = z.infer<typeof CompanyConfigurationSchema>;
+export type ClientId = z.infer<typeof ClientId>;
 
 /** What the Hub uses with neither a fresh copy nor a cache: a first launch offline. */
 export const BUILT_IN_COMPANY_CONFIGURATION: CompanyConfiguration = {
@@ -45,19 +51,18 @@ export const BUILT_IN_COMPANY_CONFIGURATION: CompanyConfiguration = {
   roleMapping: [],
 };
 
-export type CompanyConfigurationFetchFailure =
-  { kind: "http-status"; status: number } | { kind: "no-response" };
-
 export type FetchedCompanyConfiguration =
-  | { kind: "fetched"; text: string }
-  | { kind: "failed"; failure: CompanyConfigurationFetchFailure };
+  { kind: "fetched"; text: string } | { kind: "failed"; failure: FetchFailure };
 
 export type CachedCompanyConfiguration =
-  { kind: "missing" } | { kind: "read"; text: string } | { kind: "unreadable" };
+  | { kind: "missing" }
+  | { kind: "read"; text: string }
+  // The fs error's code, such as `EACCES` or `EBUSY`.
+  | { kind: "unreadable"; code: string };
 
 export interface CompanyConfigurationResolution {
   configuration: CompanyConfiguration;
-  source: "fetched" | "cache" | "built-in";
+  source: "fetched" | "cached" | "built-in";
   /** What to write to hub.log, in order: never the file's contents. */
   events: HubEvent[];
 }
@@ -74,20 +79,33 @@ function parse(text: string): CompanyConfiguration | "invalid" {
   return parsed.success ? parsed.data : "invalid";
 }
 
-/** The cache, or the built-in fallback; whether a bad cache was passed over. */
+/** The cache, or the built-in fallback, and why a cache was passed over. */
 function fromCache(cached: CachedCompanyConfiguration): {
   configuration: CompanyConfiguration;
-  source: "cache" | "built-in";
-  cacheInvalid: boolean;
+  source: "cached" | "built-in";
+  events: HubEvent[];
 } {
-  const configuration = cached.kind === "read" ? parse(cached.text) : "invalid";
-  return configuration === "invalid"
-    ? {
-        configuration: BUILT_IN_COMPANY_CONFIGURATION,
-        source: "built-in",
-        cacheInvalid: cached.kind !== "missing",
-      }
-    : { configuration, source: "cache", cacheInvalid: false };
+  const builtIn = (events: HubEvent[]) => ({
+    configuration: BUILT_IN_COMPANY_CONFIGURATION,
+    source: "built-in" as const,
+    events,
+  });
+  switch (cached.kind) {
+    case "missing":
+      return builtIn([]);
+    case "unreadable":
+      return builtIn([
+        { kind: "company-config-cache-unreadable", code: cached.code },
+      ]);
+    case "read": {
+      const configuration = parse(cached.text);
+      return configuration === "invalid"
+        ? builtIn([{ kind: "company-config-invalid", copy: "cached" }])
+        : { configuration, source: "cached", events: [] };
+    }
+    default:
+      return cached satisfies never;
+  }
 }
 
 /** In order: a fresh fetch that parses, then the cache, then the built-in fallback. */
@@ -108,36 +126,37 @@ export function resolveCompanyConfiguration(
       failure: fetched.failure,
     });
   }
-  const { configuration, source, cacheInvalid } = fromCache(cached);
-  if (cacheInvalid) {
-    events.push({ kind: "company-config-invalid", copy: "cached" });
-  }
+  const fallback = fromCache(cached);
+  const { configuration, source } = fallback;
+  events.push(...fallback.events);
   events.push({ kind: "company-config-fallback", to: source });
   return { configuration, source, events };
 }
 
 /** The asset beside the Registry's `index.json`, so `HAWKEYE_HUB_REGISTRY_URL` moves both. */
 export function companyConfigurationUrlFrom(registryUrl: URL): URL {
-  return new URL(CACHE_FILE, registryUrl);
+  return new URL(FILE_NAME, registryUrl);
 }
 
 /** How long the start's fetch waits for the whole file: it is small, and the window never waits. */
 const FETCH_TIMEOUT_MS = 10_000;
 
-/** The cache's name in the Hub's data folder, the same as the published asset's. */
-const CACHE_FILE = "company-config.json";
+/** The published asset's name, and the cache's in the Hub's data folder. */
+const FILE_NAME = "company-config.json";
 
 function readCache(dataDir: AbsolutePath): CachedCompanyConfiguration {
   try {
     return {
       kind: "read",
-      text: readFileSync(join(dataDir, CACHE_FILE), "utf8"),
+      text: readFileSync(join(dataDir, FILE_NAME), "utf8"),
     };
   } catch (error) {
-    // Not swallowed: an unreadable cache is logged as an invalid one when it is consulted.
-    return errorCode(error) === "ENOENT"
+    // Not swallowed: an unreadable cache is logged, with its code, when it is consulted.
+    const code = errorCode(error);
+    if (code === undefined) throw error;
+    return code === "ENOENT"
       ? { kind: "missing" }
-      : { kind: "unreadable" };
+      : { kind: "unreadable", code };
   }
 }
 
@@ -196,12 +215,45 @@ export async function refreshCompanyConfiguration({
     readCache(dataDir),
   );
   for (const event of events) diagnostics.recordHubEvent(event);
-  if (source === "fetched") {
-    const path = join(dataDir, CACHE_FILE);
+  if (source === "fetched") writeCache(dataDir, configuration, diagnostics);
+  return configuration;
+}
+
+/**
+ * Replaces the cache whole, through a temporary file. A cache that cannot be written (a full disk,
+ * a locked file) is logged with the fs error's code, and the fresh copy is still used.
+ */
+function writeCache(
+  dataDir: AbsolutePath,
+  configuration: CompanyConfiguration,
+  diagnostics: Diagnostics,
+): void {
+  const path = join(dataDir, FILE_NAME);
+  try {
     writeFileSync(`${path}.tmp`, `${JSON.stringify(configuration, null, 2)}\n`);
     renameSync(`${path}.tmp`, path);
+  } catch (error) {
+    const code = errorCode(error);
+    if (code === undefined) throw error;
+    diagnostics.recordHubEvent({
+      kind: "company-config-cache-unwritable",
+      code,
+    });
   }
-  return configuration;
+}
+
+/** The Auth Provider as `system.json` reports it: no one is signed in until the sign-in spec. */
+export function describeAuthProvider(
+  authProvider: CompanyConfiguration["authProvider"],
+): SystemDescription["authProvider"] {
+  switch (authProvider.kind) {
+    case "none":
+      return { kind: "none" };
+    case "oidc":
+      return { kind: "oidc", signedIn: false };
+    default:
+      return authProvider satisfies never;
+  }
 }
 
 /** Dev mode's `--company-config` file. One that cannot be read or parsed throws with why. */

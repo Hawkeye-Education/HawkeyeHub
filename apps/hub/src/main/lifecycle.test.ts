@@ -12,6 +12,7 @@ import type {
 } from "../shared/hub-chrome-ipc";
 import {
   BUILT_IN_COMPANY_CONFIGURATION,
+  type ClientId,
   type CompanyConfiguration,
 } from "./company-config";
 import { FIRST_LAUNCH_SETTINGS } from "./hub-settings";
@@ -259,7 +260,7 @@ test("the system description reports the Company Configuration's Auth Provider, 
     authProvider: {
       kind: "oidc",
       issuer: "https://sso.hawkeye.example/realms/staff" as WebUrl,
-      clientId: "hawkeye-hub",
+      clientId: "hawkeye-hub" as ClientId,
       signInLifetime: { hours: 168 },
     },
     roleMapping: [],

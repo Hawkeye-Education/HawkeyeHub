@@ -15,9 +15,8 @@ import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
 import type { DisplayLanguage, ThemeName } from "../shared/hub-chrome-ipc";
 import { HAWKEYE } from "./lifecycle";
-import type { CompanyConfigurationFetchFailure } from "./company-config";
 import type { InstallFailure } from "./plugin-install";
-import type { RegistryCheckFailure } from "./registry";
+import type { FetchFailure, RegistryCheckFailure } from "./registry";
 import type {
   AbsolutePath,
   AiProviderKind,
@@ -176,17 +175,16 @@ export type HubEvent =
   | {
       kind: "ai-provider-call-failed";
       provider: AiProviderLabel;
-      outcome:
-        { kind: "http-status"; status: number } | { kind: "no-response" };
+      outcome: FetchFailure;
     }
-  // The Company Configuration: a fetch that failed, a copy that did not parse, and the copy used
-  // instead. Never the file's contents.
-  | {
-      kind: "company-config-fetch-failed";
-      failure: CompanyConfigurationFetchFailure;
-    }
+  // The Company Configuration: a fetch that failed, a copy that did not parse, a cache that could
+  // not be read or written (the fs error's code), and the copy used instead. Never the file's
+  // contents.
+  | { kind: "company-config-fetch-failed"; failure: FetchFailure }
   | { kind: "company-config-invalid"; copy: "fetched" | "cached" }
-  | { kind: "company-config-fallback"; to: "cache" | "built-in" }
+  | { kind: "company-config-cache-unreadable"; code: string }
+  | { kind: "company-config-cache-unwritable"; code: string }
+  | { kind: "company-config-fallback"; to: "cached" | "built-in" }
   // A Registry check that failed: only how, never the index's contents.
   | { kind: "registry-check-failed"; failure: RegistryCheckFailure }
   // An `environment` failure carries the end of uv's stderr, which says what went wrong.
@@ -574,11 +572,7 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
     case "ai-provider-call-failed":
       return {
         level: "warn",
-        message: `AI Provider call failed: ${event.provider} ${
-          event.outcome.kind === "http-status"
-            ? `returned HTTP ${String(event.outcome.status)}`
-            : "gave no response"
-        }`,
+        message: `AI Provider call failed: ${event.provider} ${describeFetchFailure(event.outcome)}`,
         subject: NO_PLUGIN,
       };
     case "registry-check-failed":
@@ -602,7 +596,19 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
     case "company-config-fallback":
       return {
         level: "warn",
-        message: `Company Configuration: using the ${event.to === "cache" ? "cached copy" : "built-in fallback"}`,
+        message: `Company Configuration: using the ${event.to === "cached" ? "cached copy" : "built-in fallback"}`,
+        subject: NO_PLUGIN,
+      };
+    case "company-config-cache-unreadable":
+      return {
+        level: "warn",
+        message: `Company Configuration cache unreadable: ${event.code}`,
+        subject: NO_PLUGIN,
+      };
+    case "company-config-cache-unwritable":
+      return {
+        level: "warn",
+        message: `Company Configuration could not be cached: ${event.code}`,
         subject: NO_PLUGIN,
       };
     case "plugin-install-failed":
@@ -670,9 +676,7 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
   }
 }
 
-function describeFetchFailure(
-  failure: CompanyConfigurationFetchFailure,
-): string {
+function describeFetchFailure(failure: FetchFailure): string {
   switch (failure.kind) {
     case "http-status":
       return `returned HTTP ${String(failure.status)}`;

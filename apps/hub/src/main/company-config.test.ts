@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -59,10 +65,10 @@ test("a fresh fetch that does not parse falls back to the cache, and both are lo
     ),
   ).toEqual({
     configuration: CACHED,
-    source: "cache",
+    source: "cached",
     events: [
       { kind: "company-config-invalid", copy: "fetched" },
-      { kind: "company-config-fallback", to: "cache" },
+      { kind: "company-config-fallback", to: "cached" },
     ],
   });
 });
@@ -75,13 +81,13 @@ test("a failed fetch falls back to the cache, and both are logged", () => {
     ),
   ).toEqual({
     configuration: CACHED,
-    source: "cache",
+    source: "cached",
     events: [
       {
         kind: "company-config-fetch-failed",
         failure: { kind: "http-status", status: 404 },
       },
-      { kind: "company-config-fallback", to: "cache" },
+      { kind: "company-config-fallback", to: "cached" },
     ],
   });
 });
@@ -105,21 +111,23 @@ test("with no cache either, the Hub has no Auth Provider and the Hawkeye Theme",
 test.each([
   ["is not JSON", { kind: "read" as const, text: "{" }],
   ["fails the schema", cached({ ...CACHED, roleMapping: "teachers" })],
-  ["cannot be read", { kind: "unreadable" as const }],
-])("a cache that %s is treated as no cache, and logged", (_, cache) => {
-  expect(resolveCompanyConfiguration(NO_RESPONSE, cache)).toEqual({
-    configuration: BUILT_IN,
-    source: "built-in",
-    events: [
-      {
-        kind: "company-config-fetch-failed",
-        failure: { kind: "no-response" },
-      },
-      { kind: "company-config-invalid", copy: "cached" },
-      { kind: "company-config-fallback", to: "built-in" },
-    ],
-  });
-});
+])(
+  "a cache that %s is treated as no cache, and logged as invalid",
+  (_, cache) => {
+    expect(resolveCompanyConfiguration(NO_RESPONSE, cache)).toEqual({
+      configuration: BUILT_IN,
+      source: "built-in",
+      events: [
+        {
+          kind: "company-config-fetch-failed",
+          failure: { kind: "no-response" },
+        },
+        { kind: "company-config-invalid", copy: "cached" },
+        { kind: "company-config-fallback", to: "built-in" },
+      ],
+    });
+  },
+);
 
 test.each([
   ["a field this Hub does not know", { ...OIDC, signInPage: "/login" }],
@@ -143,7 +151,7 @@ test.each([
 ])("a fetched copy with %s is rejected", (_, json) => {
   expect(
     resolveCompanyConfiguration(fetched(json), cached(CACHED)),
-  ).toMatchObject({ configuration: CACHED, source: "cache" });
+  ).toMatchObject({ configuration: CACHED, source: "cached" });
 });
 
 test("the Company Configuration sits beside the Registry's index on the registry release", () => {
@@ -230,6 +238,35 @@ test("a first launch offline uses the built-in fallback and caches nothing", asy
     "Company Configuration: using the built-in fallback",
   ]);
   expect(existsSync(join(dataDir, "company-config.json"))).toBe(false);
+});
+
+test("a fetched copy that cannot be cached is logged and still used", async () => {
+  const logsDir = parseAbsolutePath(mkdtempSync(join(tmpdir(), "hub-logs-")));
+  // A data folder that is gone: the cache write fails with ENOENT, as a full disk fails with ENOSPC.
+  const dataDir = parseAbsolutePath(join(logsDir, "gone"));
+  expect(
+    await refreshCompanyConfiguration({
+      url: CONFIG_URL,
+      fetch: serving(JSON.stringify(OIDC)),
+      dataDir,
+      diagnostics: openDiagnostics(logsDir, () => new Date()),
+    }),
+  ).toEqual(OIDC);
+  expect(readFileSync(join(logsDir, "hub.log"), "utf8")).toContain(
+    '"message":"Company Configuration could not be cached: ENOENT"',
+  );
+});
+
+test("an unreadable cache is logged with why, apart from one that does not parse", async () => {
+  const { dataDir, refresh, hubLog } = hubFolders();
+  // A folder where the cache file should be: reading it fails, but not with ENOENT.
+  mkdirSync(join(dataDir, "company-config.json"));
+  expect(await refresh(unreachable)).toEqual(BUILT_IN);
+  expect(hubLog()).toEqual([
+    "Company Configuration fetch failed: gave no response",
+    "Company Configuration cache unreadable: EISDIR",
+    "Company Configuration: using the built-in fallback",
+  ]);
 });
 
 test("dev mode's local file is read and parsed, and one that does not parse throws with why", () => {

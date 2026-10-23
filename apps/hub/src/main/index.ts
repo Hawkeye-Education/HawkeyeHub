@@ -55,7 +55,7 @@ let startedAs:
   | {
       kind: "dev";
       plugins: InstalledPlugin[];
-      company:
+      companyConfiguration:
         | { kind: "registry" }
         | { kind: "file"; configuration: CompanyConfiguration };
     };
@@ -70,7 +70,7 @@ try {
       ? {
           kind: "dev",
           plugins: loadDevPlugins(hubMode.pluginsDir, hubMode.ids),
-          company:
+          companyConfiguration:
             hubMode.companyConfiguration.kind === "file"
               ? {
                   kind: "file",
@@ -305,19 +305,22 @@ function runHub(): void {
         });
     };
     // The Company Configuration (spec #99): dev mode's file as it is, or the cache now and a fetch
-    // that does not hold the window back, whose answer redraws the company Theme. Null is a real
-    // state: no `--company-config` file.
-    const companyFile =
-      startedAs.kind === "dev" && startedAs.company.kind === "file"
-        ? startedAs.company.configuration
-        : null;
+    // that does not hold the window back, whose answer redraws the company Theme. An installed Hub
+    // always uses the Registry's.
+    const companyConfiguration =
+      startedAs.kind === "dev"
+        ? startedAs.companyConfiguration
+        : ({ kind: "registry" } as const);
     const lifecycle = createLifecycle({
       // package.json's `version`: without one Electron would answer its own version.
       hubVersion: parseHubVersion(app.getVersion()),
       systemLanguage: displayLanguageFor(app.getPreferredSystemLanguages()),
       installed: installed.loaded,
       storedAtStart: settings,
-      companyAtStart: companyFile ?? cachedCompanyConfiguration(hubDataDir),
+      companyAtStart:
+        companyConfiguration.kind === "file"
+          ? companyConfiguration.configuration
+          : cachedCompanyConfiguration(hubDataDir),
       save: (saved) => {
         saveHubSettings(hubDataDir, saved);
         applyColourScheme(saved);
@@ -350,8 +353,9 @@ function runHub(): void {
         });
       },
     });
-    // A throw is an unhandled rejection: a Hub crash, as with installs.
-    if (companyFile === null) {
+    // A failed fetch or cache write is logged inside; anything else thrown is an unhandled
+    // rejection, a Hub crash, as with installs.
+    if (companyConfiguration.kind === "registry") {
       void refreshCompanyConfiguration({
         url: companyConfigurationUrlFrom(registryUrl),
         fetch: fetchFromWeb,
