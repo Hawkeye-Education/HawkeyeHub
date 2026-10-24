@@ -217,7 +217,10 @@ test("quitting the Hub closes every open Plugin", async ({ dataDir }) => {
   await pluginButton(hubChrome, words.timer).click();
   await pluginPage(() => hub.windows(), "class-timer");
   await pluginButton(hubChrome, words.attendance).click();
-  await pluginPage(() => hub.windows(), "attendance");
+  const attendance = await pluginPage(() => hub.windows(), "attendance");
+  // Quit only once the last-opened page has loaded (the Hub Kit fonts with it): a page closed
+  // mid-load may not get its pagehide logged before the Hub exits.
+  await attendance.waitForLoadState("load");
 
   await hub.close();
 
