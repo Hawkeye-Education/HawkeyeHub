@@ -323,7 +323,7 @@ function runHub(): void {
       },
       // With the Hub Settings and keys saved when each chat starts, as `hub.ai`'s are.
       assistant: {
-        context: ({ folder }, language) => assistantContext(folder, language),
+        context: ({ folder }) => assistantContext(folder),
         modelsAtStart: loadAssistantModels(hubDataDir, recordHubEvent),
         saveModels: (models) => {
           saveAssistantModels(hubDataDir, models);

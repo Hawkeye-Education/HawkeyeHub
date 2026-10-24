@@ -193,8 +193,11 @@ export interface LifecycleDeps {
     keys: readonly SavedProviderKey[],
   ) => ReadonlySet<AiProviderLabel>;
   assistant: {
-    /** An installed Plugin's Assistant context (`assistantContext`), read as the Plugin opens. */
-    context: (plugin: InstalledPlugin, language: DisplayLanguage) => string;
+    /**
+     * An installed Plugin's Assistant context (`assistantContext`): its files read as the Plugin
+     * opens, giving the system prompt in the Display Language at each send.
+     */
+    context: (plugin: InstalledPlugin) => (language: DisplayLanguage) => string;
     /** Starts a chat through the call module (`startAiChat`). */
     chat: (request: AiChatRequest) => AiChat;
     /** Each Plugin's Assistant model as stored (`loadAssistantModels`). */
@@ -474,7 +477,7 @@ export function createLifecycle({
   // Each open Plugin with an Assistant: its context, read at open, its conversation, and the chat
   // streaming the reply, if one is.
   interface Talk {
-    system: string;
+    system: (language: DisplayLanguage) => string;
     conversation: Conversation;
     chat: AiChat | null;
   }
@@ -662,7 +665,7 @@ export function createLifecycle({
           plugin.manifest.assistant.kind === "enabled"
         ) {
           talks.set(id, {
-            system: assistant.context(plugin, listing.language),
+            system: assistant.context(plugin),
             conversation: NEW_CONVERSATION,
             chat: null,
           });
@@ -905,7 +908,7 @@ export function createLifecycle({
       ];
       const chat = assistant.chat({
         model: modelOf(id),
-        system: talk.system,
+        system: talk.system(listing.language),
         messages,
       });
       talk.chat = chat;

@@ -1995,9 +1995,9 @@ function withAssistant(
       saveModels: (models) => {
         saved.push(new Map(models));
       },
-      context: ({ manifest }, language) => {
+      context: ({ manifest }) => {
         read.push(manifest.id);
-        return `Context of ${manifest.id} in ${language}`;
+        return (language) => `Context of ${manifest.id} in ${language}`;
       },
       chat: (request) => {
         requests.push(request);
@@ -2079,6 +2079,19 @@ test("the open Panel's current model is the Default AI Provider's, with whether 
       acceptsImages: true,
     },
   });
+});
+
+test("the context's Display Language is the one at send, while its files are read only at open", () => {
+  const { lifecycle, requests, read } = withAssistant();
+  lifecycle.open(HELPER);
+  lifecycle.showSettings();
+  lifecycle.editSettings(formOf(IN_CHINESE));
+  lifecycle.saveSettings();
+  lifecycle.open(HELPER);
+
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(requests[0]?.system).toBe("Context of regex-helper in zh-HK");
+  expect(read).toEqual(["regex-helper"]);
 });
 
 test("a message streams a reply from the Default AI Provider, with the context read at open", async () => {

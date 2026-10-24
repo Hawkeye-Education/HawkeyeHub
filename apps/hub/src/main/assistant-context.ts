@@ -44,11 +44,13 @@ function otherFilesOf(skill: AbsolutePath): AbsolutePath[] {
     .map(({ file }) => file);
 }
 
-/** Throws if `agents/assistant.md`, `agents/skills/` or a Skill's `SKILL.md` is missing. */
+/**
+ * Reads `agents/` now, and gives the system prompt with the preamble in a Display Language. Throws
+ * if `agents/assistant.md`, `agents/skills/` or a Skill's `SKILL.md` is missing.
+ */
 export function assistantContext(
   pluginFolder: AbsolutePath,
-  language: DisplayLanguage,
-): string {
+): (language: DisplayLanguage) => string {
   const agents = under(pluginFolder, "agents");
   const skills = under(agents, "skills");
   const skillFolders = readdirSync(skills, { withFileTypes: true })
@@ -56,12 +58,12 @@ export function assistantContext(
     .map(({ name }) => name)
     .sort()
     .map((name) => under(skills, name));
-  return [
-    preamble(language),
+  const files = [
     read(under(agents, "assistant.md")),
     ...skillFolders.flatMap((skill) => [
       read(under(skill, "SKILL.md")),
       ...otherFilesOf(skill).map(read),
     ]),
-  ].join("\n\n");
+  ];
+  return (language) => [preamble(language), ...files].join("\n\n");
 }

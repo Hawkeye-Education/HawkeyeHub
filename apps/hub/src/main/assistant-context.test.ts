@@ -28,7 +28,7 @@ const FIXTURE = {
 };
 
 test("the context is the Hub preamble, then assistant.md, then every Skill whole: SKILL.md, then every other file by path", () => {
-  const context = assistantContext(pluginFolder(FIXTURE), "en-HK");
+  const context = assistantContext(pluginFolder(FIXTURE))("en-HK");
   const order = [
     "You advise",
     "ASSISTANT PROMPT",
@@ -44,16 +44,16 @@ test("the context is the Hub preamble, then assistant.md, then every Skill whole
 
 test("the preamble asks for Markdown in the Display Language", () => {
   const folder = pluginFolder(FIXTURE);
-  expect(assistantContext(folder, "en-HK")).toMatch(
+  expect(assistantContext(folder)("en-HK")).toMatch(
     /Markdown.*English \(Hong Kong\)/s,
   );
-  expect(assistantContext(folder, "zh-HK")).toMatch(
+  expect(assistantContext(folder)("zh-HK")).toMatch(
     /Markdown.*Traditional Chinese \(Hong Kong\)/s,
   );
 });
 
 test("nothing outside agents/ is read", () => {
-  expect(assistantContext(pluginFolder(FIXTURE), "en-HK")).not.toContain(
+  expect(assistantContext(pluginFolder(FIXTURE))("en-HK")).not.toContain(
     "OUTSIDE",
   );
 });
