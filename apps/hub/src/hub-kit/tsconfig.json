@@ -1,0 +1,9 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  // The Hub Kit's components run in a Plugin UI's page: DOM, and Vite's typings for the `?raw` CSS.
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"]
+  },
+  "include": ["."]
+}
