@@ -1,0 +1,6 @@
+# The one ruff config for the SDK and every Backend (CODING_STANDARDS.md).
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE", "S110", "RUF"]
