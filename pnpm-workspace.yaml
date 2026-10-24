@@ -7,3 +7,5 @@ engineStrict: true
 # esbuild's postinstall only checks its binary, which already comes from @esbuild/<platform>.
 ignoredBuiltDependencies:
   - esbuild
+  # Squirrel.Windows's installer, an electron-builder dependency the NSIS build never runs.
+  - electron-winstaller
