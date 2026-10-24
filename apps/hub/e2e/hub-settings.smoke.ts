@@ -182,7 +182,9 @@ test("an AI Provider added in Hub Settings is saved, with its key kept out of th
   await hubChrome
     .getByRole("textbox", { name: words.baseUrl })
     .fill("http://localhost:11434/v1");
-  await hubChrome.getByLabel(words.key).fill("sk-smoke-secret");
+  await hubChrome
+    .getByRole("textbox", { name: words.key })
+    .fill("sk-smoke-secret");
   await hubChrome.getByRole("textbox", { name: words.model }).fill("llama4");
   await hubChrome.getByRole("button", { name: words.save }).click();
   await expect
