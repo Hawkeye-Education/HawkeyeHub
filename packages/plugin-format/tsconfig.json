@@ -1,4 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The CLI runs under Node's type stripping, which needs `.ts` in local imports.
+    "allowImportingTsExtensions": true,
+    "types": ["node"]
+  },
   "include": ["src"]
 }

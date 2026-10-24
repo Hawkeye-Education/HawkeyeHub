@@ -16,6 +16,8 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # plugin-format's tests run skills-ref validate through uvx.
+      - uses: astral-sh/setup-uv@v6
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
