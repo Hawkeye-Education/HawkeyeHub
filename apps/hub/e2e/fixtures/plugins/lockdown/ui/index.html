@@ -1,0 +1,57 @@
+<!doctype html>
+<!-- Tries each Plugin UI lockdown rule (#50) for a manual check. Each result is shown on the page
+     and console-logged, so it also lands in the Plugin's log. -->
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Lockdown</title>
+    <script src="./lockdown.js" defer></script>
+  </head>
+  <body>
+    <h1>Lockdown</h1>
+    <p>
+      Loaded at <span id="loaded"></span>. A cancelled navigation leaves this
+      time unchanged.
+    </p>
+
+    <h2>window.open (refused)</h2>
+    <button id="open-https">window.open https</button>
+    <button id="open-blank">window.open about:blank</button>
+    <button id="open-own">window.open own page</button>
+
+    <h2>Main-frame navigation (cancelled)</h2>
+    <a id="nav-https" href="https://example.com/">https link</a>
+    <a id="nav-file" href="file:///C:/Windows/win.ini">file link</a>
+    <a id="nav-other-plugin" href="hawkeye-plugin://class-timer/index.html"
+      >another Plugin</a
+    >
+    <button id="nav-assign">location = https</button>
+    <a id="nav-own" href="./index.html">own page (allowed)</a>
+
+    <h2>target=_blank (https to the system browser, others refused)</h2>
+    <a id="blank-https" href="https://example.com/" target="_blank">https</a>
+    <a id="blank-http" href="http://example.com/" target="_blank">http</a>
+    <a id="blank-file" href="file:///C:/Windows/win.ini" target="_blank"
+      >file</a
+    >
+    <a id="blank-javascript" href="javascript:alert(1)" target="_blank"
+      >javascript</a
+    >
+
+    <h2>Download (native save dialog)</h2>
+    <a id="download" href="./sample.txt" download="sample.txt"
+      >download sample.txt</a
+    >
+
+    <h2>Permissions (denied, except the clipboard)</h2>
+    <button id="camera">camera</button>
+    <button id="microphone">microphone</button>
+    <button id="notifications">notifications</button>
+    <button id="geolocation">geolocation</button>
+    <button id="permission-states">navigator.permissions states</button>
+    <button id="clipboard">clipboard write then read</button>
+
+    <h2>Results</h2>
+    <ol id="results"></ol>
+  </body>
+</html>

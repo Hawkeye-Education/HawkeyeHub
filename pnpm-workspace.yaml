@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+  - packages/*
+
+engineStrict: true
+
+# esbuild's postinstall only checks its binary, which already comes from @esbuild/<platform>.
+ignoredBuiltDependencies:
+  - esbuild

@@ -1,0 +1,12 @@
+{
+  "id": "echo-backend",
+  "version": "1.0.0",
+  "hubApi": "^1.0.0",
+  "name": "Echo",
+  "description": "A smoke-test fixture Plugin with a Backend.",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": ["class-lists", "seating"],
+  "backend": { "kind": "python", "python": "3.12" },
+  "assistant": { "kind": "none" }
+}

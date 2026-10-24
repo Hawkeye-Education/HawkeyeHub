@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The base branch's history, for --only-changed below.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The smoke suite's global setup makes fixture Backends' venvs with `uv venv`.
+      - uses: astral-sh/setup-uv@v6
+      # Electron downloads its binary on first use; do it here, not inside the first test's timeout.
+      - run: pnpm --filter @hawkeye-hub/hub exec install-electron
+      - run: pnpm --filter @hawkeye-hub/hub smoke
+      # The Hub's pinned uv, PBS and a venv for real, on each Supported Platform (ADR 0011).
+      - run: pnpm --filter @hawkeye-hub/hub exec vitest run src/main/uv.real.test.ts
+        env:
+          HAWKEYE_HUB_REAL_UV: "1"
+      # A racy smoke test can pass one run. Repeat the smoke files this PR changes, and those that
+      # import a changed file, on the build the step above made.
+      - if: github.event_name == 'pull_request'
+        run: pnpm --filter @hawkeye-hub/hub exec playwright test --only-changed=origin/${{ github.base_ref }} --repeat-each 5 --pass-with-no-tests
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.os }}
+          path: apps/hub/test-results

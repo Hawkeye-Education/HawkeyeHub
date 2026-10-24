@@ -1,0 +1,3 @@
+# Prose docs are hand-wrapped; Prettier formats code only.
+*.md
+pnpm-lock.yaml

@@ -1,0 +1,10 @@
+{
+  "theme": "harbour",
+  "authProvider": {
+    "kind": "oidc",
+    "issuer": "http://localhost:8080/realms/hawkeye",
+    "clientId": "hawkeye-hub",
+    "signInLifetime": { "hours": 168 }
+  },
+  "roleMapping": [{ "group": "teachers", "roles": ["teacher"] }]
+}

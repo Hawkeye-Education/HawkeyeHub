@@ -1,0 +1,27 @@
+# One monorepo holds the Hub and every Plugin, and Python arrives only with a Python Plugin
+
+Decided in [#14](https://github.com/Hawkeye-Education/HawkeyeHub/issues/14). The Hub, its shared packages, the Python SDK and every **Plugin** live in this one public repo. The JS packages are private pnpm workspace packages that are never published to npm. A Hub with no Python-Backend Plugin installed carries nothing Python: no uv, no PBS and no SDK. The **Backend** contract is the wire protocol (stdio JSON-RPC with `initialize`, `shutdown`, notify-only Backend→UI and `data.reason` errors; ADRs 0003, 0009, 0010), and the `hawkeye-hub` Python SDK is an optional convenience a Backend depends on through PyPI like any other library.
+
+We chose one repo over a repo per Plugin because ADR 0005 already tags `plugin/<id>@<version>` on this repo and serves the **Registry** from its Releases. In one repo every Plugin uses the types, the fake Hub and the packaging checks straight from the workspace, and nothing has to be published or kept in sync across repos. We chose to download uv on demand rather than bundle it, and to publish the SDK to PyPI rather than inject it from the Hub onto `PYTHONPATH`, so that staff who never install a Python Plugin carry none of it. Injection would also have split the SDK from its own dependency: pydantic is a compiled wheel per Python minor, so it would still have to come from each Plugin's `uv.lock`, and the two could drift. We chose PyPI over a wheel URL on a GitHub Release because Plugins then bump the SDK like any other dependency instead of editing a hard-coded URL.
+
+## Consequences
+
+- **Layout.**
+  ```
+  apps/hub/                electron-vite: src/main, src/preload, src/renderer (Hub Chrome)
+  packages/hub-api/        types-only: window.hub, Hub Kit element types, the Manifest type
+  packages/hub-kit/        the web components the Hub serves into every Plugin UI
+  packages/plugin-format/  zod Manifest schema, generated manifest.schema.json, `check` and `pack` CLI
+  packages/fake-hub/       fake window.hub for Plugin UI tests
+  python/hawkeye-hub/      the optional Python SDK, incl. hawkeye_hub.testing
+  plugins/<id>/            one Plugin: the Plugin Package layout (ADR 0010) plus ui-src/
+  stores/<name>.md         one format document per Shared Store (ADR 0008)
+  ```
+- JS packages are named `@hawkeye-hub/*` and are `private: true`. They are published to npm only if a Plugin ever lives outside this repo.
+- Each `plugins/<id>/` is a pnpm workspace member whose `package.json` is for development only, never packed, and carries no version. Its `backend/` is a standalone uv project and not a uv-workspace member, because a uv workspace shares one lockfile and each Plugin ships its own `uv.lock` (ADR 0005).
+- Plugin UIs are TypeScript, built by Vite from `ui-src/` into the packaged `ui/`. The Hub Kit and the Hub Chrome are both built with Lit.
+- **Versions.** The Manifest's `version` is the only Plugin version. `plugin-format check` refuses a `backend/pyproject.toml` version or a `plugin/<id>@<version>` tag that disagrees with the Manifest. `packages/hub-api/package.json`'s `version` is the Hub API version: the Hub builds against it, and `check` refuses a Manifest `hubApi` range it cannot satisfy. The Hub's own version (`hub@<version>`) is separate.
+- **The SDK on PyPI.** `hawkeye-hub` is published by trusted publishing on a `sdk-py@<version>` tag. Its major version equals the Hub API major, and its minors move independently because it only wraps the wire protocol. Plugins depend on the published version. A local path source would end up in the shipped `uv.lock`, so SDK changes are tested in the SDK's own suite before release. The v1 surface is `Backend`, `@request` / `@notification`, a frozen `Context(data_dir, stores, hub_api)`, `RpcError(reason, message)`, a thread per request with notifications run inline, a stdout lock and UTF-8 `\n` stdio. Handler params are frozen pydantic v2 models that the SDK validates, answering `-32602` with `data.reason: 'invalid-params'`. `hawkeye_hub.testing` drives any Backend over stdio, whether or not it uses the SDK.
+- **uv on demand** (amends ADR 0005). The Hub pins a uv version and a `sha256` per platform. It downloads uv from Astral's GitHub release on the first install of a Python-Backend Plugin, and deletes it with the last one, as it already prunes unused PBS interpreters. Node writes the file, so it carries no quarantine flag and ADR 0005's unsigned reasoning holds.
+- **CI** is GitHub Actions in this repo. `ci.yml` lints, typechecks and tests everything on every PR and every push to `main`. `release-plugin.yml` runs on `plugin/*@*` tags. It runs `check`, runs the Plugin's tests on one runner per Supported Platform, then runs `pack` once and creates the release; failing tests refuse the publish. `release-hub.yml` (`hub@*`) builds with electron-builder on Windows and macOS runners. `release-sdk-py.yml` (`sdk-py@*`) publishes to PyPI. Every workflow that touches the rolling `registry` release shares one `concurrency: registry` group, and regenerates `index.json` from the full list of releases rather than patching it, so concurrent tags cannot race and a rerun is harmless.
+- **Packaging checks** (`plugin-format check`): the Manifest parses against the zod schema; the fixed paths exist; `backend.python` agrees with `requires-python`; the versions agree; the `hubApi` range is satisfiable; and each `agents/skills/*` passes a pinned `uvx skills-ref validate`.
