@@ -33,6 +33,8 @@ import {
   type StoreChanged,
 } from "../shared/plugin-preload";
 import type { StoreCall } from "../shared/store-call";
+import hawkeyeCss from "../hub-kit/hawkeye.css?raw";
+import nativeCss from "../hub-kit/native.css?raw";
 
 /** A JSON-RPC response or notification from the Backend, as main relays it. */
 type BackendMessage =
@@ -337,12 +339,17 @@ contextBridge.executeInMainWorld({
 // The preload runs before the parser has made `<html>` (documentElement is null then; the smoke
 // suite proves it), so the lang is set as the element is inserted. Mutation observers run at the
 // microtask checkpoint before the parser runs any script, so Plugin code already sees it, and it
-// wins over a lang the page's own `<html>` carries.
+// wins over a lang the page's own `<html>` carries. The Hub Kit's tokens and native-element
+// stylesheet (ADR 0006) go in then too, first in `<html>`, so the page's own CSS comes after them.
+// ponytail: Hawkeye is the only Theme; swap its stylesheet on a Theme change once a second exists.
 const observer = new MutationObserver(() => {
   // Not documentElement: its typings say it is never null, which is untrue before the parser runs.
   const root = document.querySelector("html");
   if (root === null) return;
   root.lang = displayLanguage;
+  const hubKit = document.createElement("style");
+  hubKit.textContent = `${hawkeyeCss}\n${nativeCss}`;
+  root.prepend(hubKit);
   observer.disconnect();
 });
 observer.observe(document, { childList: true });

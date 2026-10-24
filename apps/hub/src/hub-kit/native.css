@@ -1,0 +1,157 @@
+/* The native-element stylesheet (ADR 0006): native HTML elements styled from the `--hub-*` tokens
+   only, the same for every Theme. Its one hook, Hub API: `<button data-variant="primary">` marks a
+   screen's main action, and every other button is secondary. From `prototype/hawkeye-theme`. */
+
+@keyframes hub-enter {
+  from {
+    opacity: 0;
+  }
+}
+body {
+  margin: 0;
+  background: var(--hub-color-canvas);
+  color: var(--hub-color-fg);
+  font: var(--hub-text-md) / var(--hub-leading) var(--hub-font-body);
+}
+h1 {
+  margin: 0;
+  font-size: var(--hub-text-xl);
+  font-weight: var(--hub-weight-strong);
+  letter-spacing: -0.01em;
+}
+h2 {
+  margin: 0;
+  font-size: var(--hub-text-lg);
+  font-weight: var(--hub-weight-strong);
+}
+p {
+  margin: 0;
+  color: var(--hub-color-fg-muted);
+}
+small {
+  font-size: var(--hub-text-sm);
+  color: var(--hub-color-fg-muted);
+}
+a {
+  color: var(--hub-color-accent);
+}
+:focus-visible {
+  outline: 2px solid var(--hub-color-focus);
+  outline-offset: 2px;
+}
+::selection {
+  background: color-mix(in srgb, var(--hub-color-accent) 30%, transparent);
+}
+input:not([type="checkbox"], [type="radio"], [type="range"]),
+select,
+textarea {
+  box-sizing: border-box;
+  min-height: 32px;
+  font: inherit;
+  color: inherit;
+  background: var(--hub-color-surface);
+  border: 1px solid var(--hub-color-line);
+  border-radius: var(--hub-radius-2);
+  padding: var(--hub-space-1) var(--hub-space-3);
+  transition: border-color var(--hub-motion-fast) var(--hub-motion-ease);
+}
+input:not([type="checkbox"], [type="radio"], [type="range"]):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--hub-color-accent);
+}
+select option {
+  background: var(--hub-color-surface-raised);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--hub-color-fg-muted);
+}
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+progress {
+  accent-color: var(--hub-color-accent);
+}
+button {
+  box-sizing: border-box;
+  min-height: 32px;
+  font: inherit;
+  cursor: pointer;
+  color: var(--hub-color-fg);
+  background-color: var(--hub-color-surface);
+  border: 1px solid var(--hub-color-line);
+  border-radius: var(--hub-radius-2);
+  padding: var(--hub-space-1) var(--hub-space-4);
+  box-shadow: var(--hub-shadow-1);
+  transition:
+    transform var(--hub-motion-fast) var(--hub-motion-ease),
+    background-color var(--hub-motion-fast) var(--hub-motion-ease);
+}
+button:hover:not(:disabled) {
+  background-image: linear-gradient(
+    rgb(127 127 127 / 0.1),
+    rgb(127 127 127 / 0.1)
+  );
+}
+button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+button[data-variant="primary"] {
+  color: var(--hub-color-on-accent);
+  background-color: var(--hub-color-accent);
+  border-color: transparent;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+details {
+  background: var(--hub-color-surface);
+  border: 1px solid var(--hub-color-line);
+  box-shadow: var(--hub-shadow-1);
+  border-radius: var(--hub-radius-3);
+  padding: var(--hub-space-3) var(--hub-space-4);
+}
+summary {
+  cursor: pointer;
+  font-weight: var(--hub-weight-strong);
+}
+details[open] > summary {
+  margin-bottom: var(--hub-space-3);
+}
+details[open] > :not(summary) {
+  animation: hub-enter var(--hub-motion-slow) var(--hub-motion-ease);
+}
+pre,
+code,
+kbd {
+  font-family: var(--hub-font-mono);
+  font-size: var(--hub-text-sm);
+}
+pre {
+  margin: 0;
+  padding: var(--hub-space-3);
+  background: var(--hub-color-surface);
+  border: 1px solid var(--hub-color-line);
+  border-radius: var(--hub-radius-2);
+}
+hr {
+  border: 0;
+  border-top: 1px solid var(--hub-color-line);
+}
+dialog {
+  color: var(--hub-color-fg);
+  background: var(--hub-color-surface-raised);
+  border: 1px solid var(--hub-glass-edge);
+  border-radius: var(--hub-radius-3);
+  box-shadow: var(--hub-shadow-2);
+  backdrop-filter: blur(var(--hub-glass-blur));
+  padding: var(--hub-space-5);
+}
+dialog[open] {
+  animation: hub-enter var(--hub-motion-slow) var(--hub-motion-ease);
+}
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.3);
+}
