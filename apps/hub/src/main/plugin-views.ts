@@ -37,6 +37,7 @@ import type { AbsolutePath } from "./ids";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
+import { serveHubKit } from "./hub-kit";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
 import { serveStores } from "./stores";
 import { watchResponsiveness } from "./plugin-ui-responsiveness";
@@ -125,6 +126,7 @@ export function createPluginViews(
     // Keyed by id, never version, so web storage survives updates (ADR 0008).
     const partition = `persist:plugin-${id}`;
     servePluginUi(session.fromPartition(partition), id, join(folder, "ui"));
+    serveHubKit(session.fromPartition(partition));
     const view = new WebContentsView({
       webPreferences: {
         sandbox: true,

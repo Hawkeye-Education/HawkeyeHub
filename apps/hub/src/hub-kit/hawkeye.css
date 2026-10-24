@@ -1,0 +1,96 @@
+/* The Hawkeye Theme (ADR 0006): its values for the `--hub-*` token interface, light and dark, from
+   Theme A of `prototype/hawkeye-theme`, and its fonts, served by main on HUB_KIT_SCHEME. The Colour
+   Scheme reaches here as `prefers-color-scheme`, so a Save restyles an open Plugin UI live. */
+
+@font-face {
+  font-family: "Inter";
+  src: url("hawkeye-hub-kit://fonts/Inter.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Noto Sans TC";
+  src: url("hawkeye-hub-kit://fonts/NotoSansTC.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  /* With the canvas transparent, the page shows Chromium's own light or dark backdrop.
+     ponytail: until the Hub draws the window material or the Theme's solid tint behind views. */
+  color-scheme: light dark;
+
+  --hub-font-body: "Inter", "Noto Sans TC", sans-serif;
+  --hub-font-mono:
+    "Cascadia Mono", "SF Mono", Consolas, ui-monospace, "Noto Sans TC",
+    monospace;
+  --hub-text-sm: 12px;
+  --hub-text-md: 14px;
+  --hub-text-lg: 16px;
+  --hub-text-xl: 20px;
+  --hub-leading: 1.5;
+  --hub-weight-strong: 600;
+
+  --hub-space-1: 4px;
+  --hub-space-2: 8px;
+  --hub-space-3: 12px;
+  --hub-space-4: 16px;
+  --hub-space-5: 24px;
+  --hub-space-6: 32px;
+
+  --hub-radius-1: 6px;
+  --hub-radius-2: 10px;
+  --hub-radius-3: 16px;
+
+  --hub-glass-blur: 24px;
+
+  --hub-motion-fast: 120ms;
+  --hub-motion-slow: 240ms;
+  --hub-motion-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  --hub-color-canvas: transparent;
+  --hub-color-surface: rgb(255 255 255 / 0.62);
+  --hub-color-surface-raised: rgb(255 255 255 / 0.86);
+  --hub-color-fg: #1c1714;
+  --hub-color-fg-muted: #5e5650;
+  --hub-color-line: rgb(28 23 20 / 0.13);
+  --hub-color-accent: #c2410c;
+  --hub-color-on-accent: #fff;
+  --hub-color-focus: #c2410c;
+  --hub-color-success: #17784a;
+  --hub-color-warning: #8f5e00;
+  --hub-color-danger: #c4314b;
+  --hub-shadow-1: 0 1px 2px rgb(0 0 0 / 0.06), 0 2px 8px rgb(0 0 0 / 0.05);
+  --hub-shadow-2: 0 16px 48px rgb(0 0 0 / 0.18);
+  --hub-glass-fill: rgb(255 255 255 / 0.55);
+  --hub-glass-edge: rgb(255 255 255 / 0.6);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hub-color-canvas: transparent;
+    --hub-color-surface: rgb(52 46 42 / 0.55);
+    --hub-color-surface-raised: rgb(40 36 33 / 0.9);
+    --hub-color-fg: #f3eee9;
+    --hub-color-fg-muted: #b1a8a0;
+    --hub-color-line: rgb(255 255 255 / 0.12);
+    --hub-color-accent: #ff8a5c;
+    --hub-color-on-accent: #1a0a03;
+    --hub-color-focus: #ff8a5c;
+    --hub-color-success: #4cc38a;
+    --hub-color-warning: #e3b341;
+    --hub-color-danger: #ff7b8a;
+    --hub-shadow-1: 0 1px 2px rgb(0 0 0 / 0.3);
+    --hub-shadow-2: 0 16px 48px rgb(0 0 0 / 0.5);
+    --hub-glass-fill: rgb(48 43 40 / 0.5);
+    --hub-glass-edge: rgb(255 255 255 / 0.09);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --hub-motion-fast: 0ms;
+    --hub-motion-slow: 0ms;
+    --hub-motion-ease: linear;
+  }
+}
