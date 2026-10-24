@@ -19,6 +19,11 @@ export const AiProviderLabelSchema = NonBlank.transform(
   (raw) => raw as AiProviderLabel,
 );
 
+/** A model's id at its AI Provider, such as `claude-opus-5-5`. */
+export type ModelId = Branded<string, "ModelId">;
+/** As above, the check makes it the type, and the `as` grants the brand. */
+export const ModelIdSchema = NonBlank.transform((raw) => raw as ModelId);
+
 // The settings the form holds just as they are stored.
 const APPEARANCE_AND_LANGUAGE = {
   theme: z.discriminatedUnion("kind", [
@@ -62,7 +67,9 @@ export const HubSettingsSchema = z
           z.strictObject({ kind: z.literal("anthropic") }),
         ]),
         models: z
-          .array(z.strictObject({ id: NonBlank, acceptsImages: z.boolean() }))
+          .array(
+            z.strictObject({ id: ModelIdSchema, acceptsImages: z.boolean() }),
+          )
           .min(1),
       }),
     ),
@@ -71,7 +78,7 @@ export const HubSettingsSchema = z
       z.strictObject({
         kind: z.literal("chosen"),
         provider: AiProviderLabelSchema,
-        model: NonBlank,
+        model: ModelIdSchema,
       }),
     ]),
   })

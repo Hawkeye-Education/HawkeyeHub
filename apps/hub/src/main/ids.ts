@@ -16,10 +16,12 @@ export type HubApiVersion = Branded<string, "HubApiVersion">;
 export type PythonVersion = Branded<string, "PythonVersion">;
 import {
   AiProviderLabelSchema,
+  ModelIdSchema,
   type AiProviderKind,
   type AiProviderLabel,
+  type ModelId,
 } from "../shared/hub-settings";
-export type { AiProviderKind, AiProviderLabel };
+export type { AiProviderKind, AiProviderLabel, ModelId };
 export type RpcErrorReason = Branded<string, "RpcErrorReason">;
 export type AbsolutePath = Branded<string, "AbsolutePath">;
 
@@ -56,6 +58,10 @@ export function parsePythonVersion(raw: string): PythonVersion {
 
 export function parseAiProviderLabel(raw: string): AiProviderLabel {
   return AiProviderLabelSchema.parse(raw);
+}
+
+export function parseModelId(raw: string): ModelId {
+  return ModelIdSchema.parse(raw);
 }
 
 /**

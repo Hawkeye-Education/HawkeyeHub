@@ -9,6 +9,7 @@ import { AiCallFailed, type AiChat, type AiFailure } from "./ai";
 import {
   parseAbsolutePath,
   parseAiProviderLabel,
+  parseModelId,
   parseHubApiVersion,
   parseHubVersion,
 } from "./ids";
@@ -360,13 +361,13 @@ const WITH_CLAUDE: HubSettings = {
     {
       label: label("Claude"),
       endpoint: { kind: "anthropic" },
-      models: [{ id: "claude-opus-5-5", acceptsImages: true }],
+      models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
     },
   ],
   defaultAiProvider: {
     kind: "chosen",
     provider: label("Claude"),
-    model: "claude-opus-5-5",
+    model: parseModelId("claude-opus-5-5"),
   },
 };
 const CLAUDE_KEY = new Map([[label("Claude"), key("sk-ant-stored")]]);
@@ -1420,12 +1421,12 @@ test("the system description holds what is stored and drawn, and the installed P
           kind: "openai-compatible",
           baseUrl: "https://school.openai.azure.com/openai/v1",
         },
-        models: [{ id: "gpt-5", acceptsImages: true }],
+        models: [{ id: parseModelId("gpt-5"), acceptsImages: true }],
       },
       {
         label: parseAiProviderLabel("Claude"),
         endpoint: { kind: "anthropic" },
-        models: [{ id: "claude-opus-5-5", acceptsImages: true }],
+        models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
       },
     ],
   };
@@ -2224,7 +2225,11 @@ test("closing the Plugin cancels its reply and drops its conversation", async ()
 
 test("the model picker saves its choice at once, for its Plugin only, and later messages use it", () => {
   const local = parseAiProviderLabel("Local");
-  const big = { kind: "chosen" as const, provider: local, model: "big-model" };
+  const big = {
+    kind: "chosen" as const,
+    provider: local,
+    model: parseModelId("big-model"),
+  };
   const other = id("other-helper");
   const stored: HubSettings = {
     ...FIRST_LAUNCH_SETTINGS,
@@ -2232,7 +2237,7 @@ test("the model picker saves its choice at once, for its Plugin only, and later 
       {
         label: local,
         endpoint: { kind: "openai-compatible", baseUrl: "http://localhost:1" },
-        models: [{ id: "big-model", acceptsImages: true }],
+        models: [{ id: parseModelId("big-model"), acceptsImages: true }],
       },
     ],
   };
@@ -2283,7 +2288,7 @@ test("a chosen provider or model since removed is missing: it offers no images, 
   const gone = {
     kind: "chosen" as const,
     provider: parseAiProviderLabel("Gone"),
-    model: "x",
+    model: parseModelId("x"),
   };
   const { lifecycle, requests } = withAssistant(
     WITH_CLAUDE,

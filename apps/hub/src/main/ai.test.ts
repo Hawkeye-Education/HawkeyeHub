@@ -4,7 +4,7 @@ import { parseAiProviderKey } from "./ai-keys";
 import { aiProvidersOf, startAiChat, type AiChatRequest } from "./ai";
 import type { HubEvent } from "./diagnostics";
 import { FIRST_LAUNCH_SETTINGS } from "./hub-settings";
-import { parseAiProviderLabel } from "./ids";
+import { parseAiProviderLabel, parseModelId } from "./ids";
 import type { HubSettings } from "../shared/hub-settings";
 
 const LOCAL = parseAiProviderLabel("Local");
@@ -18,12 +18,16 @@ const settings: HubSettings = {
       label: LOCAL,
       endpoint: { kind: "openai-compatible", baseUrl: BASE_URL },
       models: [
-        { id: "text-model", acceptsImages: false },
-        { id: "vision-model", acceptsImages: true },
+        { id: parseModelId("text-model"), acceptsImages: false },
+        { id: parseModelId("vision-model"), acceptsImages: true },
       ],
     },
   ],
-  defaultAiProvider: { kind: "chosen", provider: LOCAL, model: "text-model" },
+  defaultAiProvider: {
+    kind: "chosen",
+    provider: LOCAL,
+    model: parseModelId("text-model"),
+  },
 };
 const keys: AiKeys = new Map([[LOCAL, KEY]]);
 
@@ -116,7 +120,11 @@ test("done gets the whole reply even when nobody reads the text", async () => {
 test("a chosen provider and model is used instead of the default", async () => {
   const { chat, requests } = chatWith(() => sse([{ content: "ok" }]), {
     ...request,
-    model: { kind: "chosen", provider: LOCAL, model: "vision-model" },
+    model: {
+      kind: "chosen",
+      provider: LOCAL,
+      model: parseModelId("vision-model"),
+    },
   });
   expect(await chat.done).toBe("ok");
   expect(JSON.parse(requests[0]?.body ?? "")).toMatchObject({
@@ -140,8 +148,12 @@ test("no-provider when the Default AI Provider is none, without calling anyone",
 
 test("provider-missing when the chosen provider or model is not there: no fallback", async () => {
   for (const model of [
-    { kind: "chosen", provider: parseAiProviderLabel("Gone"), model: "x" },
-    { kind: "chosen", provider: LOCAL, model: "gone-model" },
+    {
+      kind: "chosen",
+      provider: parseAiProviderLabel("Gone"),
+      model: parseModelId("x"),
+    },
+    { kind: "chosen", provider: LOCAL, model: parseModelId("gone-model") },
   ] as const) {
     const { chat, requests } = chatWith(() => sse([]), { ...request, model });
     await expect(chat.done).rejects.toMatchObject({
@@ -216,7 +228,11 @@ test("an image for a model that does not accept images is refused before the cal
 
   const accepted = chatWith(() => sse([{ content: "yes" }]), {
     ...withImage,
-    model: { kind: "chosen", provider: LOCAL, model: "vision-model" },
+    model: {
+      kind: "chosen",
+      provider: LOCAL,
+      model: parseModelId("vision-model"),
+    },
   });
   expect(await accepted.chat.done).toBe("yes");
 });
@@ -261,13 +277,13 @@ const withClaude: HubSettings = {
     {
       label: CLAUDE,
       endpoint: { kind: "anthropic" },
-      models: [{ id: "claude-opus-5-5", acceptsImages: true }],
+      models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
     },
   ],
   defaultAiProvider: {
     kind: "chosen",
     provider: CLAUDE,
-    model: "claude-opus-5-5",
+    model: parseModelId("claude-opus-5-5"),
   },
 };
 

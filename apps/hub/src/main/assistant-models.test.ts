@@ -8,6 +8,7 @@ import type { HubEvent } from "./diagnostics";
 import {
   parseAbsolutePath,
   parseAiProviderLabel,
+  parseModelId,
   type AbsolutePath,
 } from "./ids";
 
@@ -34,7 +35,7 @@ test("the choices round-trip as Plugin id to choice", () => {
       {
         kind: "chosen" as const,
         provider: parseAiProviderLabel("Local"),
-        model: "big-model",
+        model: parseModelId("big-model"),
       },
     ],
     [PluginId.parse("class-timer"), { kind: "default" as const }],

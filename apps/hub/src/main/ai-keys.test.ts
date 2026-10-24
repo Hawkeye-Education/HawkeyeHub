@@ -15,6 +15,7 @@ import { FIRST_LAUNCH_SETTINGS, saveHubSettings } from "./hub-settings";
 import {
   parseAbsolutePath,
   parseAiProviderLabel,
+  parseModelId,
   type AbsolutePath,
 } from "./ids";
 
@@ -124,7 +125,7 @@ test("hub-settings.json never holds a key", () => {
       {
         label: AZURE,
         endpoint: { kind: "anthropic" },
-        models: [{ id: "claude-opus-5-5", acceptsImages: true }],
+        models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
       },
     ],
   });
