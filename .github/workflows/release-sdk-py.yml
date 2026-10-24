@@ -1,0 +1,37 @@
+name: Release Python SDK
+
+# Publishes `hawkeye-hub` to PyPI on an `sdk-py@<version>` tag (ADR 0011), by trusted publishing:
+# PyPI trusts this workflow in the `pypi` environment, so no token is stored.
+on:
+  push:
+    tags: ["sdk-py@*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: python/hawkeye-hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          working-directory: python/hawkeye-hub
+      - name: Refuse a tag that disagrees with pyproject.toml
+        run: |
+          version="$(uv version --short)"
+          if [ "${GITHUB_REF_NAME#sdk-py@}" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME disagrees with pyproject.toml version $version" >&2
+            exit 1
+          fi
+      - run: uv sync --locked
+      - run: uv run pytest
+      - run: uv run pyright
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv build
+      - run: uv publish --trusted-publishing always
