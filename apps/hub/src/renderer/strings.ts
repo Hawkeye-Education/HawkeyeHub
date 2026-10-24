@@ -59,7 +59,7 @@ export const STRINGS = {
     defaultAiProvider: "Default AI Provider",
     noDefaultAiProvider: "None",
     notSavable:
-      "Each AI Provider needs its own label, a valid Base URL and a model, and the default must be one of them.",
+      "Each AI Provider needs its own label, a valid Base URL and a model, an Anthropic one needs a key, and the default must be one of them.",
     hubVersion: "Version",
     exportDiagnostics: "Export diagnostics",
     catalogue: "Plugin Catalogue",
@@ -159,7 +159,7 @@ export const STRINGS = {
     defaultAiProvider: "預設 AI 供應商",
     noDefaultAiProvider: "無",
     notSavable:
-      "每個 AI 供應商都需要獨有的名稱、有效的基本網址及一個模型，而預設必須是其中之一。",
+      "每個 AI 供應商都需要獨有的名稱、有效的基本網址及一個模型，Anthropic 供應商亦需要金鑰，而預設必須是其中之一。",
     hubVersion: "版本",
     exportDiagnostics: "匯出診斷資料",
     catalogue: "外掛程式目錄",

@@ -457,6 +457,19 @@ test("Save refuses a form that is not valid Hub Settings, and saves nothing", ()
   expect(lifecycle.snapshot().content).toMatchObject({ savable: false });
 });
 
+test("Save refuses an Anthropic provider with no key, so the SDK never reads one from the environment", () => {
+  const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(formOf(WITH_CLAUDE));
+  expect(lifecycle.snapshot().content).toMatchObject({ savable: false });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([]);
+
+  lifecycle.typeAiKey(row("0"), key("sk-ant-typed"));
+  expect(lifecycle.snapshot().content).toMatchObject({ savable: true });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([WITH_CLAUDE]);
+});
+
 test("Cancel drops AI Provider edits and typed keys", () => {
   const { lifecycle, saved } = inSettings(WITH_CLAUDE);
   lifecycle.typeAiKey(row("0"), key("sk-ant-typed"));

@@ -40,7 +40,7 @@ import type { AiProviderKey, SavedProviderKey } from "./ai-keys";
 import type { SystemDescription } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
 import type { AiProviderLabel, HubApiVersion } from "./ids";
-import { formOf, settingsFrom } from "./settings-form";
+import { formOf, rowsWithKey, settingsFrom } from "./settings-form";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import { pluginIconUrl, registryIconUrl } from "./plugin-icons";
 import type { InstallOutcome } from "./plugin-install";
@@ -141,8 +141,9 @@ export interface Lifecycle {
   typeAiKey(row: AiProviderRow, key: AiProviderKey): void;
   /**
    * Saves the form through the save callback and makes it what is stored. Does nothing when the
-   * form is what is stored and no key was typed, or when it is not valid Hub Settings (the form
-   * shows it is not savable). Throws if settings are not showing.
+   * form is what is stored and no key was typed, or when it is not valid Hub Settings or an
+   * Anthropic provider has no key (the form shows it is not savable). Throws if settings are not
+   * showing.
    */
   saveSettings(): void;
   /** Puts the form back to what is stored, dropping typed keys. Throws if settings are not showing. */
@@ -409,12 +410,6 @@ export function createLifecycle({
   };
   const edited = (): boolean =>
     typedKeys.size > 0 || !isDeepStrictEqual(form, formOf(stored));
-  const keysSet = (): AiProviderRow[] =>
-    form.aiProviders.flatMap(({ row, was }) =>
-      typedKeys.has(row) || (was.kind === "stored" && keyed.has(was.label))
-        ? [row]
-        : [],
-    );
   // Picking a Plugin or quitting with unsaved edits asks the Discard dialog first. Edits are only
   // made while settings show, and can only be left behind through **Discard**.
   const discardingEditsFirst = (proceed: () => void): void => {
@@ -626,8 +621,8 @@ export function createLifecycle({
           ? {
               ...content,
               form,
-              keysSet: keysSet(),
-              savable: settingsFrom(form, typedKeys).kind === "valid",
+              keysSet: rowsWithKey(form, typedKeys, keyed),
+              savable: settingsFrom(form, typedKeys, keyed).kind === "valid",
             }
           : content,
       dialog: dialogOf(asking),
@@ -854,7 +849,7 @@ export function createLifecycle({
     saveSettings: () => {
       const showing = settingsShowing("saveSettings");
       if (!edited()) return;
-      const valid = settingsFrom(form, typedKeys);
+      const valid = settingsFrom(form, typedKeys, keyed);
       if (valid.kind === "invalid") return;
       keyed = save(valid.settings, valid.keys);
       stored = valid.settings;

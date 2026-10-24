@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import type { AiKeys } from "./ai-keys";
 import { parseAiProviderKey } from "./ai-keys";
 import { aiProvidersOf, startAiChat, type AiChatRequest } from "./ai";
@@ -59,13 +59,14 @@ function chatWith(
   answer: (url: string) => Response | Promise<Response>,
   chosen: AiChatRequest = request,
   using: HubSettings = settings,
+  withKeys: AiKeys = keys,
 ) {
   const requests: { url: string; headers: Headers; body: string }[] = [];
   const events: HubEvent[] = [];
   const chat = startAiChat(
     {
       settings: using,
-      keys,
+      keys: withKeys,
       fetch: async (input, init) => {
         const url = input instanceof Request ? input.url : String(input);
         requests.push({
@@ -251,4 +252,53 @@ test("providers lists labels, kinds and models, never a key or Base URL", () => 
       ],
     },
   ]);
+});
+
+const CLAUDE = parseAiProviderLabel("Claude");
+const withClaude: HubSettings = {
+  ...settings,
+  aiProviders: [
+    {
+      label: CLAUDE,
+      endpoint: { kind: "anthropic" },
+      models: [{ id: "claude-opus-5-5", acceptsImages: true }],
+    },
+  ],
+  defaultAiProvider: {
+    kind: "chosen",
+    provider: CLAUDE,
+    model: "claude-opus-5-5",
+  },
+};
+
+test("an Anthropic provider is called with its own key", async () => {
+  const claudeKey = parseAiProviderKey("sk-ant-own");
+  const { chat, requests } = chatWith(
+    () => new Response("{}", { status: 401 }),
+    request,
+    withClaude,
+    new Map([[CLAUDE, claudeKey]]),
+  );
+  await expect(chat.done).rejects.toMatchObject({
+    failure: { code: "provider-rejected" },
+  });
+  expect(requests[0]?.headers.get("x-api-key")).toBe(claudeKey);
+});
+
+test("an Anthropic provider with no key fails as a missing key would, never using ANTHROPIC_API_KEY", async () => {
+  vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-from-env");
+  try {
+    const { chat, requests } = chatWith(
+      () => sse([]),
+      request,
+      withClaude,
+      new Map(),
+    );
+    await expect(chat.done).rejects.toMatchObject({
+      failure: { code: "provider-rejected", status: 401 },
+    });
+    expect(requests).toEqual([]);
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

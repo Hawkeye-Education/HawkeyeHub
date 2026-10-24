@@ -211,23 +211,26 @@ export function serveAi(
 function languageModelOf(
   { endpoint }: AiProvider,
   model: string,
-  // A provider may have no key, such as a local Ollama.
+  // An OpenAI-compatible provider may have no key, such as a local Ollama.
   key: AiProviderKey | undefined,
   fetch: typeof globalThis.fetch,
 ): LanguageModel {
-  const apiKey = key === undefined ? {} : { apiKey: key };
   switch (endpoint.kind) {
     case "openai-compatible":
       return createOpenAICompatible({
         name: "hub",
         baseURL: endpoint.baseUrl,
         fetch,
-        ...apiKey,
+        ...(key === undefined ? {} : { apiKey: key }),
       }).chatModel(model);
     case "anthropic":
-      // ponytail: with no key the SDK reads ANTHROPIC_API_KEY, then fails as a Hub error;
-      // refuse earlier if Settings ever lets an Anthropic provider save without a key.
-      return createAnthropic({ fetch, ...apiKey })(model);
+      // Save refuses an Anthropic provider with no key; only an unreadable key file leaves one.
+      // It fails as Anthropic answers a missing key, without a call: given no key, the SDK would
+      // read ANTHROPIC_API_KEY from the environment instead.
+      if (key === undefined) {
+        throw new AiCallFailed({ code: "provider-rejected", status: 401 });
+      }
+      return createAnthropic({ fetch, apiKey: key })(model);
     default:
       return endpoint satisfies never;
   }
