@@ -1,0 +1,12 @@
+{
+  "id": "crashing-backend",
+  "version": "1.0.0",
+  "hubApi": "^1.0.0",
+  "name": "Crashing",
+  "description": "A smoke-test fixture Plugin whose Backend crashes or breaks the protocol when asked.",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "python", "python": "3.12" },
+  "assistant": { "kind": "none" }
+}

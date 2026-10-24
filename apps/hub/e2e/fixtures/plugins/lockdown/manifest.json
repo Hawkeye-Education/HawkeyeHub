@@ -1,0 +1,12 @@
+{
+  "id": "lockdown",
+  "version": "1.0.0",
+  "hubApi": "^1.0.0",
+  "name": "Lockdown",
+  "description": "A fixture Plugin for checking the Plugin UI lockdown by hand (#50).",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "none" },
+  "assistant": { "kind": "none" }
+}

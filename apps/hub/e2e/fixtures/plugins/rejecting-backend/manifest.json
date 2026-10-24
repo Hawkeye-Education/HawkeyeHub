@@ -1,0 +1,12 @@
+{
+  "id": "rejecting-backend",
+  "version": "1.0.0",
+  "hubApi": "^1.0.0",
+  "name": "Rejecting",
+  "description": "A smoke-test fixture Plugin whose Backend answers initialize with an error.",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "python", "python": "3.12" },
+  "assistant": { "kind": "none" }
+}

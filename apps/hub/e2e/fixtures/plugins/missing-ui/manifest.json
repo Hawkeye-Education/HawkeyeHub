@@ -1,0 +1,12 @@
+{
+  "id": "missing-ui",
+  "version": "1.0.0",
+  "hubApi": "^1.0.0",
+  "name": "Missing UI",
+  "description": "A smoke-test fixture Plugin with no ui/index.html.",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "none" },
+  "assistant": { "kind": "none" }
+}

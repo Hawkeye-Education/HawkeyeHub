@@ -1,0 +1,12 @@
+{
+  "id": "attendance",
+  "version": "1.0.0",
+  "hubApi": "^1.0.0",
+  "name": { "en-HK": "Attendance", "zh-HK": "點名" },
+  "description": "A smoke-test fixture Plugin.",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "none" },
+  "assistant": { "kind": "none" }
+}

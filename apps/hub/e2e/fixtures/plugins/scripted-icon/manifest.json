@@ -1,0 +1,12 @@
+{
+  "id": "scripted-icon",
+  "version": "1.0.0",
+  "hubApi": "^1.0.0",
+  "name": "Scripted Icon",
+  "description": "A fixture whose icon holds a script, which must never run.",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "none" },
+  "assistant": { "kind": "none" }
+}

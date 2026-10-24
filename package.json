@@ -1,0 +1,24 @@
+{
+  "name": "hawkeye-hub-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": "22.17.0",
+    "pnpm": "10.33.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @hawkeye-hub/hub dev -- --plugins-dir ../../plugins",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.13.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.2"
+  }
+}
