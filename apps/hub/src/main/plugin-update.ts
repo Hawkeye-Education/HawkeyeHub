@@ -33,6 +33,8 @@ export interface UpdaterDeps extends InstallDeps {
     Lifecycle,
     "snapshot" | "installed" | "running" | "updated" | "onChange"
   >;
+  /** Logs `plugin-updated`, once the new version is swapped in. */
+  updated: (plugin: PluginRef, previousVersion: PluginVersion) => void;
   /** Logs `plugin-update-failed`. */
   updateFailed: (failure: UpdateFailure) => void;
 }
@@ -46,7 +48,7 @@ export interface Updater {
 }
 
 export function createUpdater(deps: UpdaterDeps): Updater {
-  const { dataDir, jobs, lifecycle, updateFailed } = deps;
+  const { dataDir, jobs, lifecycle, updated, updateFailed } = deps;
   // The newest version each Plugin is being built at, queued or building. A newer one supersedes it.
   const building = new Map<PluginId, PluginVersion>();
   // Built versions waiting for their Plugin to close.
@@ -77,6 +79,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       ),
     );
     lifecycle.updated(plugin);
+    updated(pluginRefOf(plugin), old.version);
     rmSync(versionFolder(dataDir, old), { recursive: true, force: true });
   };
 

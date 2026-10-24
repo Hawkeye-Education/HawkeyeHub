@@ -5,6 +5,7 @@
 
 import { createHash } from "node:crypto";
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -14,7 +15,7 @@ import {
 } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { join, sep } from "node:path";
+import { dirname, join, sep } from "node:path";
 import {
   _electron,
   type ElectronApplication,
@@ -202,9 +203,14 @@ test("Install puts a UI-only Plugin in the Plugin Switcher without a restart, it
     const page = await pluginPage(() => hub.windows(), "class-timer");
     await expect(page.locator("body")).toContainText("Fixture Plugin UI");
 
-    // Uninstalling the open Plugin closes it before the dialog asks, and keeps its data.
+    // Uninstalling the open Plugin closes it before the dialog asks, and keeps its data and logs.
     const pluginData = join(dataDir, "plugin-data", "class-timer");
     writeFileSync(join(pluginData, "kept.txt"), "kept");
+    // A log and its rolled `.1`, as a Plugin that has logged a lot leaves them.
+    const pluginLog = join(dataDir, "logs", "plugins", "class-timer.log");
+    mkdirSync(dirname(pluginLog), { recursive: true });
+    appendFileSync(pluginLog, "");
+    writeFileSync(`${pluginLog}.1`, "");
     await hubChrome.getByRole("button", { name: strings.catalogue }).click();
     await timer.getByRole("button", { name: strings.uninstall }).click();
     const confirm = await overlayDialog(hub);
@@ -221,6 +227,8 @@ test("Install puts a UI-only Plugin in the Plugin Switcher without a restart, it
     ).toEqual([]);
     expect(existsSync(join(dataDir, "class-timer@1.0.0"))).toBe(false);
     expect(existsSync(join(pluginData, "kept.txt"))).toBe(true);
+    expect(existsSync(pluginLog)).toBe(true);
+    expect(existsSync(`${pluginLog}.1`)).toBe(true);
 
     // Reinstalled, it finds its data; uninstalled with the box ticked, the data goes too.
     await timer.getByRole("button", { name: strings.install }).click();
@@ -237,6 +245,11 @@ test("Install puts a UI-only Plugin in the Plugin Switcher without a restart, it
     ).toBeVisible();
     expect(existsSync(pluginData)).toBe(false);
     expect(existsSync(join(dataDir, "class-timer@1.0.0"))).toBe(false);
+    expect(existsSync(pluginLog)).toBe(false);
+    expect(existsSync(`${pluginLog}.1`)).toBe(false);
+    expect(hubLogMessages(dataDir)).toEqual(
+      expect.arrayContaining(["Plugin installed", "Plugin uninstalled"]),
+    );
   } finally {
     await hub.close();
     registry.server.close();

@@ -285,7 +285,12 @@ function runHub(): void {
           ),
         )
         .then((outcome) => {
-          if (outcome.kind === "failed") {
+          if (outcome.kind === "installed") {
+            diagnostics.recordHubEvent({
+              kind: "plugin-installed",
+              plugin: pluginRefOf(outcome.plugin),
+            });
+          } else {
             const { kind: _failed, ...failure } = outcome;
             diagnostics.recordHubEvent({
               kind: "plugin-install-failed",
@@ -318,6 +323,12 @@ function runHub(): void {
           ),
         )
         .then(() => {
+          diagnostics.recordHubEvent({
+            kind: "plugin-uninstalled",
+            plugin: pluginRefOf(plugin),
+          });
+          // Its logs are Plugin data too: kept or deleted with the rest (ADR 0012).
+          if (data === "delete-data") diagnostics.deletePluginLogs(id);
           lifecycle.uninstallFinished(id);
         });
     };
@@ -385,6 +396,13 @@ function runHub(): void {
       uv,
       jobs,
       lifecycle,
+      updated: (plugin, previousVersion) => {
+        diagnostics.recordHubEvent({
+          kind: "plugin-updated",
+          plugin,
+          previousVersion,
+        });
+      },
       updateFailed: (failure) => {
         diagnostics.recordHubEvent({
           kind: "plugin-update-failed",
