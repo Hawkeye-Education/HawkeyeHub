@@ -143,6 +143,7 @@ function hubWith(fetch: RegistryFetch) {
   });
   const jobs = createJobQueue();
   const failures: UpdateFailure[] = [];
+  const updates: string[] = [];
   const updater = createUpdater({
     dataDir,
     fetch,
@@ -153,12 +154,15 @@ function hubWith(fetch: RegistryFetch) {
     },
     jobs,
     lifecycle,
+    updated: (plugin, previousVersion) =>
+      updates.push(`${plugin.id} ${previousVersion} -> ${plugin.version}`),
     updateFailed: (failure) => failures.push(failure),
   });
   return {
     lifecycle,
     updater,
     failures,
+    updates,
     /** Settles once every job queued so far has. */
     idle: () => jobs.run(() => Promise.resolve()),
   };
@@ -178,10 +182,11 @@ function versionFolders(): string[] {
 }
 
 test("a closed Plugin is updated at the next check: recorded, swapped in, and the old folder gone", async () => {
-  const { lifecycle, updater } = hubWith(registry());
+  const { lifecycle, updater, updates } = hubWith(registry());
 
   await updater.registryChecked(listed(offered("1.1.0")));
 
+  expect(updates).toEqual(["seating-plan 1.0.0 -> 1.1.0"]);
   expect(record()).toEqual([{ id: "seating-plan", version: "1.1.0" }]);
   expect(versionFolders()).toEqual(["seating-plan@1.1.0"]);
   expect(lifecycle.installed(ID)).toEqual({
