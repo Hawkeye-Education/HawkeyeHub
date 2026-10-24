@@ -176,6 +176,39 @@ const cases: [string, HubEvent, unknown][] = [
     hubLine("warn", "Registry check failed: sent an invalid index"),
   ],
   [
+    "Company Configuration fetch returned an HTTP error",
+    {
+      kind: "company-config-fetch-failed",
+      failure: { kind: "http-status", status: 404 },
+    },
+    hubLine("warn", "Company Configuration fetch failed: returned HTTP 404"),
+  ],
+  [
+    "Company Configuration invalid",
+    { kind: "company-config-invalid", copy: "cached" },
+    hubLine("warn", "Company Configuration invalid: the cached copy"),
+  ],
+  [
+    "Company Configuration cache unreadable",
+    { kind: "company-config-cache-unreadable", code: "EACCES" },
+    hubLine("warn", "Company Configuration cache unreadable: EACCES"),
+  ],
+  [
+    "Company Configuration cache unwritable",
+    { kind: "company-config-cache-unwritable", code: "ENOSPC" },
+    hubLine("warn", "Company Configuration could not be cached: ENOSPC"),
+  ],
+  [
+    "Company Configuration fell back to the cache",
+    { kind: "company-config-fallback", to: "cached" },
+    hubLine("warn", "Company Configuration: using the cached copy"),
+  ],
+  [
+    "Company Configuration fell back to the built-in fallback",
+    { kind: "company-config-fallback", to: "built-in" },
+    hubLine("warn", "Company Configuration: using the built-in fallback"),
+  ],
+  [
     "install failed on its download",
     { kind: "plugin-install-failed", plugin, cause: "download" },
     pluginLine("error", "Plugin install failed: download"),

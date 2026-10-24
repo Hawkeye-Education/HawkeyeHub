@@ -28,7 +28,8 @@ export const HUB_DIR = join(import.meta.dirname, "..");
 
 /**
  * A Registry offering no Plugins, which every Hub checks unless a test names another: a smoke test
- * never reaches the real Registry, and its check logs nothing.
+ * never reaches the real Registry, and its check logs nothing. Its sibling `company-config.json`
+ * is the Company Configuration every Hub fetches, so that fetch logs nothing either.
  */
 export const EMPTY_REGISTRY = pathToFileURL(
   join(import.meta.dirname, "fixtures", "registry", "empty.json"),

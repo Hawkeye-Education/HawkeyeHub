@@ -8,13 +8,23 @@ import { parseAbsolutePath, type AbsolutePath } from "./ids";
 
 export type HubMode =
   | { kind: "installed" }
-  /** Each id's Plugin is the folder `<pluginsDir>/<id>`. */
-  | { kind: "dev"; pluginsDir: AbsolutePath; ids: PluginId[] };
+  /**
+   * Each id's Plugin is the folder `<pluginsDir>/<id>`. The Company Configuration is fetched from
+   * the Registry and cached, or read from a local file with neither (spec #99).
+   */
+  | {
+      kind: "dev";
+      pluginsDir: AbsolutePath;
+      ids: PluginId[];
+      companyConfiguration:
+        { kind: "registry" } | { kind: "file"; path: AbsolutePath };
+    };
 
 /**
  * Dev mode is at least one `--plugin <id>` in an unpackaged Hub, with `--plugins-dir <folder>`
- * resolved against `cwd`. A packaged Hub ignores both, so staff can never side-load a Plugin.
- * A malformed dev-mode command line throws with why.
+ * and, optionally, `--company-config <file>`, both resolved against `cwd`. A packaged Hub ignores
+ * all three, so staff can never side-load a Plugin or a Company Configuration. A malformed
+ * dev-mode command line throws with why.
  */
 export function parseHubMode(
   argv: string[],
@@ -30,10 +40,23 @@ export function parseHubMode(
     options: {
       plugin: { type: "string", multiple: true },
       "plugins-dir": { type: "string" },
+      "company-config": { type: "string" },
     },
   });
-  const { plugin, "plugins-dir": pluginsDir } = values;
-  if (plugin === undefined) return { kind: "installed" };
+  const {
+    plugin,
+    "plugins-dir": pluginsDir,
+    "company-config": companyConfig,
+  } = values;
+  if (plugin === undefined) {
+    if (companyConfig !== undefined) {
+      throw new Error("--company-config needs dev mode: --plugin <id>");
+    }
+    return { kind: "installed" };
+  }
+  if (typeof companyConfig === "boolean") {
+    throw new Error("--company-config needs a file");
+  }
   if (typeof pluginsDir !== "string") {
     throw new Error("Dev mode needs --plugins-dir <folder>");
   }
@@ -53,5 +76,13 @@ export function parseHubMode(
     kind: "dev",
     pluginsDir: parseAbsolutePath(resolve(cwd, pluginsDir)),
     ids,
+    // Absent is a real state: the Registry's Company Configuration, as an installed Hub uses.
+    companyConfiguration:
+      companyConfig === undefined
+        ? { kind: "registry" }
+        : {
+            kind: "file",
+            path: parseAbsolutePath(resolve(cwd, companyConfig)),
+          },
   };
 }
