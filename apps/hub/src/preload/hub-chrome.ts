@@ -16,7 +16,13 @@ import {
   SHOW_CATALOGUE,
   SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
+  TYPE_AI_KEY,
   UNINSTALL_PLUGIN,
+  TOGGLE_ASSISTANT,
+  SEND_TO_ASSISTANT,
+  STOP_ASSISTANT,
+  NEW_CONVERSATION,
+  CHOOSE_MODEL,
   type HubChromeApi,
   type HubChromeSnapshot,
 } from "../shared/hub-chrome-ipc";
@@ -50,6 +56,9 @@ const api: HubChromeApi = {
   editSettings(form) {
     void ipcRenderer.invoke(EDIT_SETTINGS, form);
   },
+  typeAiKey(row, key) {
+    void ipcRenderer.invoke(TYPE_AI_KEY, row, key);
+  },
   saveSettings() {
     void ipcRenderer.invoke(SAVE_SETTINGS);
   },
@@ -70,6 +79,21 @@ const api: HubChromeApi = {
   },
   uninstall(id) {
     void ipcRenderer.invoke(UNINSTALL_PLUGIN, id);
+  },
+  toggleAssistant(id) {
+    void ipcRenderer.invoke(TOGGLE_ASSISTANT, id);
+  },
+  sendToAssistant(id, content) {
+    void ipcRenderer.invoke(SEND_TO_ASSISTANT, id, content);
+  },
+  stopAssistant(id) {
+    void ipcRenderer.invoke(STOP_ASSISTANT, id);
+  },
+  newConversation(id) {
+    void ipcRenderer.invoke(NEW_CONVERSATION, id);
+  },
+  chooseModel(id, model) {
+    void ipcRenderer.invoke(CHOOSE_MODEL, id, model);
   },
 };
 

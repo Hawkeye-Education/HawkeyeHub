@@ -201,6 +201,12 @@ export type HubEvent =
   | { kind: "hub-settings-unwritable"; code: string }
   // A stored or company Theme this Hub does not have, so it draws in Hawkeye instead.
   | { kind: "theme-unknown"; name: ThemeName }
+  // The AI Provider key file could not be decrypted or parsed, so the Hub starts with no keys.
+  // Never its contents.
+  | { kind: "ai-keys-unreadable" }
+  // `assistant-models.json` was damaged, so every Plugin's Assistant is on Default. Never its
+  // contents.
+  | { kind: "assistant-models-unreadable" }
   // The Hub stopped reloading a Hub Chrome that crashed this many times this quickly.
   | {
       kind: "hub-chrome-kept-crashing";
@@ -624,6 +630,18 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
       return {
         level: "warn",
         message: `Theme ${event.name} unknown to this Hub, using ${HAWKEYE}`,
+        subject: NO_PLUGIN,
+      };
+    case "ai-keys-unreadable":
+      return {
+        level: "warn",
+        message: "AI Provider keys unreadable, starting with none",
+        subject: NO_PLUGIN,
+      };
+    case "assistant-models-unreadable":
+      return {
+        level: "warn",
+        message: "Assistant models unreadable, every Plugin on Default",
         subject: NO_PLUGIN,
       };
     case "hub-chrome-kept-crashing":

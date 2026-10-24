@@ -2,6 +2,7 @@
 // preload is sandboxed.
 
 import type { HubError, StoreChange } from "@hawkeye-hub/hub-api";
+import type { AiFailure } from "./ai-call";
 
 /** Prefix of the `additionalArguments` entry that carries the Display Language to the preload. */
 export const DISPLAY_LANGUAGE_ARG = "--hawkeye-hub-display-language=";
@@ -29,6 +30,27 @@ export const STORES = "hub:stores";
 
 /** Main sends this with a `StoreChanged` for each change a watch sees. */
 export const STORES_CHANGED = "hub:stores-changed";
+
+/** The preload invokes this for `hub.ai.providers()`; main answers `AiProviderInfo[]`. */
+export const AI_PROVIDERS = "hub:ai-providers";
+
+/**
+ * The preload invokes this with an `AiChatCall`. Main then sends `AiChatEvent`s on
+ * `AI_CHAT_EVENT`, ending with `done` or `failed`. It throws for an image part to a model that
+ * does not accept images.
+ */
+export const AI_CHAT = "hub:ai-chat";
+
+/** The preload invokes this with a chat's id to cancel it. */
+export const AI_CANCEL = "hub:ai-cancel";
+
+export const AI_CHAT_EVENT = "hub:ai-chat-event";
+
+export type AiChatEvent = { id: number } & (
+  | { kind: "delta"; text: string }
+  | { kind: "done"; text: string }
+  | { kind: "failed"; failure: AiFailure }
+);
 
 /** What a `StoreCall` comes to: its value, or the `HubError` the page's call rejects with. */
 export type StoreAnswer<Value> =

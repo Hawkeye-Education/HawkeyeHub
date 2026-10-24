@@ -4,10 +4,18 @@
 // Types and constants only: the preload is sandboxed and the Hub Chrome has no Node.
 
 import type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
+import type { AiContent, AiFailure, AiMessage, AiModelChoice } from "./ai-call";
 import type { Branded } from "./branded";
-import type { HubSettings } from "./hub-settings";
+import type {
+  AiProvider,
+  AiProviderLabel,
+  ModelId,
+  AiProviderRow,
+  HubSettings,
+  HubSettingsForm,
+} from "./hub-settings";
 
-export type { HubSettings };
+export type { AiProviderRow, HubSettings, HubSettingsForm };
 
 /** The languages the Hub draws in (ADR 0007): adding one is a Hub release. */
 export const DISPLAY_LANGUAGES = ["en-HK", "zh-HK"] as const;
@@ -110,7 +118,11 @@ export type HubChromeContent =
   | { kind: "catalogue" }
   | {
       kind: "settings";
-      form: HubSettings;
+      form: HubSettingsForm;
+      /** The rows whose provider has a key, stored or typed: a key itself never leaves main. */
+      keysSet: AiProviderRow[];
+      /** Whether the form parses as Hub Settings: Save refuses it until it does. */
+      savable: boolean;
       /**
        * A Save changed the Display Language while a Plugin was open: open Plugin UIs keep the one
        * they were opened with until reopened (ADR 0007). Cleared on leaving settings, or once no
@@ -138,7 +150,69 @@ export interface HubChromeSnapshot {
   /** The Themes this Hub has, for the Theme picker. */
   themes: ThemeName[];
   catalogue: Catalogue;
+  /** The front Plugin's Assistant Panel. */
+  assistant: AssistantPanel;
 }
+
+/** The Assistant Panel's width: the Hub Chrome draws it, main narrows the Plugin UI beside it. */
+export const ASSISTANT_PANEL_WIDTH_PX = 400;
+
+/**
+ * The front Plugin's Assistant Panel: `none` when no Plugin is in front or it has no Assistant.
+ * Open or closed is remembered per Plugin while the Hub runs.
+ */
+export type AssistantPanel =
+  | { kind: "none" }
+  | { kind: "closed" }
+  | {
+      kind: "open";
+      conversation: Conversation;
+      /** The Manifest's Prompt Templates, already in the Display Language. */
+      templates: PromptTemplate[];
+      model: CurrentModel;
+      /** The saved AI Providers' labels and models, for the model picker. */
+      providers: Pick<AiProvider, "label" | "models">[];
+    };
+
+export interface PromptTemplate {
+  label: string;
+  text: string;
+}
+
+/**
+ * The Plugin's model: its picker's `choice`, and where its messages go. `none` is Default with no
+ * Default AI Provider; `missing` is a chosen provider or model since removed, whose messages fail
+ * with `provider-missing` (no silent switch). The composer offers images only when it accepts them.
+ */
+export type CurrentModel = { choice: AiModelChoice } & (
+  | { kind: "none" }
+  | { kind: "missing" }
+  | {
+      kind: "chosen";
+      provider: AiProviderLabel;
+      model: ModelId;
+      acceptsImages: boolean;
+    }
+);
+
+/**
+ * An open Plugin's one conversation with its Assistant, held in main and dropped when the Plugin
+ * closes (ADR 0008: nothing about chats is saved).
+ */
+export interface Conversation {
+  /** Every message sent and every finished (or stopped) reply, oldest first. */
+  messages: AiMessage[];
+  reply: AssistantReply;
+}
+
+/**
+ * The reply under way: none, streaming with what has arrived, or failed. A failure shows until
+ * the next message.
+ */
+export type AssistantReply =
+  | { kind: "idle" }
+  | { kind: "streaming"; text: string }
+  | { kind: "failed"; failure: AiFailure };
 
 /** A Plugin's own Busy reason, in the Display Language. Never empty: main parses it so. */
 export type BusyReason = Branded<string, "BusyReason">;
@@ -203,7 +277,9 @@ export interface HubChromeApi {
   /** Shows Hub Settings in the content area. */
   showSettings(): void;
   /** Replaces the unsaved Hub Settings form. */
-  editSettings(form: HubSettings): void;
+  editSettings(form: HubSettingsForm): void;
+  /** Types a new key for the provider in `row`, replacing its key on Save. */
+  typeAiKey(row: AiProviderRow, key: string): void;
   /** Saves the form and applies it, unless it is what is stored. */
   saveSettings(): void;
   /** Puts the form back to what is stored. */
@@ -218,6 +294,16 @@ export interface HubChromeApi {
   install(id: PluginId): void;
   /** Asks to uninstall an installed Plugin, through the uninstall dialog. */
   uninstall(id: PluginId): void;
+  /** Opens or closes an open Plugin's Assistant Panel. */
+  toggleAssistant(id: PluginId): void;
+  /** Sends a message to an open Plugin's Assistant, which then streams its reply. */
+  sendToAssistant(id: PluginId, content: AiContent): void;
+  /** Stops the reply streaming, keeping what has arrived. */
+  stopAssistant(id: PluginId): void;
+  /** Drops the conversation, stopping any reply, and starts again. */
+  newConversation(id: PluginId): void;
+  /** Sets an open Plugin's Assistant model, saved at once. */
+  chooseModel(id: PluginId, model: AiModelChoice): void;
 }
 
 /** Hub Chrome → main, `invoke`: answers the current snapshot. */
@@ -234,6 +320,8 @@ export const ANSWER_DIALOG = "hub-chrome:answer-dialog";
 export const SHOW_SETTINGS = "hub-chrome:show-settings";
 /** Hub Chrome → main, `invoke`: the `HubSettings` that replace the unsaved form. */
 export const EDIT_SETTINGS = "hub-chrome:edit-settings";
+/** Hub Chrome → main, `invoke`: a provider's row and the key typed for it. */
+export const TYPE_AI_KEY = "hub-chrome:type-ai-key";
 /** Hub Chrome → main, `invoke`: saves the form. */
 export const SAVE_SETTINGS = "hub-chrome:save-settings";
 /** Hub Chrome → main, `invoke`: puts the form back to what is stored. */
@@ -248,3 +336,13 @@ export const RETRY_REGISTRY = "hub-chrome:retry-registry";
 export const INSTALL_PLUGIN = "hub-chrome:install-plugin";
 /** Hub Chrome → main, `invoke`: the id of a Plugin to uninstall from the Catalogue. */
 export const UNINSTALL_PLUGIN = "hub-chrome:uninstall-plugin";
+/** Hub Chrome → main, `invoke`: the id of an open Plugin whose Assistant Panel to toggle. */
+export const TOGGLE_ASSISTANT = "hub-chrome:toggle-assistant";
+/** Hub Chrome → main, `invoke`: an open Plugin's id and the `AiContent` to send its Assistant. */
+export const SEND_TO_ASSISTANT = "hub-chrome:send-to-assistant";
+/** Hub Chrome → main, `invoke`: the id of an open Plugin whose Assistant reply to stop. */
+export const STOP_ASSISTANT = "hub-chrome:stop-assistant";
+/** Hub Chrome → main, `invoke`: the id of an open Plugin whose conversation to start again. */
+export const NEW_CONVERSATION = "hub-chrome:new-conversation";
+/** Hub Chrome → main, `invoke`: an open Plugin's id and the `AiModelChoice` its Assistant uses. */
+export const CHOOSE_MODEL = "hub-chrome:choose-model";

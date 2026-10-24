@@ -27,18 +27,30 @@ import {
   SHOW_CATALOGUE,
   SHOW_SETTINGS,
   SNAPSHOT_CHANGED,
+  TYPE_AI_KEY,
   UNINSTALL_PLUGIN,
+  TOGGLE_ASSISTANT,
+  SEND_TO_ASSISTANT,
+  STOP_ASSISTANT,
+  NEW_CONVERSATION,
+  CHOOSE_MODEL,
   type DisplayLanguage,
   type HubChromeDialog,
 } from "../shared/hub-chrome-ipc";
+import { AiContentSchema, AiModelChoiceSchema } from "../shared/ai-call";
 import { z } from "zod";
 import { bundleFileName, type Diagnostics } from "./diagnostics";
 import { errorCode } from "./error-code";
-import { HubSettingsSchema } from "../shared/hub-settings";
+import {
+  AiProviderRowSchema,
+  HubSettingsFormSchema,
+} from "../shared/hub-settings";
+import { parseAiProviderKey } from "./ai-keys";
 import type { HubMode } from "./hub-mode";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
 import type { Lifecycle } from "./lifecycle";
 import { contentAreaOf, createPluginViews } from "./plugin-views";
+import type { AiCallDeps } from "./ai";
 import {
   countHubChromeCrashes,
   HUB_CHROME_CRASH_WINDOW_SECONDS,
@@ -115,6 +127,7 @@ export function openHubWindow(
   lifecycle: Lifecycle,
   hubDataDir: AbsolutePath,
   mode: HubMode["kind"],
+  aiDepsNow: () => AiCallDeps,
 ): BaseWindow {
   // Native frame and title bar until the Theme brings the Hub Chrome's own (ADR 0006).
   // Size and position are not remembered.
@@ -137,6 +150,7 @@ export function openHubWindow(
     hubDataDir,
     lifecycle,
     mode,
+    aiDepsNow,
   );
   // The dialog overlay, while a dialog is showing: the whole window, so nothing beneath takes a
   // click, and transparent but for the dialog it draws. Null while no dialog is showing.
@@ -193,7 +207,14 @@ export function openHubWindow(
   });
   ipcMain.handle(EDIT_SETTINGS, (event, form: unknown) => {
     fromHubChrome(EDIT_SETTINGS, event.sender);
-    lifecycle.editSettings(HubSettingsSchema.parse(form));
+    lifecycle.editSettings(HubSettingsFormSchema.parse(form));
+  });
+  ipcMain.handle(TYPE_AI_KEY, (event, row: unknown, key: unknown) => {
+    fromHubChrome(TYPE_AI_KEY, event.sender);
+    lifecycle.typeAiKey(
+      AiProviderRowSchema.parse(row),
+      parseAiProviderKey(z.string().parse(key)),
+    );
   });
   ipcMain.handle(SAVE_SETTINGS, (event) => {
     fromHubChrome(SAVE_SETTINGS, event.sender);
@@ -218,6 +239,29 @@ export function openHubWindow(
   ipcMain.handle(UNINSTALL_PLUGIN, (event, id: unknown) => {
     fromHubChrome(UNINSTALL_PLUGIN, event.sender);
     lifecycle.uninstall(PluginId.parse(id));
+  });
+  ipcMain.handle(TOGGLE_ASSISTANT, (event, id: unknown) => {
+    fromHubChrome(TOGGLE_ASSISTANT, event.sender);
+    lifecycle.toggleAssistant(PluginId.parse(id));
+  });
+  ipcMain.handle(SEND_TO_ASSISTANT, (event, id: unknown, content: unknown) => {
+    fromHubChrome(SEND_TO_ASSISTANT, event.sender);
+    lifecycle.sendToAssistant(
+      PluginId.parse(id),
+      AiContentSchema.parse(content),
+    );
+  });
+  ipcMain.handle(STOP_ASSISTANT, (event, id: unknown) => {
+    fromHubChrome(STOP_ASSISTANT, event.sender);
+    lifecycle.stopAssistant(PluginId.parse(id));
+  });
+  ipcMain.handle(NEW_CONVERSATION, (event, id: unknown) => {
+    fromHubChrome(NEW_CONVERSATION, event.sender);
+    lifecycle.newConversation(PluginId.parse(id));
+  });
+  ipcMain.handle(CHOOSE_MODEL, (event, id: unknown, model: unknown) => {
+    fromHubChrome(CHOOSE_MODEL, event.sender);
+    lifecycle.chooseModel(PluginId.parse(id), AiModelChoiceSchema.parse(model));
   });
   ipcMain.handle(EXPORT_DIAGNOSTICS, async (event) => {
     fromHubChrome(EXPORT_DIAGNOSTICS, event.sender);

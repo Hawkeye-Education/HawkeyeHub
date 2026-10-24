@@ -107,11 +107,24 @@ function hubWith(fetch: RegistryFetch) {
     systemLanguage: "en-HK",
     installed: loadInstalledPlugins(dataDir).loaded,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
-    save: () => {
-      // Never saved here.
-    },
+    keyedAtStart: new Set(),
+    // Never saved here.
+    save: () => new Set(),
     unknownTheme: () => {
       // Only Themes this Hub has.
+    },
+    // No Plugin with an Assistant is opened here.
+    assistant: {
+      context: () => {
+        throw new Error("No Assistant here");
+      },
+      chat: () => {
+        throw new Error("No Assistant here");
+      },
+      modelsAtStart: new Map(),
+      saveModels: () => {
+        throw new Error("No Assistant here");
+      },
     },
     registry: {
       kind: "on",

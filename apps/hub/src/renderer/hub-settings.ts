@@ -6,11 +6,13 @@ import {
   COLOUR_SCHEMES,
   DISPLAY_LANGUAGES,
   type DisplayLanguage,
+  type AiProviderRow,
   type HubChromeApi,
-  type HubSettings as Settings,
+  type HubSettingsForm as SettingsForm,
   type HubVersion,
   type ThemeName,
 } from "../shared/hub-chrome-ipc";
+import type { AiProviderDraft, AiProviderKind } from "../shared/hub-settings";
 import type { Strings } from "./strings";
 
 // Each language in itself, whatever the Hub Chrome is drawn in, so staff find theirs (spec #71).
@@ -20,6 +22,23 @@ const LANGUAGE_NAMES = {
 } satisfies Record<DisplayLanguage, string>;
 // A Theme's own name, the same in every Display Language.
 const THEME_LABELS = new Map([["hawkeye", "Hawkeye"]]);
+
+// Every handler using these is bound to an <input> or <select>, the event's target.
+function inputOf(event: Event): HTMLInputElement {
+  return event.target as HTMLInputElement;
+}
+function valueOf(event: Event): string {
+  return (event.target as HTMLInputElement | HTMLSelectElement).value;
+}
+
+/**
+ * The AI Provider kinds, from the names Strings gives each: a `Record<AiProviderKind, string>`
+ * checked with `satisfies`, so it has exactly the schema's kinds. Object.keys widens them to string,
+ * so the `as` narrows them back.
+ */
+function kindsOf(names: Record<AiProviderKind, string>): AiProviderKind[] {
+  return Object.keys(names) as AiProviderKind[];
+}
 
 function themeLabel(name: ThemeName): string {
   const label = THEME_LABELS.get(name);
@@ -62,6 +81,16 @@ export class HubSettings extends LitElement {
       padding: 0;
       margin-bottom: 8px;
     }
+    .provider {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .model {
+      display: flex;
+      gap: 8px;
+    }
     .actions {
       display: flex;
       gap: 8px;
@@ -75,6 +104,8 @@ export class HubSettings extends LitElement {
     theme: { attribute: false },
     themes: { attribute: false },
     form: { attribute: false },
+    keysSet: { attribute: false },
+    savable: { attribute: false },
     languageNoteShowing: { attribute: false },
     hub: { attribute: false },
   };
@@ -87,9 +118,240 @@ export class HubSettings extends LitElement {
   /** The Themes this Hub has. */
   declare themes: ThemeName[];
   /** The unsaved form, as main holds it: every control draws from it, and an edit goes to main. */
-  declare form: Settings;
+  declare form: SettingsForm;
+  /** The rows whose provider has a key: the key itself never reaches the Hub Chrome. */
+  declare keysSet: AiProviderRow[];
+  declare savable: boolean;
   declare languageNoteShowing: boolean;
   declare hub: HubChromeApi;
+
+  /** Edits the provider at `index` in the form. */
+  private editProvider(
+    index: number,
+    edit: (provider: AiProviderDraft) => AiProviderDraft,
+  ) {
+    this.hub.editSettings({
+      ...this.form,
+      aiProviders: this.form.aiProviders.map((provider, at) =>
+        at === index ? edit(provider) : provider,
+      ),
+    });
+  }
+
+  // Text edits go to main on `change`, not on each keystroke, so a snapshot answering an earlier
+  // edit never overwrites what staff are still typing.
+  private renderAiProviders() {
+    const { strings, form } = this;
+    const { defaultAiProvider } = form;
+    // Each default option's value is its provider's and model's places in the form.
+    const choices = form.aiProviders.flatMap(({ row, label, models }) =>
+      models.map(({ id }) => ({ row, label, id })),
+    );
+    // None when the default is `none`, or names a model since renamed (Save then refuses).
+    const chosen =
+      defaultAiProvider.kind === "chosen"
+        ? choices.find(
+            ({ row, id }) =>
+              row === defaultAiProvider.provider &&
+              id === defaultAiProvider.model,
+          )
+        : undefined;
+    return html`<section aria-labelledby="ai-providers">
+      <h3 id="ai-providers">${strings.aiProviders}</h3>
+      ${form.aiProviders.map(
+        (provider, index) =>
+          html`<fieldset class="provider">
+            <label>
+              ${strings.providerLabel}
+              <input
+                .value=${provider.label}
+                @change=${(event: Event) => {
+                  const label = valueOf(event);
+                  this.editProvider(index, (each) => ({ ...each, label }));
+                }}
+              />
+            </label>
+            <label>
+              ${strings.providerKind}
+              <select
+                @change=${(event: Event) => {
+                  const kind = valueOf(event);
+                  this.editProvider(index, (each) => ({
+                    ...each,
+                    endpoint:
+                      kind === "anthropic"
+                        ? { kind: "anthropic" }
+                        : { kind: "openai-compatible", baseUrl: "" },
+                  }));
+                }}
+              >
+                ${kindsOf(strings.providerKinds).map(
+                  (kind) =>
+                    html`<option
+                      value=${kind}
+                      ?selected=${provider.endpoint.kind === kind}
+                    >
+                      ${strings.providerKinds[kind]}
+                    </option>`,
+                )}
+              </select>
+            </label>
+            ${
+              provider.endpoint.kind === "openai-compatible"
+                ? html`<label>
+                    ${strings.baseUrl}
+                    <input
+                      type="url"
+                      .value=${provider.endpoint.baseUrl}
+                      @change=${(event: Event) => {
+                        const baseUrl = valueOf(event);
+                        this.editProvider(index, (each) => ({
+                          ...each,
+                          endpoint: { kind: "openai-compatible", baseUrl },
+                        }));
+                      }}
+                    />
+                  </label>`
+                : nothing
+            }
+            <label>
+              ${strings.key}
+              <input
+                type="password"
+                autocomplete="off"
+                @change=${(event: Event) => {
+                  const input = inputOf(event);
+                  if (input.value.trim() !== "") {
+                    this.hub.typeAiKey(provider.row, input.value);
+                  }
+                  input.value = "";
+                }}
+              />
+              ${
+                this.keysSet.includes(provider.row)
+                  ? strings.keySet
+                  : strings.noKey
+              }
+            </label>
+            ${provider.models.map(
+              (model, modelIndex) =>
+                html`<div class="model">
+                  <label>
+                    ${strings.model}
+                    <input
+                      .value=${model.id}
+                      @change=${(event: Event) => {
+                        const id = valueOf(event);
+                        this.editProvider(index, (each) => ({
+                          ...each,
+                          models: each.models.map((other, at) =>
+                            at === modelIndex ? { ...other, id } : other,
+                          ),
+                        }));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      .checked=${model.acceptsImages}
+                      @change=${(event: Event) => {
+                        const { checked } = inputOf(event);
+                        this.editProvider(index, (each) => ({
+                          ...each,
+                          models: each.models.map((other, at) =>
+                            at === modelIndex
+                              ? { ...other, acceptsImages: checked }
+                              : other,
+                          ),
+                        }));
+                      }}
+                    />
+                    ${strings.acceptsImages}
+                  </label>
+                  <button
+                    @click=${() => {
+                      this.editProvider(index, (each) => ({
+                        ...each,
+                        models: each.models.filter(
+                          (_, at) => at !== modelIndex,
+                        ),
+                      }));
+                    }}
+                  >
+                    ${strings.removeModel}
+                  </button>
+                </div>`,
+            )}
+            <button
+              @click=${() => {
+                this.editProvider(index, (each) => ({
+                  ...each,
+                  models: [...each.models, { id: "", acceptsImages: false }],
+                }));
+              }}
+            >
+              ${strings.addModel}
+            </button>
+            <button
+              @click=${() => {
+                this.hub.editSettings({
+                  ...form,
+                  aiProviders: form.aiProviders.filter((_, at) => at !== index),
+                });
+              }}
+            >
+              ${strings.removeProvider}
+            </button>
+          </fieldset>`,
+      )}
+      <button
+        @click=${() => {
+          this.hub.editSettings({
+            ...form,
+            aiProviders: [
+              ...form.aiProviders,
+              {
+                // The `as` grants the brand: a fresh UUID is unique in the form.
+                row: crypto.randomUUID() as AiProviderRow,
+                was: { kind: "added" },
+                label: "",
+                endpoint: { kind: "openai-compatible", baseUrl: "" },
+                models: [{ id: "", acceptsImages: false }],
+              },
+            ],
+          });
+        }}
+      >
+        ${strings.addProvider}
+      </button>
+      <label>
+        ${strings.defaultAiProvider}
+        <select
+          @change=${(event: Event) => {
+            const choice = choices[Number(valueOf(event))];
+            this.hub.editSettings({
+              ...form,
+              defaultAiProvider:
+                choice === undefined
+                  ? { kind: "none" }
+                  : { kind: "chosen", provider: choice.row, model: choice.id },
+            });
+          }}
+        >
+          <option value="none" ?selected=${chosen === undefined}>
+            ${strings.noDefaultAiProvider}
+          </option>
+          ${choices.map(
+            (choice, index) =>
+              html`<option value=${index} ?selected=${choice === chosen}>
+                ${choice.label} · ${choice.id}
+              </option>`,
+          )}
+        </select>
+      </label>
+    </section>`;
+  }
 
   override render() {
     const { strings, form } = this;
@@ -179,6 +441,12 @@ export class HubSettings extends LitElement {
           )}
         </fieldset>
       </section>
+      ${this.renderAiProviders()}
+      ${
+        this.savable
+          ? nothing
+          : html`<p role="status">${strings.notSavable}</p>`
+      }
       <div class="actions">
         <button
           data-variant="primary"

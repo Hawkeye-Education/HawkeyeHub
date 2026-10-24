@@ -14,10 +14,13 @@ import {
   KEEP_ANSWERS,
   type BusyPlugin,
   type BusyReason,
+  type CurrentModel,
   type Catalogue,
   type CatalogueJob,
   type DialogAnswer,
   type DisplayLanguage,
+  type AssistantPanel,
+  type Conversation,
   type HubChromeDialog,
   type HubChromeSnapshot,
   type HubSettings,
@@ -25,9 +28,19 @@ import {
   type PluginAccess,
   type ThemeName,
 } from "../shared/hub-chrome-ipc";
+import type {
+  AiChatRequest,
+  AiContent,
+  AiModelChoice,
+} from "../shared/ai-call";
+import type { AiProviderRow, HubSettingsForm } from "../shared/hub-settings";
+import { AiCallFailed, labelAndModels, targetOf, type AiChat } from "./ai";
+import type { AssistantModels } from "./assistant-models";
+import type { AiProviderKey, SavedProviderKey } from "./ai-keys";
 import type { SystemDescription } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
-import type { HubApiVersion } from "./ids";
+import type { AiProviderLabel, HubApiVersion } from "./ids";
+import { formOf, rowsWithKey, settingsFrom } from "./settings-form";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import { pluginIconUrl, registryIconUrl } from "./plugin-icons";
 import type { InstallOutcome } from "./plugin-install";
@@ -116,19 +129,51 @@ export interface Lifecycle {
    * next open. Throws unless that Plugin is installed and neither open nor closing.
    */
   updated(plugin: InstalledPlugin): void;
-  /** Replaces the unsaved form. Throws if settings are not showing. */
-  editSettings(form: HubSettings): void;
+  /**
+   * Replaces the unsaved form. Removing the Default AI Provider's provider or model sets the
+   * default back to `none`; removing a provider drops any key typed for it. Throws if settings are
+   * not showing.
+   */
+  editSettings(form: HubSettingsForm): void;
+  /**
+   * Holds a key typed for the provider in `row`, which replaces its key on Save. Throws if settings
+   * are not showing or the form has no such row.
+   */
+  typeAiKey(row: AiProviderRow, key: AiProviderKey): void;
   /**
    * Saves the form through the save callback and makes it what is stored. Does nothing when the
-   * form is what is stored. Throws if settings are not showing.
+   * form is what is stored and no key was typed, or when it is not valid Hub Settings or an
+   * Anthropic provider has no key (the form shows it is not savable). Throws if settings are not
+   * showing.
    */
   saveSettings(): void;
-  /** Puts the form back to what is stored. Throws if settings are not showing. */
+  /** Puts the form back to what is stored, dropping typed keys. Throws if settings are not showing. */
   cancelSettings(): void;
   /** The Hub Settings as last saved, whatever the form holds. */
   storedSettings(): HubSettings;
   /** The installation as a Diagnostics Bundle describes it, on the OS `os`. */
   systemDescription(os: SystemDescription["os"]): SystemDescription;
+  /**
+   * Opens or closes an open Plugin's Assistant Panel, remembered for it while the Hub runs.
+   * Throws unless the Plugin is open and has an Assistant.
+   */
+  toggleAssistant(id: PluginId): void;
+  /**
+   * Sends a message in an open Plugin's conversation, with everything before it, and streams the
+   * reply through the Plugin's model. Throws unless the Plugin is open with an Assistant and
+   * no reply is streaming.
+   */
+  sendToAssistant(id: PluginId, content: AiContent): void;
+  /** Stops a streaming reply, keeping what has arrived. Does nothing when none is streaming. */
+  stopAssistant(id: PluginId): void;
+  /** Stops any reply and empties the conversation. */
+  newConversation(id: PluginId): void;
+  /**
+   * Sets an open Plugin's Assistant model, saved at once outside Save and Cancel. A provider or
+   * model removed later fails its chats with `provider-missing`. Throws unless the Plugin is open
+   * with an Assistant.
+   */
+  chooseModel(id: PluginId, model: AiModelChoice): void;
 }
 
 export interface LifecycleDeps {
@@ -137,8 +182,29 @@ export interface LifecycleDeps {
   systemLanguage: DisplayLanguage;
   installed: readonly InstalledPlugin[];
   storedAtStart: HubSettings;
-  /** Writes saved Hub Settings and applies them; called only when they changed. */
-  save: (settings: HubSettings) => void;
+  /** The labels of the stored AI Providers that have a key in the key store. */
+  keyedAtStart: ReadonlySet<AiProviderLabel>;
+  /**
+   * Writes saved Hub Settings, and each provider's key as `keys` says, and applies them; called
+   * only when they changed. Answers the labels that have a key after it.
+   */
+  save: (
+    settings: HubSettings,
+    keys: readonly SavedProviderKey[],
+  ) => ReadonlySet<AiProviderLabel>;
+  assistant: {
+    /**
+     * An installed Plugin's Assistant context (`assistantContext`): its files read as the Plugin
+     * opens, giving the system prompt in the Display Language at each send.
+     */
+    context: (plugin: InstalledPlugin) => (language: DisplayLanguage) => string;
+    /** Starts a chat through the call module (`startAiChat`). */
+    chat: (request: AiChatRequest) => AiChat;
+    /** Each Plugin's Assistant model as stored (`loadAssistantModels`). */
+    modelsAtStart: AssistantModels;
+    /** Writes every Plugin's Assistant model (`saveAssistantModels`). */
+    saveModels: (models: AssistantModels) => void;
+  };
   /** Logs a stored or company Theme this Hub does not have; called once per name. */
   unknownTheme: (name: ThemeName) => void;
   /**
@@ -223,9 +289,11 @@ export function createLifecycle({
   systemLanguage,
   installed,
   storedAtStart,
+  keyedAtStart,
   save,
   unknownTheme,
   registry,
+  assistant,
 }: LifecycleDeps): Lifecycle {
   const languageOf = ({ displayLanguage }: HubSettings): DisplayLanguage => {
     switch (displayLanguage.kind) {
@@ -335,12 +403,21 @@ export function createLifecycle({
     return registry;
   };
   let stored = storedAtStart;
+  let keyed = keyedAtStart;
   // The unsaved form: what is stored until staff edit it.
-  let form = storedAtStart;
+  let form = formOf(storedAtStart);
+  // Keys typed in the form, by row. Held here only: the Hub Chrome learns just which rows have one.
+  let typedKeys = new Map<AiProviderRow, AiProviderKey>();
+  const resetForm = (): void => {
+    form = formOf(stored);
+    typedKeys = new Map();
+  };
+  const edited = (): boolean =>
+    typedKeys.size > 0 || !isDeepStrictEqual(form, formOf(stored));
   // Picking a Plugin or quitting with unsaved edits asks the Discard dialog first. Edits are only
   // made while settings show, and can only be left behind through **Discard**.
   const discardingEditsFirst = (proceed: () => void): void => {
-    if (isDeepStrictEqual(form, stored)) {
+    if (!edited()) {
       proceed();
       return;
     }
@@ -397,6 +474,121 @@ export function createLifecycle({
     kind: "uninstall",
     plugin: { id, name: installedPlugin(id).listed.name },
   });
+  // Each open Plugin with an Assistant: its context, read at open, its conversation, and the chat
+  // streaming the reply, if one is.
+  interface Talk {
+    system: (language: DisplayLanguage) => string;
+    conversation: Conversation;
+    // Null while no reply is streaming: between replies, after one ends, and once it is dropped.
+    chat: AiChat | null;
+  }
+  const talks = new Map<PluginId, Talk>();
+  // The Plugins whose Assistant Panel staff left open, while the Hub runs, across closes.
+  const panelsOpen = new Set<PluginId>();
+  const models = new Map(assistant.modelsAtStart);
+  const modelOf = (id: PluginId): AiModelChoice =>
+    models.get(id) ?? { kind: "default" };
+  const NEW_CONVERSATION: Conversation = {
+    messages: [],
+    reply: { kind: "idle" },
+  };
+  const talkOf = (id: PluginId): Talk => {
+    const talk = talks.get(id);
+    if (talk === undefined) {
+      throw new Error(`${id} is not open with an Assistant`);
+    }
+    return talk;
+  };
+  // The Plugin's picker choice resolved against the saved Hub Settings, as the call module does.
+  const currentModel = (id: PluginId): CurrentModel => {
+    const choice = modelOf(id);
+    const target = targetOf(stored, choice);
+    if (target.kind === "found") {
+      const { provider, model } = target;
+      return {
+        choice,
+        kind: "chosen",
+        provider: provider.label,
+        model: model.id,
+        acceptsImages: model.acceptsImages,
+      };
+    }
+    switch (target.failure.code) {
+      case "no-provider":
+        return { choice, kind: "none" };
+      // Only a chosen one can be missing: HubSettingsSchema keeps the Default configured.
+      case "provider-missing":
+        return { choice, kind: "missing" };
+      default:
+        return target.failure satisfies never;
+    }
+  };
+  const panelOf = (id: PluginId): AssistantPanel => {
+    const talk = talks.get(id);
+    if (talk === undefined) return { kind: "none" };
+    if (!panelsOpen.has(id)) return { kind: "closed" };
+    const { assistant } = installedPlugin(id).plugin.manifest;
+    return {
+      kind: "open",
+      conversation: talk.conversation,
+      // A talk is only ever made for a Plugin whose Assistant is enabled.
+      templates:
+        assistant.kind === "enabled"
+          ? assistant.templates.map(({ label, text }) => ({
+              label: displayTextIn(label, listing.language),
+              text: displayTextIn(text, listing.language),
+            }))
+          : [],
+      model: currentModel(id),
+      providers: stored.aiProviders.map(labelAndModels),
+    };
+  };
+  // A chat dropped (by New conversation or a close) is no longer the talk's: nothing more of it
+  // shows. A stopped one stays the talk's until it ends, so what had arrived is kept.
+  const dropChat = (talk: Talk): void => {
+    talk.chat?.cancel();
+    talk.chat = null;
+  };
+  const streamReply = async (talk: Talk, chat: AiChat): Promise<void> => {
+    let text = "";
+    try {
+      for await (const delta of chat.text) {
+        if (talk.chat !== chat) return;
+        text += delta;
+        talk.conversation = {
+          ...talk.conversation,
+          reply: { kind: "streaming", text },
+        };
+        // ponytail: a snapshot per delta; batch per animation frame if long replies drag.
+        changed();
+      }
+      const reply = await chat.done;
+      if (talk.chat !== chat) return;
+      talk.chat = null;
+      const { messages } = talk.conversation;
+      talk.conversation = {
+        // A reply stopped before anything arrived leaves nothing to keep.
+        messages:
+          reply === ""
+            ? messages
+            : [
+                ...messages,
+                { role: "assistant", content: [{ type: "text", text: reply }] },
+              ],
+        reply: { kind: "idle" },
+      };
+    } catch (error) {
+      // Anything but a failure is a Hub bug: an unhandled rejection, so a Hub crash.
+      if (!(error instanceof AiCallFailed)) throw error;
+      if (talk.chat !== chat) return;
+      talk.chat = null;
+      talk.conversation = {
+        ...talk.conversation,
+        reply: { kind: "failed", failure: error.failure },
+      };
+    }
+    changed();
+  };
   const close = (id: PluginId): void => {
     if (!open.includes(id)) {
       throw new Error(`No open Plugin has the id ${JSON.stringify(id)}`);
@@ -404,6 +596,9 @@ export function createLifecycle({
     open = open.filter((other) => other !== id);
     closing = [...closing, id];
     busyReasons.delete(id);
+    const talk = talks.get(id);
+    if (talk !== undefined) dropChat(talk);
+    talks.delete(id);
     asking = askUninstallOnClose.delete(id)
       ? uninstallDialog(id)
       : askingWithout(id);
@@ -428,12 +623,21 @@ export function createLifecycle({
       open: [...open],
       closing: [...closing],
       foreground: open[0] ?? null,
-      content: content.kind === "settings" ? { ...content, form } : content,
+      content:
+        content.kind === "settings"
+          ? {
+              ...content,
+              form,
+              keysSet: rowsWithKey(form, typedKeys, keyed),
+              savable: settingsFrom(form, typedKeys, keyed).kind === "valid",
+            }
+          : content,
       dialog: dialogOf(asking),
       hubVersion,
       theme,
       themes: [...THEMES],
       catalogue: catalogueIn(listing.language),
+      assistant: open[0] === undefined ? { kind: "none" } : panelOf(open[0]),
     }),
     installed: (id) => installedPlugin(id).plugin,
     running,
@@ -458,6 +662,17 @@ export function createLifecycle({
         throw new Error(`${id} is uninstalling`);
       }
       discardingEditsFirst(() => {
+        const { plugin } = installedPlugin(id);
+        if (
+          !open.includes(id) &&
+          plugin.manifest.assistant.kind === "enabled"
+        ) {
+          talks.set(id, {
+            system: assistant.context(plugin),
+            conversation: NEW_CONVERSATION,
+            chat: null,
+          });
+        }
         open = [id, ...open.filter((other) => other !== id)];
         content = { kind: "plugin" };
         changed();
@@ -618,16 +833,36 @@ export function createLifecycle({
       listing = listingIn(listing.language);
       changed();
     },
-    editSettings: (edited) => {
+    editSettings: (next) => {
       settingsShowing("editSettings");
-      form = edited;
+      const rows = new Set(next.aiProviders.map(({ row }) => row));
+      const { defaultAiProvider } = next;
+      form =
+        defaultAiProvider.kind === "chosen" &&
+        next.aiProviders
+          .find(({ row }) => row === defaultAiProvider.provider)
+          ?.models.some(({ id }) => id === defaultAiProvider.model) !== true
+          ? { ...next, defaultAiProvider: { kind: "none" } }
+          : next;
+      typedKeys = new Map([...typedKeys].filter(([row]) => rows.has(row)));
+      changed();
+    },
+    typeAiKey: (row, key) => {
+      settingsShowing("typeAiKey");
+      if (!form.aiProviders.some((each) => each.row === row)) {
+        throw new Error(`The form has no AI Provider row ${row}`);
+      }
+      typedKeys.set(row, key);
       changed();
     },
     saveSettings: () => {
       const showing = settingsShowing("saveSettings");
-      if (isDeepStrictEqual(form, stored)) return;
-      save(form);
-      stored = form;
+      if (!edited()) return;
+      const valid = settingsFrom(form, typedKeys, keyed);
+      if (valid.kind === "invalid") return;
+      keyed = save(valid.settings, valid.keys);
+      stored = valid.settings;
+      resetForm();
       const language = languageOf(stored);
       if (language !== listing.language) {
         listing = listingIn(language);
@@ -640,7 +875,7 @@ export function createLifecycle({
     },
     cancelSettings: () => {
       settingsShowing("cancelSettings");
-      form = stored;
+      resetForm();
       changed();
     },
     storedSettings: () => stored,
@@ -652,11 +887,53 @@ export function createLifecycle({
       colourScheme: stored.colourScheme,
       plugins: listing.plugins.map(({ plugin }) => pluginRefOf(plugin)),
       // ponytail: uv's interpreters are not listed yet; read `uv/python` if support asks. There is
-      // no AI Provider or Auth Provider yet.
+      // no Auth Provider yet.
       pythonVersions: [],
-      aiProviders: [],
+      aiProviders: stored.aiProviders.map(({ label, endpoint }) => ({
+        label,
+        kind: endpoint.kind,
+      })),
       authProvider: { kind: "none" },
     }),
+    toggleAssistant: (id) => {
+      talkOf(id);
+      if (!panelsOpen.delete(id)) panelsOpen.add(id);
+      changed();
+    },
+    sendToAssistant: (id, content) => {
+      const talk = talkOf(id);
+      if (talk.chat !== null) {
+        throw new Error(`${id}'s Assistant is still replying`);
+      }
+      const messages = [
+        ...talk.conversation.messages,
+        { role: "user" as const, content },
+      ];
+      const chat = assistant.chat({
+        model: modelOf(id),
+        system: talk.system(listing.language),
+        messages,
+      });
+      talk.chat = chat;
+      talk.conversation = { messages, reply: { kind: "streaming", text: "" } };
+      changed();
+      void streamReply(talk, chat);
+    },
+    stopAssistant: (id) => {
+      talkOf(id).chat?.cancel();
+    },
+    newConversation: (id) => {
+      const talk = talkOf(id);
+      dropChat(talk);
+      talk.conversation = NEW_CONVERSATION;
+      changed();
+    },
+    chooseModel: (id, model) => {
+      talkOf(id);
+      models.set(id, model);
+      assistant.saveModels(models);
+      changed();
+    },
     answer: (answer) => {
       const pending = asking;
       if (pending === null)
@@ -688,7 +965,7 @@ export function createLifecycle({
       }
       if (pending.kind === "discard-changes" && answer === "discard") {
         asking = null;
-        form = stored;
+        resetForm();
         // Announced before going ahead, as **Quit anyway** is: the Busy quit dialog it may ask
         // next comes up on a fresh overlay.
         changed();

@@ -1,6 +1,6 @@
 {
   "name": "@hawkeye-hub/hub-api",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Types for window.hub. This package's version is the Hub API version (ADR 0009).",
   "private": true,
   "type": "module",

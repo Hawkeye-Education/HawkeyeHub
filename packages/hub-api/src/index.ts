@@ -23,7 +23,15 @@ export type HubError =
       readonly code: "not-found";
       readonly store: string;
       readonly path: string;
-    };
+    }
+  /** `hub.ai`: no AI Provider is set up, or the Default AI Provider is `none`. */
+  | { readonly code: "no-provider" }
+  /** `hub.ai`: the chosen provider or model is not in Hub Settings. There is no fallback. */
+  | { readonly code: "provider-missing" }
+  /** `hub.ai`: the provider answered with this HTTP status, such as 401 for a bad key. */
+  | { readonly code: "provider-rejected"; readonly status: number }
+  /** `hub.ai`: the provider could not be reached. */
+  | { readonly code: "provider-unreachable" };
 
 export interface HubBackend {
   /** Queued until the Backend's `initialize` succeeds. Rejects with a `HubError`. */
@@ -72,6 +80,61 @@ export interface HubStores {
   ): Promise<() => void>;
 }
 
+/** Which model a chat uses: the Default AI Provider, or a provider and model by name. */
+export type AiModelChoice =
+  | { readonly kind: "default" }
+  | {
+      readonly kind: "chosen";
+      readonly provider: string;
+      readonly model: string;
+    };
+
+/** An image part only for a model that `acceptsImages`: any other is refused before the call. */
+export type AiPart =
+  | { readonly type: "text"; readonly text: string }
+  | {
+      readonly type: "image";
+      readonly image: Uint8Array;
+      /** Such as `image/png`. */
+      readonly mediaType: string;
+    };
+
+export interface AiMessage {
+  readonly role: "user" | "assistant";
+  readonly content: readonly AiPart[];
+}
+
+export interface AiChatRequest {
+  readonly model: AiModelChoice;
+  readonly system: string;
+  readonly messages: readonly AiMessage[];
+}
+
+/** One streaming reply: text only, never reasoning. */
+export interface AiChat {
+  /** The reply as it streams. Throws the `HubError` that `done` rejects with. */
+  readonly text: AsyncIterable<string>;
+  /** The whole reply; after `cancel`, what had arrived. Rejects with a `HubError`. */
+  readonly done: Promise<string>;
+  cancel(): void;
+}
+
+/** An AI Provider as Hub Settings name it: never its key or Base URL. */
+export interface AiProviderInfo {
+  readonly label: string;
+  readonly kind: "openai-compatible" | "anthropic";
+  readonly models: readonly {
+    readonly id: string;
+    readonly acceptsImages: boolean;
+  }[];
+}
+
+/** AI through the Hub's AI Providers (ADR 0009 §7). Closing the Plugin cancels its chats. */
+export interface HubAi {
+  providers(): Promise<readonly AiProviderInfo[]>;
+  chat(request: AiChatRequest): AiChat;
+}
+
 export interface Hub {
   /** Fixed for the open's lifetime. May be a tag you have never heard of: fall back to `en-HK`. */
   readonly displayLanguage: string;
@@ -80,6 +143,7 @@ export interface Hub {
   readonly busy: HubBusy;
   /** Absent exactly when the Manifest's `stores` is empty. */
   readonly stores?: HubStores;
+  readonly ai: HubAi;
 }
 
 declare global {

@@ -3,19 +3,25 @@
 import { isAbsolute } from "node:path";
 import { KEBAB_CASE } from "@hawkeye-hub/plugin-format";
 import { z } from "zod";
+import type { Branded } from "../shared/branded";
+// Shared with the Hub Chrome, which shows it in About.
+import type { HubVersion } from "../shared/hub-chrome-ipc";
+import {
+  AiProviderLabelSchema,
+  ModelIdSchema,
+  type AiProviderKind,
+  type AiProviderLabel,
+  type ModelId,
+} from "../shared/hub-settings";
 
 // A Plugin id and version are the Manifest's own types, parsed with its schemas (plugin-format's
 // `PluginId.parse`, `PluginVersion.parse`), so they are checked by one rule and parsed only once.
 export type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
-// Shared with the Hub Chrome, which shows it in About.
-import type { HubVersion } from "../shared/hub-chrome-ipc";
 export type { HubVersion };
-import type { Branded } from "../shared/branded";
 
 export type HubApiVersion = Branded<string, "HubApiVersion">;
 export type PythonVersion = Branded<string, "PythonVersion">;
-export type AiProviderLabel = Branded<string, "AiProviderLabel">;
-export type AiProviderKind = Branded<string, "AiProviderKind">;
+export type { AiProviderKind, AiProviderLabel, ModelId };
 export type RpcErrorReason = Branded<string, "RpcErrorReason">;
 export type AbsolutePath = Branded<string, "AbsolutePath">;
 
@@ -51,18 +57,11 @@ export function parsePythonVersion(raw: string): PythonVersion {
 }
 
 export function parseAiProviderLabel(raw: string): AiProviderLabel {
-  if (raw.trim() === "") {
-    throw new Error("An AI Provider label cannot be blank");
-  }
-  return raw as AiProviderLabel;
+  return AiProviderLabelSchema.parse(raw);
 }
 
-/** No ADR names the set of AI Provider kinds yet, so a kind is any kebab-case name. */
-export function parseAiProviderKind(raw: string): AiProviderKind {
-  if (!KEBAB_CASE.test(raw)) {
-    throw new Error(`Not an AI Provider kind: ${JSON.stringify(raw)}`);
-  }
-  return raw as AiProviderKind;
+export function parseModelId(raw: string): ModelId {
+  return ModelIdSchema.parse(raw);
 }
 
 /**

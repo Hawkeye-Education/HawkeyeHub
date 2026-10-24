@@ -3,6 +3,8 @@
 // Plugins opened after it. A damaged settings file and an unknown Theme are hub-settings.test.ts's
 // and lifecycle.test.ts's: nothing about them needs a window.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import {
   displayLanguageOf,
@@ -143,5 +145,63 @@ test("a Display Language switches the Hub Chrome on Save, reaches Plugins opened
   expect(await displayLanguageOf(await second.firstWindow())).toBe(
     other.language,
   );
+  await second.close();
+});
+
+const AI_WORDS = {
+  "en-HK": {
+    addProvider: "Add provider",
+    label: "Label",
+    baseUrl: "Base URL",
+    key: "Key",
+    keySet: "Key set",
+    model: "Model",
+  },
+  "zh-HK": {
+    addProvider: "新增供應商",
+    label: "名稱",
+    baseUrl: "基本網址",
+    key: "金鑰",
+    keySet: "已設定金鑰",
+    model: "模型",
+  },
+} satisfies Record<DisplayLanguage, unknown>;
+
+// The wiring of #106: the form's edits and a typed key reach main, Save writes them, and the key
+// comes back only as "key set". Each rule behind it is lifecycle.test.ts's.
+test("an AI Provider added in Hub Settings is saved, with its key kept out of the settings file", async ({
+  dataDir,
+}) => {
+  const first = await launchHub(dataDir);
+  const hubChrome = await first.firstWindow();
+  const language = await displayLanguageOf(hubChrome);
+  const words = { ...WORDS[language], ...AI_WORDS[language] };
+  await hubChrome.getByRole("button", { name: words.settings }).click();
+  await hubChrome.getByRole("button", { name: words.addProvider }).click();
+  await hubChrome.getByRole("textbox", { name: words.label }).fill("Ollama");
+  await hubChrome
+    .getByRole("textbox", { name: words.baseUrl })
+    .fill("http://localhost:11434/v1");
+  await hubChrome
+    .getByRole("textbox", { name: words.key })
+    .fill("sk-smoke-secret");
+  await hubChrome.getByRole("textbox", { name: words.model }).fill("llama4");
+  await hubChrome.getByRole("button", { name: words.save }).click();
+  await expect
+    .poll(() => readFileSync(join(dataDir, "hub-settings.json"), "utf8"))
+    .toContain("Ollama");
+  expect(
+    readFileSync(join(dataDir, "hub-settings.json"), "utf8"),
+  ).not.toContain("sk-smoke-secret");
+  await first.close();
+
+  const second = await launchHub(dataDir);
+  const reopened = await second.firstWindow();
+  await reopened.getByRole("button", { name: words.settings }).click();
+  await expect(
+    reopened.getByRole("textbox", { name: words.label }),
+  ).toHaveValue("Ollama");
+  await expect(reopened.getByText(words.keySet)).toBeVisible();
+  expect(await reopened.content()).not.toContain("sk-smoke-secret");
   await second.close();
 });

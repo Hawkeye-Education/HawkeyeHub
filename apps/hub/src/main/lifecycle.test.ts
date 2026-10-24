@@ -3,14 +3,26 @@ import {
   PluginId,
   type Manifest,
 } from "@hawkeye-hub/plugin-format";
-import { expect, test } from "vitest";
-import { parseAbsolutePath, parseHubApiVersion, parseHubVersion } from "./ids";
+import { expect, test, vi } from "vitest";
+import type { AiChatRequest } from "../shared/ai-call";
+import { AiCallFailed, type AiChat, type AiFailure } from "./ai";
+import {
+  parseAbsolutePath,
+  parseAiProviderLabel,
+  parseModelId,
+  parseHubApiVersion,
+  parseHubVersion,
+} from "./ids";
 import type {
   BusyReason,
   HubSettings,
   ThemeName,
 } from "../shared/hub-chrome-ipc";
+import type { AiProviderDraft, AiProviderRow } from "../shared/hub-settings";
+import { keysAfterSave, parseAiProviderKey, type AiKeys } from "./ai-keys";
 import { FIRST_LAUNCH_SETTINGS } from "./hub-settings";
+import type { AiProviderLabel } from "./ids";
+import { formOf } from "./settings-form";
 import {
   accessOf,
   createLifecycle,
@@ -19,11 +31,12 @@ import {
   type LifecycleDeps,
 } from "./lifecycle";
 import type { RegistryPlugin } from "./registry";
+import type { AssistantModels } from "./assistant-models";
 
 function installed(
   id: string,
   name: unknown,
-  overrides: { hubApi?: string; identity?: unknown } = {},
+  overrides: { hubApi?: string; identity?: unknown; assistant?: unknown } = {},
 ) {
   const parsed = parseManifest({
     id,
@@ -52,11 +65,23 @@ const NOT_BUSY: Busy = { kind: "not-busy" };
 // Dev mode: no Catalogue and no Registry checks. Most tests are not about the Catalogue.
 const DEV_MODE: LifecycleDeps["registry"] = { kind: "off" };
 const HUB_VERSION = parseHubVersion("1.4.2");
-const ignoreSave = (): void => {
-  // Most tests never save.
-};
+// Most tests never save.
+const ignoreSave = () => new Set<AiProviderLabel>();
 const ignoreUnknownTheme = (): void => {
   // Most tests store only Themes this Hub has.
+};
+// Most tests open no Plugin with an Assistant.
+const NO_ASSISTANT: LifecycleDeps["assistant"] = {
+  context: () => {
+    throw new Error("No Assistant here");
+  },
+  chat: () => {
+    throw new Error("No Assistant here");
+  },
+  modelsAtStart: new Map(),
+  saveModels: () => {
+    throw new Error("No Assistant here");
+  },
 };
 
 const plugins = [
@@ -72,8 +97,10 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
       systemLanguage: "en-HK",
       installed: plugins,
       storedAtStart: FIRST_LAUNCH_SETTINGS,
+      keyedAtStart: new Set(),
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
+      assistant: NO_ASSISTANT,
       registry: DEV_MODE,
     }).snapshot(),
   ).toEqual({
@@ -107,6 +134,7 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
     theme: "hawkeye",
     themes: ["hawkeye"],
     catalogue: { kind: "off" },
+    assistant: { kind: "none" },
   });
 });
 
@@ -117,8 +145,10 @@ test("in zh-HK the snapshot uses zh-HK names, falls back to English, and sorts b
       systemLanguage: "zh-HK",
       installed: plugins,
       storedAtStart: FIRST_LAUNCH_SETTINGS,
+      keyedAtStart: new Set(),
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
+      assistant: NO_ASSISTANT,
       registry: DEV_MODE,
     })
       .snapshot()
@@ -133,8 +163,10 @@ test("showing settings keeps open Plugins open with the front one still in front
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -150,7 +182,9 @@ test("showing settings keeps open Plugins open with the front one still in front
     ...before,
     content: {
       kind: "settings",
-      form: FIRST_LAUNCH_SETTINGS,
+      form: formOf(FIRST_LAUNCH_SETTINGS),
+      keysSet: [],
+      savable: true,
       languageNoteShowing: false,
     },
   });
@@ -161,24 +195,30 @@ const DARK: HubSettings = { ...FIRST_LAUNCH_SETTINGS, colourScheme: "dark" };
 const LIGHT: HubSettings = { ...FIRST_LAUNCH_SETTINGS, colourScheme: "light" };
 
 /** A Lifecycle showing settings, starting from `stored`, and the settings each Save saved. */
-function inSettings(stored: HubSettings) {
+function inSettings(stored: HubSettings, storedKeys: AiKeys = new Map()) {
   const saved: HubSettings[] = [];
   const unknownThemes: string[] = [];
+  // The key store, as main's Save writes it.
+  let keys = storedKeys;
   const lifecycle = createLifecycle({
     hubVersion: HUB_VERSION,
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: stored,
-    save: (settings) => {
+    keyedAtStart: new Set(keys.keys()),
+    save: (settings, providerKeys) => {
       saved.push(settings);
+      keys = keysAfterSave(keys, providerKeys);
+      return new Set(keys.keys());
     },
     unknownTheme: (name) => {
       unknownThemes.push(name);
     },
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.showSettings();
-  return { lifecycle, saved, unknownThemes };
+  return { lifecycle, saved, unknownThemes, keys: () => keys };
 }
 
 const themeNamed = (name: string): HubSettings["theme"] => ({
@@ -199,7 +239,7 @@ test("on first launch the company's Theme, Hawkeye until the Company Configurati
 test("saving a chosen Theme stores it by name and makes it the Theme", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
   const chosen = { ...FIRST_LAUNCH_SETTINGS, theme: themeNamed("hawkeye") };
-  lifecycle.editSettings(chosen);
+  lifecycle.editSettings(formOf(chosen));
   lifecycle.saveSettings();
   expect(saved).toEqual([chosen]);
   expect(lifecycle.snapshot().theme).toBe("hawkeye");
@@ -211,7 +251,7 @@ test("a stored Theme this Hub does not have resolves to Hawkeye, is reported onc
   const { lifecycle, saved, unknownThemes } = inSettings(stored);
   expect(lifecycle.snapshot().theme).toBe("hawkeye");
 
-  lifecycle.editSettings({ ...stored, colourScheme: "dark" });
+  lifecycle.editSettings(formOf({ ...stored, colourScheme: "dark" }));
   lifecycle.saveSettings();
   lifecycle.snapshot();
   expect(unknownThemes).toEqual(["aurora"]);
@@ -224,7 +264,9 @@ test("settings show what is stored", () => {
   const { lifecycle } = inSettings(DARK);
   expect(lifecycle.snapshot().content).toEqual({
     kind: "settings",
-    form: DARK,
+    form: formOf(DARK),
+    keysSet: [],
+    savable: true,
     languageNoteShowing: false,
   });
 });
@@ -236,10 +278,12 @@ test("editing the form changes only the form, and saves nothing", () => {
     seen.push(lifecycle.snapshot().content);
   });
 
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   const edited = {
     kind: "settings",
-    form: DARK,
+    form: formOf(DARK),
+    keysSet: [],
+    savable: true,
     languageNoteShowing: false,
   };
   expect(lifecycle.snapshot().content).toEqual(edited);
@@ -249,13 +293,15 @@ test("editing the form changes only the form, and saves nothing", () => {
 
 test("Save saves the form once and makes it what is stored", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
 
   lifecycle.saveSettings();
   expect(saved).toEqual([DARK]);
   expect(lifecycle.snapshot().content).toEqual({
     kind: "settings",
-    form: DARK,
+    form: formOf(DARK),
+    keysSet: [],
+    savable: true,
     languageNoteShowing: false,
   });
   expect(lifecycle.storedSettings()).toEqual(DARK);
@@ -268,8 +314,8 @@ test("Save does nothing when the form is what is stored, even after edits that u
   const { lifecycle, saved } = inSettings(DARK);
   const before = lifecycle.snapshot();
   lifecycle.saveSettings();
-  lifecycle.editSettings(LIGHT);
-  lifecycle.editSettings({ ...DARK });
+  lifecycle.editSettings(formOf(LIGHT));
+  lifecycle.editSettings(formOf({ ...DARK }));
   lifecycle.saveSettings();
 
   expect(saved).toEqual([]);
@@ -278,12 +324,14 @@ test("Save does nothing when the form is what is stored, even after edits that u
 
 test("Cancel puts the form back to what is stored and stays in settings", () => {
   const { lifecycle, saved } = inSettings(DARK);
-  lifecycle.editSettings(LIGHT);
+  lifecycle.editSettings(formOf(LIGHT));
 
   lifecycle.cancelSettings();
   expect(lifecycle.snapshot().content).toEqual({
     kind: "settings",
-    form: DARK,
+    form: formOf(DARK),
+    keysSet: [],
+    savable: true,
     languageNoteShowing: false,
   });
   expect(saved).toEqual([]);
@@ -291,8 +339,182 @@ test("Cancel puts the form back to what is stored and stays in settings", () => 
 
 test("a fresh snapshot, as a reloaded Hub Chrome fetches, still holds the unsaved form", () => {
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(LIGHT);
-  expect(lifecycle.snapshot().content).toMatchObject({ form: LIGHT });
+  lifecycle.editSettings(formOf(LIGHT));
+  expect(lifecycle.snapshot().content).toMatchObject({ form: formOf(LIGHT) });
+});
+
+// AI Providers in Hub Settings (#106).
+
+const row = (raw: string) => raw as AiProviderRow;
+const label = parseAiProviderLabel;
+const key = parseAiProviderKey;
+const OLLAMA: AiProviderDraft = {
+  row: row("new"),
+  was: { kind: "added" },
+  label: "Ollama",
+  endpoint: { kind: "openai-compatible", baseUrl: "http://localhost:11434/v1" },
+  models: [{ id: "llama4", acceptsImages: false }],
+};
+const WITH_CLAUDE: HubSettings = {
+  ...FIRST_LAUNCH_SETTINGS,
+  aiProviders: [
+    {
+      label: label("Claude"),
+      endpoint: { kind: "anthropic" },
+      models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
+    },
+  ],
+  defaultAiProvider: {
+    kind: "chosen",
+    provider: label("Claude"),
+    model: parseModelId("claude-opus-5-5"),
+  },
+};
+const CLAUDE_KEY = new Map([[label("Claude"), key("sk-ant-stored")]]);
+
+test("a provider added with a key is saved, its key goes to the key store, and the form shows only that a key is set", () => {
+  const { lifecycle, saved, keys } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings({
+    ...formOf(FIRST_LAUNCH_SETTINGS),
+    aiProviders: [OLLAMA],
+  });
+  lifecycle.typeAiKey(row("new"), key("sk-typed"));
+  expect(lifecycle.snapshot().content).toMatchObject({
+    keysSet: ["new"],
+    savable: true,
+  });
+  expect(JSON.stringify(lifecycle.snapshot())).not.toContain("sk-typed");
+
+  lifecycle.saveSettings();
+  expect(saved).toEqual([
+    {
+      ...FIRST_LAUNCH_SETTINGS,
+      aiProviders: [
+        {
+          label: "Ollama",
+          endpoint: OLLAMA.endpoint,
+          models: OLLAMA.models,
+        },
+      ],
+    },
+  ]);
+  expect(keys()).toEqual(new Map([["Ollama", "sk-typed"]]));
+  expect(lifecycle.snapshot().content).toMatchObject({
+    form: { aiProviders: [{ was: { kind: "stored", label: "Ollama" } }] },
+    keysSet: ["0"],
+  });
+});
+
+test("a stored provider shows its key as set, and renaming it moves the key and keeps it the default", () => {
+  const { lifecycle, saved, keys } = inSettings(WITH_CLAUDE, CLAUDE_KEY);
+  const form = formOf(WITH_CLAUDE);
+  expect(lifecycle.snapshot().content).toMatchObject({ keysSet: ["0"] });
+  expect(JSON.stringify(lifecycle.snapshot())).not.toContain("sk-ant-stored");
+
+  lifecycle.editSettings({
+    ...form,
+    aiProviders: form.aiProviders.map((each) => ({
+      ...each,
+      label: "Anthropic",
+    })),
+  });
+  lifecycle.saveSettings();
+  expect(saved[0]?.defaultAiProvider).toEqual({
+    kind: "chosen",
+    provider: "Anthropic",
+    model: "claude-opus-5-5",
+  });
+  expect(keys()).toEqual(new Map([["Anthropic", "sk-ant-stored"]]));
+});
+
+test("a typed key replaces the stored one", () => {
+  const { lifecycle, keys } = inSettings(WITH_CLAUDE, CLAUDE_KEY);
+  lifecycle.typeAiKey(row("0"), key("sk-ant-new"));
+  lifecycle.saveSettings();
+  expect(keys()).toEqual(new Map([["Claude", "sk-ant-new"]]));
+});
+
+test("removing the default provider sets the default back to none, and its key goes on Save", () => {
+  const { lifecycle, saved, keys } = inSettings(WITH_CLAUDE, CLAUDE_KEY);
+  lifecycle.editSettings({ ...formOf(WITH_CLAUDE), aiProviders: [] });
+  expect(lifecycle.snapshot().content).toMatchObject({
+    form: { defaultAiProvider: { kind: "none" } },
+    keysSet: [],
+  });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([FIRST_LAUNCH_SETTINGS]);
+  expect(keys()).toEqual(new Map());
+});
+
+test("removing the default's model sets the default back to none", () => {
+  const { lifecycle } = inSettings(WITH_CLAUDE, CLAUDE_KEY);
+  const form = formOf(WITH_CLAUDE);
+  lifecycle.editSettings({
+    ...form,
+    aiProviders: form.aiProviders.map((each) => ({
+      ...each,
+      models: [{ id: "claude-sonnet-5", acceptsImages: true }],
+    })),
+  });
+  expect(lifecycle.snapshot().content).toMatchObject({
+    form: { defaultAiProvider: { kind: "none" } },
+    savable: true,
+  });
+});
+
+test("Save refuses a form that is not valid Hub Settings, and saves nothing", () => {
+  const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings({
+    ...formOf(FIRST_LAUNCH_SETTINGS),
+    aiProviders: [{ ...OLLAMA, label: " ", models: [] }],
+  });
+  expect(lifecycle.snapshot().content).toMatchObject({ savable: false });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([]);
+  expect(lifecycle.snapshot().content).toMatchObject({ savable: false });
+});
+
+test("Save refuses an Anthropic provider with no key, so the SDK never reads one from the environment", () => {
+  const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(formOf(WITH_CLAUDE));
+  expect(lifecycle.snapshot().content).toMatchObject({ savable: false });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([]);
+
+  lifecycle.typeAiKey(row("0"), key("sk-ant-typed"));
+  expect(lifecycle.snapshot().content).toMatchObject({ savable: true });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([WITH_CLAUDE]);
+});
+
+test("Cancel drops AI Provider edits and typed keys", () => {
+  const { lifecycle, saved } = inSettings(WITH_CLAUDE);
+  lifecycle.typeAiKey(row("0"), key("sk-ant-typed"));
+  expect(lifecycle.snapshot().content).toMatchObject({ keysSet: ["0"] });
+  lifecycle.cancelSettings();
+  expect(lifecycle.snapshot().content).toMatchObject({
+    form: formOf(WITH_CLAUDE),
+    keysSet: [],
+  });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([]);
+});
+
+test("a typed key alone is an unsaved edit the Discard dialog asks about", () => {
+  const { lifecycle } = inSettings(WITH_CLAUDE);
+  lifecycle.typeAiKey(row("0"), key("sk-ant-typed"));
+  lifecycle.open(id("attendance"));
+  expect(lifecycle.snapshot().dialog).toEqual({ kind: "discard-changes" });
+  lifecycle.answer("discard");
+  lifecycle.showSettings();
+  expect(lifecycle.snapshot().content).toMatchObject({ keysSet: [] });
+});
+
+test("typing a key for a row the form does not have throws", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  expect(() => {
+    lifecycle.typeAiKey(row("0"), key("sk"));
+  }).toThrow();
 });
 
 test("picking a Plugin while settings show leaves them and brings that Plugin forward", () => {
@@ -301,8 +523,10 @@ test("picking a Plugin while settings show leaves them and brings that Plugin fo
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -323,8 +547,10 @@ test("settings stay showing while the Plugins behind them close", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("attendance"));
@@ -343,12 +569,14 @@ test("editing, saving or cancelling while settings are not showing throws", () =
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(() => {
-    lifecycle.editSettings(DARK);
+    lifecycle.editSettings(formOf(DARK));
   }).toThrow();
   expect(() => {
     lifecycle.saveSettings();
@@ -369,8 +597,10 @@ test("opening Plugins brings each forward, and opening an open one brings it for
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(openAndForeground(lifecycle)).toEqual({ open: [], foreground: null });
@@ -395,8 +625,10 @@ test("closing the foreground Plugin brings forward the most recently foregrounde
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -418,8 +650,10 @@ test("closing a background Plugin leaves the foreground one in front", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -438,8 +672,10 @@ test("every change is announced", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   const seen: (string | null)[] = [];
@@ -460,8 +696,10 @@ test("a closed Plugin is closing until its close finishes, cannot be reopened un
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -492,8 +730,10 @@ test("finishing the close of a Plugin that is not closing throws", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("attendance"));
@@ -508,8 +748,10 @@ test("a staff close of a Plugin that is not Busy closes it without asking", () =
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("attendance"));
@@ -528,8 +770,10 @@ test("a staff close of a Busy Plugin asks with its latest reason; Keep open leav
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -559,8 +803,10 @@ test("Close anyway closes the Busy Plugin, and closing clears its Busy", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -586,8 +832,10 @@ test("a Plugin that clears Busy closes without asking, but a dialog already up s
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -615,8 +863,10 @@ test("a Busy Plugin that closes abnormally while its dialog is up takes the dial
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -636,8 +886,10 @@ test("a Busy Plugin that closes abnormally while the quit dialog is up leaves it
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -665,8 +917,10 @@ test("a Busy reason that changes while its dialog is up leaves the dialog as it 
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -685,8 +939,10 @@ test("Busy from a Plugin that is not open is ignored: it arrived as the Plugin c
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -705,8 +961,10 @@ test("a quit with no Busy Plugin goes ahead without asking", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -725,8 +983,10 @@ test("a quit with Busy Plugins asks once, listing each by name; Keep open stays,
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -766,8 +1026,10 @@ test("a quit while a Busy close is asking asks about the quit instead", () => {
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.open(id("class-timer"));
@@ -784,8 +1046,10 @@ test("an answer that is not one of the pending dialog's buttons, or with no dial
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(() => {
@@ -805,8 +1069,10 @@ test("opening a Plugin that is not installed, or closing one that is not open, t
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(() => {
@@ -857,8 +1123,10 @@ test("the snapshot marks blocked Plugins, and opening one throws", () => {
       installed("future", "Future", { hubApi: "^99.0.0" }),
     ],
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(
@@ -885,8 +1153,10 @@ test("installed answers the installed Plugin with an id, and throws for one that
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(lifecycle.installed(id("attendance"))).toBe(plugins[1]);
@@ -895,26 +1165,26 @@ test("installed answers the installed Plugin with an id, and throws for one that
 
 test("picking a Plugin with unsaved edits asks first; Keep editing stays with the edits", () => {
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
 
   lifecycle.open(id("attendance"));
   expect(lifecycle.snapshot()).toMatchObject({
     open: [],
-    content: { kind: "settings", form: DARK },
+    content: { kind: "settings", form: formOf(DARK) },
     dialog: { kind: "discard-changes" },
   });
 
   lifecycle.answer("keep-editing");
   expect(lifecycle.snapshot()).toMatchObject({
     open: [],
-    content: { kind: "settings", form: DARK },
+    content: { kind: "settings", form: formOf(DARK) },
     dialog: null,
   });
 });
 
 test("Discard drops the edits and opens the Plugin that was picked", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   lifecycle.open(id("attendance"));
 
   lifecycle.answer("discard");
@@ -926,15 +1196,15 @@ test("Discard drops the edits and opens the Plugin that was picked", () => {
   });
   lifecycle.showSettings();
   expect(lifecycle.snapshot().content).toMatchObject({
-    form: FIRST_LAUNCH_SETTINGS,
+    form: formOf(FIRST_LAUNCH_SETTINGS),
   });
   expect(saved).toEqual([]);
 });
 
 test("picking a Plugin after edits that were undone or saved asks nothing", () => {
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
-  lifecycle.editSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(formOf(DARK));
+  lifecycle.editSettings(formOf(FIRST_LAUNCH_SETTINGS));
   lifecycle.open(id("attendance"));
   expect(lifecycle.snapshot()).toMatchObject({
     open: ["attendance"],
@@ -942,7 +1212,7 @@ test("picking a Plugin after edits that were undone or saved asks nothing", () =
   });
 
   lifecycle.showSettings();
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   lifecycle.saveSettings();
   lifecycle.open(id("class-timer"));
   expect(lifecycle.snapshot()).toMatchObject({
@@ -957,12 +1227,14 @@ test("picking a blocked Plugin with unsaved edits throws rather than asking", ()
     systemLanguage: "en-HK",
     installed: [installed("future", "Future", { hubApi: "^99.0.0" })],
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   lifecycle.showSettings();
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   expect(() => {
     lifecycle.open(id("future"));
   }).toThrow();
@@ -971,7 +1243,7 @@ test("picking a blocked Plugin with unsaved edits throws rather than asking", ()
 
 test("quitting with unsaved edits asks first; Keep editing stays, Discard quits when nothing is Busy", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   let quits = 0;
   const quit = () => {
     quits += 1;
@@ -982,7 +1254,7 @@ test("quitting with unsaved edits asks first; Keep editing stays, Discard quits 
   lifecycle.answer("keep-editing");
   expect(quits).toBe(0);
   expect(lifecycle.snapshot()).toMatchObject({
-    content: { kind: "settings", form: DARK },
+    content: { kind: "settings", form: formOf(DARK) },
     dialog: null,
   });
 
@@ -990,7 +1262,7 @@ test("quitting with unsaved edits asks first; Keep editing stays, Discard quits 
   lifecycle.answer("discard");
   expect(quits).toBe(1);
   expect(lifecycle.snapshot()).toMatchObject({
-    content: { form: FIRST_LAUNCH_SETTINGS },
+    content: { form: formOf(FIRST_LAUNCH_SETTINGS) },
     dialog: null,
   });
   expect(saved).toEqual([]);
@@ -1001,7 +1273,7 @@ test("Discard on quit goes on to the Busy dialog when a Plugin is Busy", () => {
   lifecycle.open(id("class-timer"));
   lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
   lifecycle.showSettings();
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   let quits = 0;
 
   lifecycle.requestQuit(() => {
@@ -1030,7 +1302,7 @@ test("quitting from settings with no unsaved edits asks nothing", () => {
 
 test("the Discard dialog's answers answer only it", () => {
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   lifecycle.open(id("attendance"));
   expect(() => {
     lifecycle.answer("keep-open");
@@ -1057,8 +1329,10 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: IN_CHINESE,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   }).snapshot();
   expect(chosen.displayLanguage).toBe("zh-HK");
@@ -1073,8 +1347,10 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
       systemLanguage: "zh-HK",
       installed: plugins,
       storedAtStart: FIRST_LAUNCH_SETTINGS,
+      keyedAtStart: new Set(),
       save: ignoreSave,
       unknownTheme: ignoreUnknownTheme,
+      assistant: NO_ASSISTANT,
       registry: DEV_MODE,
     }).snapshot().displayLanguage,
   ).toBe("zh-HK");
@@ -1082,7 +1358,7 @@ test("a chosen Display Language overrides the OS one, and system follows the OS"
 
 test("saving a Display Language switches the Hub Chrome and re-sorts Plugin names, with no note when no Plugin is open", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
-  lifecycle.editSettings(IN_CHINESE);
+  lifecycle.editSettings(formOf(IN_CHINESE));
   expect(lifecycle.snapshot().displayLanguage).toBe("en-HK");
 
   lifecycle.saveSettings();
@@ -1102,7 +1378,7 @@ test("saving a Display Language with a Plugin open shows the note, until staff l
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
   lifecycle.open(id("attendance"));
   lifecycle.showSettings();
-  lifecycle.editSettings(IN_CHINESE);
+  lifecycle.editSettings(formOf(IN_CHINESE));
   lifecycle.saveSettings();
   expect(lifecycle.snapshot().content).toMatchObject({
     languageNoteShowing: true,
@@ -1120,7 +1396,7 @@ test("the language note goes once the last open Plugin closes while settings sho
   lifecycle.open(id("attendance"));
   lifecycle.open(id("class-timer"));
   lifecycle.showSettings();
-  lifecycle.editSettings(IN_CHINESE);
+  lifecycle.editSettings(formOf(IN_CHINESE));
   lifecycle.saveSettings();
 
   lifecycle.close(id("class-timer"));
@@ -1136,8 +1412,33 @@ test("the language note goes once the last open Plugin closes while settings sho
 });
 
 test("the system description holds what is stored and drawn, and the installed Plugins in the Switcher's order", () => {
-  const { lifecycle } = inSettings(IN_CHINESE);
-  lifecycle.editSettings({ ...IN_CHINESE, colourScheme: "dark" });
+  const stored: HubSettings = {
+    ...IN_CHINESE,
+    aiProviders: [
+      {
+        label: parseAiProviderLabel("School Azure"),
+        endpoint: {
+          kind: "openai-compatible",
+          baseUrl: "https://school.openai.azure.com/openai/v1",
+        },
+        models: [{ id: parseModelId("gpt-5"), acceptsImages: true }],
+      },
+      {
+        label: parseAiProviderLabel("Claude"),
+        endpoint: { kind: "anthropic" },
+        models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
+      },
+    ],
+  };
+  const { lifecycle } = inSettings(stored);
+  lifecycle.editSettings(
+    formOf({
+      ...stored,
+      colourScheme: "dark",
+      aiProviders: [],
+      defaultAiProvider: { kind: "none" },
+    }),
+  );
   const os = { name: "win32", version: "10.0.19045", arch: "x64" };
   expect(lifecycle.systemDescription(os)).toEqual({
     hubVersion: "1.4.2",
@@ -1151,7 +1452,10 @@ test("the system description holds what is stored and drawn, and the installed P
       { id: "seating-plan", version: "1.0.0" },
     ],
     pythonVersions: [],
-    aiProviders: [],
+    aiProviders: [
+      { label: "School Azure", kind: "openai-compatible" },
+      { label: "Claude", kind: "anthropic" },
+    ],
     authProvider: { kind: "none" },
   });
 });
@@ -1160,7 +1464,7 @@ test("saving anything but the Display Language with a Plugin open shows no note"
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
   lifecycle.open(id("attendance"));
   lifecycle.showSettings();
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
   lifecycle.saveSettings();
   expect(lifecycle.snapshot().content).toMatchObject({
     languageNoteShowing: false,
@@ -1171,10 +1475,12 @@ test("choosing the language the OS already gives changes nothing a Plugin sees, 
   const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
   lifecycle.open(id("attendance"));
   lifecycle.showSettings();
-  lifecycle.editSettings({
-    ...FIRST_LAUNCH_SETTINGS,
-    displayLanguage: { kind: "chosen", language: "en-HK" },
-  });
+  lifecycle.editSettings(
+    formOf({
+      ...FIRST_LAUNCH_SETTINGS,
+      displayLanguage: { kind: "chosen", language: "en-HK" },
+    }),
+  );
   lifecycle.saveSettings();
   expect(lifecycle.snapshot().content).toMatchObject({
     languageNoteShowing: false,
@@ -1227,8 +1533,10 @@ function withRegistry(language: "en-HK" | "zh-HK") {
     systemLanguage: language,
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: {
       kind: "on",
       check: () => {
@@ -1437,8 +1745,10 @@ test("dev mode has no Catalogue: showing it, retrying or answering a check throw
     systemLanguage: "en-HK",
     installed: plugins,
     storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
     save: ignoreSave,
     unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
     registry: DEV_MODE,
   });
   expect(lifecycle.snapshot().catalogue).toEqual({ kind: "off" });
@@ -1458,11 +1768,11 @@ test("settings and the Catalogue replace each other; leaving settings with unsav
   lifecycle.showCatalogue();
   lifecycle.showSettings();
   expect(lifecycle.snapshot().content).toMatchObject({ kind: "settings" });
-  lifecycle.editSettings(DARK);
+  lifecycle.editSettings(formOf(DARK));
 
   lifecycle.showCatalogue();
   expect(lifecycle.snapshot()).toMatchObject({
-    content: { kind: "settings", form: DARK },
+    content: { kind: "settings", form: formOf(DARK) },
     dialog: { kind: "discard-changes" },
   });
 
@@ -1606,5 +1916,399 @@ test("Uninstall throws for a Plugin not installed or already uninstalling, and f
   lifecycle.answer("uninstall");
   expect(() => {
     lifecycle.uninstall(id("class-timer"));
+  }).toThrow();
+});
+
+// The Assistant Panel (#108).
+
+const helper = installed("regex-helper", "Regex Helper", {
+  assistant: {
+    kind: "enabled",
+    templates: [
+      {
+        label: { "en-HK": "Draft a regex", "zh-HK": "草擬正則" },
+        text: "Draft a regex for …",
+      },
+    ],
+  },
+});
+const HELPER = id("regex-helper");
+
+/** A chat the test drives: `delta`, `finish` or `fail` it, and see whether it was cancelled. */
+function drivenChat() {
+  let controller: ReadableStreamDefaultController<string> | undefined;
+  const [text, forDone] = new ReadableStream<string>({
+    start: (started) => {
+      controller = started;
+    },
+  }).tee();
+  if (controller === undefined) throw new Error("start runs at once");
+  const stream = controller;
+  const done = (async () => {
+    let reply = "";
+    for await (const delta of forDone) reply += delta;
+    return reply;
+  })();
+  done.catch(() => undefined);
+  const driven = {
+    cancelled: false,
+    delta: (delta: string) => {
+      stream.enqueue(delta);
+    },
+    finish: () => {
+      stream.close();
+    },
+    fail: (failure: AiFailure) => {
+      stream.error(new AiCallFailed(failure));
+    },
+  };
+  const chat: AiChat = {
+    text,
+    done,
+    cancel: () => {
+      driven.cancelled = true;
+      stream.close();
+    },
+  };
+  return { driven, chat };
+}
+
+/** A Lifecycle with the Regex Helper (which has an Assistant) and the others, and its chats. */
+function withAssistant(
+  stored: HubSettings = FIRST_LAUNCH_SETTINGS,
+  systemLanguage: "en-HK" | "zh-HK" = "en-HK",
+  modelsAtStart: AssistantModels = new Map(),
+) {
+  const requests: AiChatRequest[] = [];
+  const saved: AssistantModels[] = [];
+  const chats: ReturnType<typeof drivenChat>["driven"][] = [];
+  const read: string[] = [];
+  const lifecycle = createLifecycle({
+    hubVersion: HUB_VERSION,
+    systemLanguage,
+    installed: [helper, ...plugins],
+    storedAtStart: stored,
+    keyedAtStart: new Set(),
+    save: ignoreSave,
+    unknownTheme: ignoreUnknownTheme,
+    assistant: {
+      modelsAtStart,
+      saveModels: (models) => {
+        saved.push(new Map(models));
+      },
+      context: ({ manifest }) => {
+        read.push(manifest.id);
+        return (language) => `Context of ${manifest.id} in ${language}`;
+      },
+      chat: (request) => {
+        requests.push(request);
+        const { driven, chat } = drivenChat();
+        chats.push(driven);
+        return chat;
+      },
+    },
+    registry: DEV_MODE,
+  });
+  const chat = (at: number) => {
+    const driven = chats[at];
+    if (driven === undefined) throw new Error(`No chat ${String(at)}`);
+    return driven;
+  };
+  return { lifecycle, requests, chat, read, saved };
+}
+
+const said = (text: string) => [{ type: "text" as const, text }];
+
+test("a Plugin without an Assistant has no Panel, and toggling one throws, as for a Plugin not open", () => {
+  const { lifecycle } = withAssistant();
+  lifecycle.open(id("class-timer"));
+  expect(lifecycle.snapshot().assistant).toEqual({ kind: "none" });
+  expect(() => {
+    lifecycle.toggleAssistant(id("class-timer"));
+  }).toThrow();
+  expect(() => {
+    lifecycle.toggleAssistant(HELPER);
+  }).toThrow();
+});
+
+test("the Assistant Panel starts closed, toggles, and is remembered per Plugin, across a close", () => {
+  const { lifecycle } = withAssistant();
+  lifecycle.open(HELPER);
+  expect(lifecycle.snapshot().assistant).toEqual({ kind: "closed" });
+
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toEqual({
+    kind: "open",
+    conversation: { messages: [], reply: { kind: "idle" } },
+    templates: [{ label: "Draft a regex", text: "Draft a regex for …" }],
+    model: { choice: { kind: "default" }, kind: "none" },
+    providers: [],
+  });
+
+  // Another Plugin in front shows its own; bringing the helper back shows it open still.
+  lifecycle.open(id("class-timer"));
+  expect(lifecycle.snapshot().assistant).toEqual({ kind: "none" });
+  lifecycle.open(HELPER);
+  expect(lifecycle.snapshot().assistant.kind).toBe("open");
+
+  lifecycle.close(HELPER);
+  lifecycle.closed(HELPER);
+  lifecycle.open(HELPER);
+  expect(lifecycle.snapshot().assistant.kind).toBe("open");
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toEqual({ kind: "closed" });
+});
+
+test("the open Panel offers the Plugin's Prompt Templates in the Display Language", () => {
+  const { lifecycle } = withAssistant(FIRST_LAUNCH_SETTINGS, "zh-HK");
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    templates: [{ label: "草擬正則", text: "Draft a regex for …" }],
+  });
+});
+
+test("the open Panel's current model is the Default AI Provider's, with whether it accepts images", () => {
+  const { lifecycle } = withAssistant(WITH_CLAUDE);
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    model: {
+      kind: "chosen",
+      provider: "Claude",
+      model: "claude-opus-5-5",
+      acceptsImages: true,
+    },
+  });
+});
+
+test("the context's Display Language is the one at send, while its files are read only at open", () => {
+  const { lifecycle, requests, read } = withAssistant();
+  lifecycle.open(HELPER);
+  lifecycle.showSettings();
+  lifecycle.editSettings(formOf(IN_CHINESE));
+  lifecycle.saveSettings();
+  lifecycle.open(HELPER);
+
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(requests[0]?.system).toBe("Context of regex-helper in zh-HK");
+  expect(read).toEqual(["regex-helper"]);
+});
+
+test("a message streams a reply from the Default AI Provider, with the context read at open", async () => {
+  const { lifecycle, requests, chat, read } = withAssistant();
+  lifecycle.open(HELPER);
+  expect(read).toEqual(["regex-helper"]);
+  lifecycle.toggleAssistant(HELPER);
+
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(requests).toEqual([
+    {
+      model: { kind: "default" },
+      system: "Context of regex-helper in en-HK",
+      messages: [{ role: "user", content: said("Hi") }],
+    },
+  ]);
+  chat(0).delta("Hello");
+  chat(0).delta(" there");
+  await vi.waitFor(() => {
+    expect(lifecycle.snapshot().assistant).toMatchObject({
+      conversation: {
+        messages: [{ role: "user", content: said("Hi") }],
+        reply: { kind: "streaming", text: "Hello there" },
+      },
+    });
+  });
+  // One reply at a time.
+  expect(() => {
+    lifecycle.sendToAssistant(HELPER, said("And?"));
+  }).toThrow();
+
+  chat(0).finish();
+  await vi.waitFor(() => {
+    expect(lifecycle.snapshot().assistant).toMatchObject({
+      conversation: {
+        messages: [
+          { role: "user", content: said("Hi") },
+          { role: "assistant", content: said("Hello there") },
+        ],
+        reply: { kind: "idle" },
+      },
+    });
+  });
+
+  // The next message carries the conversation so far; the context is not read again.
+  lifecycle.sendToAssistant(HELPER, said("Thanks"));
+  expect(requests[1]?.messages).toHaveLength(3);
+  expect(read).toEqual(["regex-helper"]);
+});
+
+test("Stop keeps what had arrived, and New conversation starts again", async () => {
+  const { lifecycle, chat } = withAssistant();
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  chat(0).delta("Partial");
+  await vi.waitFor(() => {
+    expect(lifecycle.snapshot().assistant).toMatchObject({
+      conversation: { reply: { kind: "streaming", text: "Partial" } },
+    });
+  });
+
+  lifecycle.stopAssistant(HELPER);
+  expect(chat(0).cancelled).toBe(true);
+  await vi.waitFor(() => {
+    expect(lifecycle.snapshot().assistant).toMatchObject({
+      conversation: {
+        messages: [
+          { role: "user", content: said("Hi") },
+          { role: "assistant", content: said("Partial") },
+        ],
+        reply: { kind: "idle" },
+      },
+    });
+  });
+  // Stopping with nothing streaming does nothing: staff may click as the reply ends.
+  lifecycle.stopAssistant(HELPER);
+
+  lifecycle.sendToAssistant(HELPER, said("Again"));
+  lifecycle.newConversation(HELPER);
+  expect(chat(1).cancelled).toBe(true);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    conversation: { messages: [], reply: { kind: "idle" } },
+  });
+});
+
+test("a failed reply shows its failure until the next message", async () => {
+  const { lifecycle, chat } = withAssistant();
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  chat(0).fail({ code: "provider-rejected", status: 401 });
+  await vi.waitFor(() => {
+    expect(lifecycle.snapshot().assistant).toMatchObject({
+      conversation: {
+        messages: [{ role: "user", content: said("Hi") }],
+        reply: {
+          kind: "failed",
+          failure: { code: "provider-rejected", status: 401 },
+        },
+      },
+    });
+  });
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    conversation: { reply: { kind: "streaming", text: "" } },
+  });
+});
+
+test("closing the Plugin cancels its reply and drops its conversation", async () => {
+  const { lifecycle, chat } = withAssistant();
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  chat(0).delta("Partial");
+
+  lifecycle.close(HELPER);
+  expect(chat(0).cancelled).toBe(true);
+  expect(() => {
+    lifecycle.sendToAssistant(HELPER, said("Hi"));
+  }).toThrow();
+  lifecycle.closed(HELPER);
+  lifecycle.open(HELPER);
+  // Let the cancelled chat end: nothing of it comes back.
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    conversation: { messages: [], reply: { kind: "idle" } },
+  });
+});
+
+test("the model picker saves its choice at once, for its Plugin only, and later messages use it", () => {
+  const local = parseAiProviderLabel("Local");
+  const big = {
+    kind: "chosen" as const,
+    provider: local,
+    model: parseModelId("big-model"),
+  };
+  const other = id("other-helper");
+  const stored: HubSettings = {
+    ...FIRST_LAUNCH_SETTINGS,
+    aiProviders: [
+      {
+        label: local,
+        endpoint: { kind: "openai-compatible", baseUrl: "http://localhost:1" },
+        models: [{ id: parseModelId("big-model"), acceptsImages: true }],
+      },
+    ],
+  };
+  const { lifecycle, requests, saved } = withAssistant(
+    stored,
+    "en-HK",
+    new Map([[other, big]]),
+  );
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    model: { choice: { kind: "default" }, kind: "none" },
+    providers: [
+      {
+        label: "Local",
+        models: [{ id: "big-model", acceptsImages: true }],
+      },
+    ],
+  });
+
+  lifecycle.chooseModel(HELPER, big);
+  expect(saved).toEqual([
+    new Map([
+      [other, big],
+      [HELPER, big],
+    ]),
+  ]);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    model: {
+      choice: big,
+      kind: "chosen",
+      provider: "Local",
+      model: "big-model",
+      acceptsImages: true,
+    },
+  });
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(requests[0]?.model).toEqual(big);
+
+  // After a restart, the saved choice is the Plugin's.
+  const restarted = withAssistant(stored, "en-HK", new Map(saved[0]));
+  restarted.lifecycle.open(HELPER);
+  restarted.lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(restarted.requests[0]?.model).toEqual(big);
+});
+
+test("a chosen provider or model since removed is missing: it offers no images, and its chats fail", () => {
+  const gone = {
+    kind: "chosen" as const,
+    provider: parseAiProviderLabel("Gone"),
+    model: parseModelId("x"),
+  };
+  const { lifecycle, requests } = withAssistant(
+    WITH_CLAUDE,
+    "en-HK",
+    new Map([[HELPER, gone]]),
+  );
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    model: { choice: gone, kind: "missing" },
+  });
+  // The call module answers `provider-missing`: the choice goes to it as is, never the Default.
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(requests[0]?.model).toEqual(gone);
+});
+
+test("choosing a model needs the Plugin open with an Assistant", () => {
+  const { lifecycle } = withAssistant();
+  lifecycle.open(id("class-timer"));
+  expect(() => {
+    lifecycle.chooseModel(id("class-timer"), { kind: "default" });
   }).toThrow();
 });
