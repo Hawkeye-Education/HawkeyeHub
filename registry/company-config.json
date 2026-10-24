@@ -1,0 +1,5 @@
+{
+  "theme": "hawkeye",
+  "authProvider": { "kind": "none" },
+  "roleMapping": []
+}

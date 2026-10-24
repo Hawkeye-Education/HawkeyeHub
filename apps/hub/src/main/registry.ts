@@ -1,16 +1,19 @@
 // The Registry client (ADR 0005, spec #91): fetches the rolling `registry` release's `index.json`,
 // parses it at the boundary, and chooses for each Plugin the version this Hub could install.
 
+import { parseManifest, type Manifest } from "@hawkeye-hub/plugin-format";
+// The index schema lives beside its generator, so the Hub parses exactly what CI writes.
 import {
-  parseManifest,
-  PluginId,
-  type Manifest,
-} from "@hawkeye-hub/plugin-format";
+  RegistryIndex,
+  type Sha256,
+  type WebUrl,
+} from "@hawkeye-hub/plugin-format/registry-index";
 import semver from "semver";
-import { z } from "zod";
 import type { CatalogueAccess } from "../shared/hub-chrome-ipc";
 import type { HubApiVersion } from "./ids";
 import { accessOf } from "./lifecycle";
+
+export { Sha256, WebUrl } from "@hawkeye-hub/plugin-format/registry-index";
 
 export const REGISTRY_URL =
   "https://github.com/Hawkeye-Education/HawkeyeHub/releases/download/registry/index.json";
@@ -29,26 +32,6 @@ export function registryUrlFrom(env: NodeJS.ProcessEnv): URL {
 
 /** This computer as a Manifest's Supported Platforms name one, such as `win32-x64`. */
 export type HostPlatform = `${NodeJS.Platform}-${NodeJS.Architecture}`;
-
-// A package or icon is only ever fetched over the web, never from a local file.
-export const WebUrl = z.url({ protocol: /^https?$/ }).brand<"WebUrl">();
-export type WebUrl = z.infer<typeof WebUrl>;
-export const Sha256 = z
-  .string()
-  .regex(/^[0-9a-f]{64}$/)
-  .brand<"Sha256">();
-export type Sha256 = z.infer<typeof Sha256>;
-
-// One published version. The Manifest is parsed on its own, so a bad one leaves out only itself.
-const IndexEntry = z.strictObject({
-  manifest: z.unknown(),
-  url: WebUrl,
-  sha256: Sha256,
-  iconUrl: WebUrl,
-});
-const RegistryIndex = z.strictObject({
-  plugins: z.record(PluginId, z.array(IndexEntry)),
-});
 
 /** The version of a Plugin the Catalogue lists, and whether this Hub can install it. */
 export interface RegistryPlugin {

@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/manifest.ts"
+    ".": "./src/manifest.ts",
+    "./registry-index": "./src/registry-index.ts"
   },
   "scripts": {
     "typecheck": "tsc",
