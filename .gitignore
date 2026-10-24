@@ -5,3 +5,4 @@ playwright-report/
 .hub-data/
 .venv/
 dist/
+__pycache__/
