@@ -2,6 +2,7 @@
 // preload is sandboxed.
 
 import type { HubError, StoreChange } from "@hawkeye-hub/hub-api";
+import type { AiFailure } from "./ai-call";
 
 /** Prefix of the `additionalArguments` entry that carries the Display Language to the preload. */
 export const DISPLAY_LANGUAGE_ARG = "--hawkeye-hub-display-language=";
@@ -48,7 +49,7 @@ export const AI_CHAT_EVENT = "hub:ai-chat-event";
 export type AiChatEvent = { id: number } & (
   | { kind: "delta"; text: string }
   | { kind: "done"; text: string }
-  | { kind: "failed"; failure: HubError }
+  | { kind: "failed"; failure: AiFailure }
 );
 
 /** What a `StoreCall` comes to: its value, or the `HubError` the page's call rejects with. */

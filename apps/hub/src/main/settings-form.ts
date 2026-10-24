@@ -4,6 +4,7 @@
 
 import {
   HubSettingsSchema,
+  AiProviderRowSchema,
   type AiProviderRow,
   type HubSettings,
   type HubSettingsForm,
@@ -13,8 +14,8 @@ import type { AiProviderLabel } from "./ids";
 
 /** The form showing `settings`: each stored provider in a row of its own, numbered in order. */
 export function formOf(settings: HubSettings): HubSettingsForm {
-  // The index makes a row unique within the form, and the `as` grants the brand.
-  const rowOf = (index: number) => String(index) as AiProviderRow;
+  // The index makes a row unique within the form.
+  const rowOf = (index: number) => AiProviderRowSchema.parse(String(index));
   const { aiProviders, defaultAiProvider } = settings;
   return {
     ...settings,
