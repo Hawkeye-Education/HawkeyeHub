@@ -1,0 +1,21 @@
+{
+  "name": "@hawkeye-hub/fake-hub",
+  "description": "A fake window.hub for Plugin UI tests under Vitest (PLUGIN_STANDARD.md 禮9.1).",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hawkeye-hub/hub-api": "workspace:*",
+    "@hawkeye-hub/plugin-format": "workspace:*"
+  },
+  "devDependencies": {
+    "happy-dom": "20.14.6",
+    "vitest": "5.0.5"
+  }
+}
