@@ -65,11 +65,18 @@ export function aiProvidersOf({ aiProviders }: HubSettings): AiProviderInfo[] {
 }
 
 /** The provider and model a chat uses, or why there is none. */
-type Target =
+export type Target =
   | { kind: "found"; provider: AiProvider; model: AiProvider["models"][number] }
-  | { kind: "failed"; failure: AiFailure };
+  | {
+      kind: "failed";
+      failure: Extract<AiFailure, { code: "no-provider" | "provider-missing" }>;
+    };
 
-function targetOf(settings: HubSettings, model: AiModelChoice): Target {
+/**
+ * A model choice resolved against the saved Hub Settings: the one resolver, for a chat and for the
+ * Assistant Panel's current model alike.
+ */
+export function targetOf(settings: HubSettings, model: AiModelChoice): Target {
   const chosen = model.kind === "default" ? settings.defaultAiProvider : model;
   if (chosen.kind === "none") {
     return { kind: "failed", failure: { code: "no-provider" } };

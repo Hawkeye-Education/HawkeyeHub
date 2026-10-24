@@ -34,7 +34,7 @@ import type {
   AiModelChoice,
 } from "../shared/ai-call";
 import type { AiProviderRow, HubSettingsForm } from "../shared/hub-settings";
-import { AiCallFailed, type AiChat } from "./ai";
+import { AiCallFailed, targetOf, type AiChat } from "./ai";
 import type { AssistantModels } from "./assistant-models";
 import type { AiProviderKey, SavedProviderKey } from "./ai-keys";
 import type { SystemDescription } from "./diagnostics";
@@ -501,21 +501,26 @@ export function createLifecycle({
   // The Plugin's picker choice resolved against the saved Hub Settings, as the call module does.
   const currentModel = (id: PluginId): CurrentModel => {
     const choice = modelOf(id);
-    const chosen =
-      choice.kind === "default" ? stored.defaultAiProvider : choice;
-    if (chosen.kind === "none") return { choice, kind: "none" };
-    const acceptsImages = stored.aiProviders
-      .find(({ label }) => label === chosen.provider)
-      ?.models.find(({ id: model }) => model === chosen.model)?.acceptsImages;
-    // Only a chosen one can be missing: HubSettingsSchema keeps the Default configured.
-    if (acceptsImages === undefined) return { choice, kind: "missing" };
-    return {
-      choice,
-      kind: "chosen",
-      provider: chosen.provider,
-      model: chosen.model,
-      acceptsImages,
-    };
+    const target = targetOf(stored, choice);
+    if (target.kind === "found") {
+      const { provider, model } = target;
+      return {
+        choice,
+        kind: "chosen",
+        provider: provider.label,
+        model: model.id,
+        acceptsImages: model.acceptsImages,
+      };
+    }
+    switch (target.failure.code) {
+      case "no-provider":
+        return { choice, kind: "none" };
+      // Only a chosen one can be missing: HubSettingsSchema keeps the Default configured.
+      case "provider-missing":
+        return { choice, kind: "missing" };
+      default:
+        return target.failure satisfies never;
+    }
   };
   const panelOf = (id: PluginId): AssistantPanel => {
     const talk = talks.get(id);
