@@ -10,10 +10,13 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "fflate": "0.8.2",
     "semver": "7.8.5",
+    "smol-toml": "1.9.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@types/node": "22.17.2",
     "@types/semver": "7.8.0",
     "vitest": "5.0.5"
   }
