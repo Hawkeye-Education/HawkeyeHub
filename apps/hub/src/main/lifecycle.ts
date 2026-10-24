@@ -17,6 +17,7 @@ import {
   type CurrentModel,
   type Catalogue,
   type CatalogueJob,
+  type CrashCause,
   type DialogAnswer,
   type DisplayLanguage,
   type AssistantPanel,
@@ -67,9 +68,15 @@ export interface Lifecycle {
   /**
    * Starts closing an open Plugin, without asking: it is `closing`, and cannot be reopened, until
    * `closed`. Its Busy is cleared, and it leaves any dialog about it (spec #44 "Busy"): a dialog
-   * about it alone goes away. Throws if it is not open.
+   * about it alone goes away, and a quit dialog about it alone goes ahead with the quit. Throws if
+   * it is not open.
    */
   close(id: PluginId): void;
+  /**
+   * A Plugin that closed abnormally: `close`, then its crash message, naming it in the Display
+   * Language. Crash messages queue, one each, behind any other dialog. Throws if it is not open.
+   */
+  crashed(id: PluginId, cause: CrashCause): void;
   /**
    * Finishes closing a Plugin, once its Plugin UI is gone and its Backend, if any, has exited.
    * Throws if it is not closing.
@@ -268,13 +275,29 @@ type Asking =
   | (Extract<HubChromeDialog, { kind: "busy-quit" }> & { quit: () => void })
   | { kind: "discard-changes"; proceed: () => void }
   | Extract<HubChromeDialog, { kind: "uninstall" }>;
+// A crash message keeps the Plugin's id, not its name: it is named when drawn, so a queued one
+// follows a Save that changes the Display Language.
+interface CrashMessage {
+  kind: "plugin-crashed";
+  id: PluginId;
+  cause: CrashCause;
+}
 
-function dialogOf(asking: Asking | null): HubChromeDialog | null {
+function dialogOf(
+  asking: Asking | CrashMessage | null,
+  nameOf: (id: PluginId) => string,
+): HubChromeDialog | null {
   if (asking === null) return null;
   switch (asking.kind) {
     case "busy-close":
     case "uninstall":
       return asking;
+    case "plugin-crashed":
+      return {
+        kind: "plugin-crashed",
+        plugin: { id: asking.id, name: nameOf(asking.id) },
+        cause: asking.cause,
+      };
     case "busy-quit":
       return { kind: "busy-quit", plugins: asking.plugins };
     case "discard-changes":
@@ -341,6 +364,11 @@ export function createLifecycle({
   const running = (id: PluginId): boolean =>
     open.includes(id) || closing.includes(id);
   let asking: Asking | null = null;
+  // The crash messages not yet dismissed, oldest first. Only the first shows, and only while
+  // nothing is asking: a crash never throws away a dialog that is up.
+  let crashMessages: CrashMessage[] = [];
+  const pendingDialog = (): Asking | CrashMessage | null =>
+    asking ?? crashMessages[0] ?? null;
   // Plugins closing behind Hub Settings leave them showing. The language note says open Plugins
   // switch language when reopened, from a Save that changed it while any was open, until staff
   // leave settings or the last open Plugin closes.
@@ -599,6 +627,7 @@ export function createLifecycle({
     const talk = talks.get(id);
     if (talk !== undefined) dropChat(talk);
     talks.delete(id);
+    const quitAsked = asking?.kind === "busy-quit" ? asking.quit : null;
     asking = askUninstallOnClose.delete(id)
       ? uninstallDialog(id)
       : askingWithout(id);
@@ -606,6 +635,10 @@ export function createLifecycle({
       content = { kind: "settings", languageNoteShowing: false };
     }
     changed();
+    // The last Busy Plugin a quit asked about has gone, so nothing Busy is left to ask about: the
+    // quit goes ahead, as `requestQuit` does when nothing is Busy. Its crash message, if any, is
+    // not shown, since the Hub is quitting; the crash is in the log.
+    if (quitAsked !== null && asking === null) quitAsked();
   };
   const requestClose = (id: PluginId): void => {
     const reason = busyReasons.get(id);
@@ -632,7 +665,10 @@ export function createLifecycle({
               savable: settingsFrom(form, typedKeys, keyed).kind === "valid",
             }
           : content,
-      dialog: dialogOf(asking),
+      dialog: dialogOf(
+        pendingDialog(),
+        (id) => installedPlugin(id).listed.name,
+      ),
       hubVersion,
       theme,
       themes: [...THEMES],
@@ -679,6 +715,11 @@ export function createLifecycle({
       });
     },
     close,
+    crashed: (id, cause) => {
+      close(id);
+      crashMessages = [...crashMessages, { kind: "plugin-crashed", id, cause }];
+      changed();
+    },
     closed: (id) => {
       if (!closing.includes(id)) {
         throw new Error(`No closing Plugin has the id ${JSON.stringify(id)}`);
@@ -819,6 +860,8 @@ export function createLifecycle({
         ({ manifest }) => manifest.id !== id,
       );
       listing = listingIn(listing.language);
+      // A crash message names its Plugin when drawn, so one still up for it goes with it.
+      crashMessages = crashMessages.filter((message) => message.id !== id);
       changed();
     },
     updated: (plugin) => {
@@ -935,11 +978,15 @@ export function createLifecycle({
       changed();
     },
     answer: (answer) => {
-      const pending = asking;
+      const pending = pendingDialog();
       if (pending === null)
         throw new Error("No dialog is waiting for an answer");
       if (answer === KEEP_ANSWERS[pending.kind]) {
-        asking = null;
+        if (pending.kind === "plugin-crashed") {
+          crashMessages = crashMessages.slice(1);
+        } else {
+          asking = null;
+        }
         // Keeping a Busy Plugin open keeps it installed too.
         if (pending.kind === "busy-close") {
           askUninstallOnClose.delete(pending.plugin.id);

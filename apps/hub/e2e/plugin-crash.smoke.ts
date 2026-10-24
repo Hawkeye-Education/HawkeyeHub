@@ -3,6 +3,7 @@
 
 import type { ElectronApplication, Page } from "@playwright/test";
 import {
+  crashSummaries,
   displayLanguageOf,
   expect,
   fixtureInstall,
@@ -44,22 +45,6 @@ function closeButton(hubChrome: Page, name: string) {
   return hubChrome.getByRole("button", {
     name: new RegExp(`^(Close ${name}|關閉 ${name})$`),
   });
-}
-
-/** The crash summaries hub.log holds for Plugin `id`. */
-function crashSummaries(dataDir: string, id: string): string[] {
-  return hubLogLines(dataDir).flatMap((line) =>
-    typeof line === "object" &&
-    line !== null &&
-    "pluginId" in line &&
-    line.pluginId === id &&
-    "level" in line &&
-    line.level === "error" &&
-    "message" in line &&
-    typeof line.message === "string"
-      ? [line.message]
-      : [],
-  );
 }
 
 /** Asks the fixture's Backend `method` without waiting: the answer never comes. */

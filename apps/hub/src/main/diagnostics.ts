@@ -131,7 +131,10 @@ interface PluginUiLoadFailed {
   error: NetErrorCode;
 }
 
-/** A Plugin closing abnormally (ADR 0012), with what each cause can report about the exit. */
+/**
+ * A Plugin closing abnormally (ADR 0012), with what each cause can report about the exit. Its
+ * causes are the Hub Chrome's `CrashCause`s, which `Lifecycle.crashed` takes.
+ */
 export type PluginCrash =
   | { cause: "crashed"; exit: PluginUiGone | BackendExited | ProtocolViolated }
   | {
@@ -140,8 +143,6 @@ export type PluginCrash =
     }
   // The Plugin UI is hung, not gone, and the Backend has done nothing wrong.
   | { cause: "stopped-responding" };
-
-export type PluginCrashCause = PluginCrash["cause"];
 
 /**
  * Everything callers may write to hub.log. ADR 0012's privacy rule lives here: no variant has a

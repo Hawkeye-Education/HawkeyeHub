@@ -19,8 +19,10 @@ import {
   test as base,
   expect,
   type ElectronApplication,
+  type Locator,
   type Page,
 } from "@playwright/test";
+import { unzipSync } from "fflate";
 import { errorCode } from "../src/main/error-code";
 
 // The package directory, so Electron reads package.json's `main` and `productName`.
@@ -165,6 +167,22 @@ export function hubLogLines(dataDir: string): unknown[] {
     .map((line): unknown => JSON.parse(line));
 }
 
+/** The crash summaries hub.log holds for Plugin `id`. */
+export function crashSummaries(dataDir: string, id: string): string[] {
+  return hubLogLines(dataDir).flatMap((line) =>
+    typeof line === "object" &&
+    line !== null &&
+    "pluginId" in line &&
+    line.pluginId === id &&
+    "level" in line &&
+    line.level === "error" &&
+    "message" in line &&
+    typeof line.message === "string"
+      ? [line.message]
+      : [],
+  );
+}
+
 export const FIXTURE_PLUGINS = join(import.meta.dirname, "fixtures", "plugins");
 
 /** One entry to write in the record of installed Plugins, and the fixture its folder copies. */
@@ -211,6 +229,31 @@ export async function switcherNames(hubChrome: Page): Promise<string[]> {
 }
 
 export type DisplayLanguage = "en-HK" | "zh-HK";
+
+/** The Hub's "Export diagnostics" button and box button, in each Display Language. */
+export const EXPORT_DIAGNOSTICS_WORDS = {
+  "en-HK": "Export diagnostics",
+  "zh-HK": "匯出診斷資料",
+} satisfies Record<DisplayLanguage, string>;
+
+/**
+ * The globals of a fixture Plugin UI with a Backend, for code evaluated in its page. Each file
+ * declares `window` with it: an imported binding would be renamed inside the serialized callback.
+ */
+export interface BackendFixtureWindow {
+  hub: {
+    backend: { request(method: string, params: unknown): Promise<unknown> };
+  };
+}
+
+/** A log's lines in a Diagnostics Bundle, parsed. Throws if the bundle has no such log. */
+export function linesOf(log: string | undefined): unknown[] {
+  if (log === undefined) throw new Error("The bundle has no such log");
+  return log
+    .trimEnd()
+    .split("\n")
+    .map((line): unknown => JSON.parse(line));
+}
 
 /**
  * The Display Language the Hub took from the OS, as the Hub Chrome's `<html lang>` says. The Hub
@@ -281,6 +324,24 @@ export function pluginPages(pages: Page[], id: string): Page[] {
   );
 }
 
+/** The dialog overlay's page, once it is showing. */
+export async function overlay(hub: ElectronApplication): Promise<Page> {
+  let page: Page | undefined;
+  await expect
+    .poll(() => {
+      page = hub.windows().find((each) => each.url().endsWith("#dialog"));
+      return page !== undefined;
+    })
+    .toBe(true);
+  if (page === undefined) throw new Error("unreachable: polled for above");
+  return page;
+}
+
+/** Whether the dialog overlay is showing. */
+export function overlayShowing(hub: ElectronApplication): boolean {
+  return hub.windows().some((page) => page.url().endsWith("#dialog"));
+}
+
 /**
  * Answers the dialog on the overlay `page` with `key` going down only: the key answers as it goes
  * down. The answer can take the overlay away before even the keydown is acknowledged (seen on
@@ -294,6 +355,16 @@ export async function answerWithKey(page: Page, key: string): Promise<void> {
   }
 }
 
+/**
+ * Presses a dialog button with Enter going down only. An answer can take the overlay away, so a
+ * mouse click can lose its page before the mouseup that fired it is acknowledged (seen on macOS
+ * CI).
+ */
+export async function press(button: Locator): Promise<void> {
+  await button.focus();
+  await answerWithKey(button.page(), "Enter");
+}
+
 /** The messages in a Plugin's log, oldest first, or none if it has no log yet. */
 export function pluginLogMessages(dataDir: string, id: string): string[] {
   const log = join(dataDir, "logs", "plugins", `${id}.log`);
@@ -303,6 +374,47 @@ export function pluginLogMessages(dataDir: string, id: string): string[] {
     .split("\n")
     .map((line) => (JSON.parse(line) as { message: string }).message);
 }
+
+/**
+ * Replaces dialog.showSaveDialog in the main process with a stub that answers at once: with
+ * `destination`, or cancelled. Returns the default path of each save dialog shown, read with the
+ * function it resolves to. A global, because each evaluate is serialized and shares no closure.
+ */
+export async function stubSaveDialog(
+  hub: ElectronApplication,
+  answer: { canceled: boolean; filePath: string },
+): Promise<() => Promise<string[]>> {
+  await hub.evaluate(({ dialog }, answer) => {
+    const shown: string[] = [];
+    (globalThis as unknown as { saveDialogsShown: string[] }).saveDialogsShown =
+      shown;
+    dialog.showSaveDialog = (...args: unknown[]) => {
+      // Called as (options) or (window, options).
+      const options = args.at(-1) as { defaultPath: string };
+      shown.push(options.defaultPath);
+      return Promise.resolve(answer);
+    };
+  }, answer);
+  return () =>
+    hub.evaluate(
+      () =>
+        (globalThis as unknown as { saveDialogsShown: string[] })
+          .saveDialogsShown,
+    );
+}
+
+/** A Diagnostics Bundle's entries: each path inside the zip and its text. */
+export function bundleEntries(bundle: string): Record<string, string> {
+  const decoder = new TextDecoder();
+  return Object.fromEntries(
+    Object.entries(unzipSync(readFileSync(bundle))).map(([path, bytes]) => [
+      path,
+      decoder.decode(bytes),
+    ]),
+  );
+}
+
+export const BUNDLE_FILE_NAME = /hawkeye-hub-diagnostics-\d{8}-\d{6}\.zip$/;
 
 export function isRunning(pid: number): boolean {
   try {

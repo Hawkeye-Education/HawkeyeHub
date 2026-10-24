@@ -71,11 +71,13 @@ const STOPPED_UNEXPECTEDLY = {
   "en-HK": {
     message: "Hawkeye Hub stopped unexpectedly",
     detail: "Its window kept crashing.",
+    exportDiagnostics: "Export diagnostics",
     quit: "Quit",
   },
   "zh-HK": {
     message: "Hawkeye Hub 意外停止運作",
     detail: "其視窗不斷當機。",
+    exportDiagnostics: "匯出診斷資料",
     quit: "結束",
   },
 } satisfies Record<DisplayLanguage, unknown>;
@@ -177,6 +179,22 @@ export function openHubWindow(
       overlay = null;
     }
   };
+  // The one export action (ADR 0012), from Hub Settings and the kept-crashing box: a save dialog,
+  // and on cancel nothing. Nothing is opened or revealed afterwards.
+  const exportDiagnostics = async (): Promise<void> => {
+    const { canceled, filePath } = await dialog.showSaveDialog(window, {
+      defaultPath: join(app.getPath("downloads"), bundleFileName(now())),
+    });
+    if (canceled) return;
+    diagnostics.exportBundle(
+      parseAbsolutePath(filePath),
+      lifecycle.systemDescription({
+        name: process.platform,
+        version: process.getSystemVersion(),
+        arch: process.arch,
+      }),
+    );
+  };
   // Both Hub Chrome views draw snapshots of the lifecycle state held here: each fetches one on
   // every load, reloads included, and is sent a new one on every change. Their requests are
   // invoked, so a bad one rejects back to its view rather than throwing in the main process.
@@ -263,20 +281,9 @@ export function openHubWindow(
     fromHubChrome(CHOOSE_MODEL, event.sender);
     lifecycle.chooseModel(PluginId.parse(id), AiModelChoiceSchema.parse(model));
   });
-  ipcMain.handle(EXPORT_DIAGNOSTICS, async (event) => {
+  ipcMain.handle(EXPORT_DIAGNOSTICS, (event) => {
     fromHubChrome(EXPORT_DIAGNOSTICS, event.sender);
-    const { canceled, filePath } = await dialog.showSaveDialog(window, {
-      defaultPath: join(app.getPath("downloads"), bundleFileName(now())),
-    });
-    if (canceled) return;
-    diagnostics.exportBundle(
-      parseAbsolutePath(filePath),
-      lifecycle.systemDescription({
-        name: process.platform,
-        version: process.getSystemVersion(),
-        arch: process.arch,
-      }),
-    );
+    return exportDiagnostics();
   });
   // Quitting (a window close, or app.quit as Cmd+Q does, which closes the window) asks first if any
   // Plugin is Busy, and **Keep open** cancels it. Then every open Plugin closes, in parallel. Their
@@ -332,15 +339,20 @@ export function openHubWindow(
       });
       gaveUp = true;
       const text = STOPPED_UNEXPECTEDLY[lifecycle.snapshot().displayLanguage];
-      // The main process is healthy, so a normal quit, which logs "Hub closing".
+      // The main process is healthy, so a normal quit, which logs "Hub closing". Esc quits.
+      const buttons = [text.exportDiagnostics, text.quit];
       void dialog
         .showMessageBox(window, {
           type: "error",
           message: text.message,
           detail: text.detail,
-          buttons: [text.quit],
+          buttons,
+          cancelId: buttons.indexOf(text.quit),
         })
-        .then(() => {
+        .then(async ({ response }) => {
+          if (buttons[response] === text.exportDiagnostics) {
+            await exportDiagnostics();
+          }
           app.quit();
         });
     },

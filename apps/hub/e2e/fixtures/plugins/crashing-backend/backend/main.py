@@ -1,7 +1,8 @@
 """A fixture Backend: standard-library Python speaking raw newline-delimited JSON-RPC on stdio.
 
-It answers `initialize`, then breaks when asked: `exit` exits with code 3 without answering, and
-`garbage` writes a stdout line that is not JSON-RPC. It exits on `shutdown` or when stdin closes.
+It answers `initialize`, then breaks when asked: `exit` exits with code 3 without answering,
+`fail-loudly` does the same after a stderr line, and `garbage` writes a stdout line that is not
+JSON-RPC. It exits on `shutdown` or when stdin closes.
 """
 
 import json
@@ -24,6 +25,9 @@ for line in sys.stdin:
     if method == "initialize":
         send({"jsonrpc": "2.0", "id": message["id"], "result": {}})
     elif method == "exit":
+        sys.exit(3)
+    elif method == "fail-loudly":
+        print("backend failing loudly", file=sys.stderr, flush=True)
         sys.exit(3)
     elif method == "garbage":
         sys.stdout.write("this is not JSON-RPC\n")

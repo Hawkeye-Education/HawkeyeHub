@@ -1,5 +1,10 @@
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ElectronApplication } from "@playwright/test";
 import {
+  EXPORT_DIAGNOSTICS_WORDS,
+  bundleEntries,
   crashHubChrome,
   displayLanguageOf,
   exitCodeOf,
@@ -7,6 +12,7 @@ import {
   hubLogLines,
   launchHub,
   lifecycleLine,
+  stubSaveDialog,
   test,
 } from "./hub";
 
@@ -114,16 +120,19 @@ function messageBoxesShown(hub: ElectronApplication): Promise<unknown[]> {
   );
 }
 
-/** Presses the message box's first button. */
-function answerMessageBox(hub: ElectronApplication): Promise<void> {
-  return hub.evaluate(() => {
+/** Presses the message box's button at index `response`. */
+function answerMessageBox(
+  hub: ElectronApplication,
+  response: number,
+): Promise<void> {
+  return hub.evaluate((_electron, response) => {
     // In a timer, so evaluate returns before the answer can quit the Hub.
     setTimeout(() => {
       (
         globalThis as unknown as { messageBoxStub: MessageBoxStub }
-      ).messageBoxStub.answer({ response: 0, checkboxChecked: false });
+      ).messageBoxStub.answer({ response, checkboxChecked: false });
     });
-  });
+  }, response);
 }
 
 /** Crashes the Hub Chrome's renderer without waiting for a reload. */
@@ -158,33 +167,44 @@ const STOPPED_UNEXPECTEDLY = {
   "en-HK": {
     message: "Hawkeye Hub stopped unexpectedly",
     detail: "Its window kept crashing.",
-    buttons: ["Quit"],
+    buttons: [EXPORT_DIAGNOSTICS_WORDS["en-HK"], "Quit"],
+    cancelId: 1,
   },
   "zh-HK": {
     message: "Hawkeye Hub 意外停止運作",
     detail: "其視窗不斷當機。",
-    buttons: ["結束"],
+    buttons: [EXPORT_DIAGNOSTICS_WORDS["zh-HK"], "結束"],
+    cancelId: 1,
   },
 };
 
-test("a Hub Chrome that crashes 3 times within 60 s is not reloaded, and the Hub quits", async ({
-  hub,
-  dataDir,
-}) => {
+const QUIT = 1;
+const EXPORT_DIAGNOSTICS = 0;
+
+/** Crashes the Hub Chrome 3 times, so the Hub gives up and shows its box. */
+async function crashUntilGivenUp(hub: ElectronApplication): Promise<void> {
   const hubChrome = await hub.firstWindow();
   await expect(hubChrome.getByText("Hawkeye Hub")).toBeVisible();
   const language = await displayLanguageOf(hubChrome);
   await stubMessageBox(hub);
   await crashHubChrome(hub);
   await crashHubChrome(hub);
-  const exitCode = exitCodeOf(hub);
 
   await crashHubChromeForGood(hub);
 
   await expect
     .poll(() => messageBoxesShown(hub))
     .toEqual([{ type: "error", ...STOPPED_UNEXPECTEDLY[language] }]);
-  await answerMessageBox(hub);
+}
+
+test("a Hub Chrome that crashes 3 times within 60 s is not reloaded, and the Hub quits", async ({
+  hub,
+  dataDir,
+}) => {
+  const exitCode = exitCodeOf(hub);
+  await crashUntilGivenUp(hub);
+
+  await answerMessageBox(hub, QUIT);
   expect(await exitCode).toBe(0);
   expect(hubLogLines(dataDir)).toEqual([
     lifecycleLine("Hub opened"),
@@ -194,6 +214,30 @@ test("a Hub Chrome that crashes 3 times within 60 s is not reloaded, and the Hub
     errorLine(/^Hub Chrome kept crashing: 3 times in 60 s, giving up$/),
     lifecycleLine("Hub closing"),
   ]);
+});
+
+test("Export diagnostics in the kept-crashing box saves a bundle, then the Hub quits", async ({
+  hub,
+  dataDir,
+}) => {
+  const exitCode = exitCodeOf(hub);
+  await crashUntilGivenUp(hub);
+  const destination = join(
+    mkdtempSync(join(tmpdir(), "hawkeye-hub-export-")),
+    "bundle.zip",
+  );
+  // The Hub quits after, so what the save dialog was shown cannot be read back.
+  await stubSaveDialog(hub, { canceled: false, filePath: destination });
+
+  await answerMessageBox(hub, EXPORT_DIAGNOSTICS);
+
+  expect(await exitCode).toBe(0);
+  expect(existsSync(destination)).toBe(true);
+  expect(Object.keys(bundleEntries(destination)).sort()).toEqual([
+    "hub.log",
+    "system.json",
+  ]);
+  expect(hubLogLines(dataDir).at(-1)).toEqual(lifecycleLine("Hub closing"));
 });
 
 // A crash cuts the first load short, and the Hub must not take that for a failure of its own.
