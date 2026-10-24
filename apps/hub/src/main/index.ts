@@ -18,6 +18,13 @@ import { assistantContext } from "./assistant-context";
 import { loadAssistantModels, saveAssistantModels } from "./assistant-models";
 import { aiCallDeps } from "./ai-deps";
 import { killBackendsNow } from "./backend";
+import {
+  cachedCompanyConfiguration,
+  companyConfigurationUrlFrom,
+  readCompanyConfigurationFile,
+  refreshCompanyConfiguration,
+  type CompanyConfiguration,
+} from "./company-config";
 import { openDiagnostics, type HubEvent } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
 import { loadHubSettings, saveHubSettings } from "./hub-settings";
@@ -55,9 +62,17 @@ import type { PluginId } from "@hawkeye-hub/plugin-format";
 // 0. Installed, or dev mode (PLUGIN_STANDARD §9.4). Dev mode's Plugins are loaded here, so a bad
 // one stops the Hub before it opens, with why printed in the terminal. Nothing is open yet to log
 // to, so the catch prints and exits rather than letting Electron show its error dialog.
-// The Plugins dev mode loaded ride along in its variant.
+// The Plugins dev mode loaded ride along in its variant, as does a `--company-config` file, read
+// here so a bad one stops the Hub the same way.
 let startedAs:
-  { kind: "installed" } | { kind: "dev"; plugins: InstalledPlugin[] };
+  | { kind: "installed" }
+  | {
+      kind: "dev";
+      plugins: InstalledPlugin[];
+      companyConfiguration:
+        | { kind: "registry" }
+        | { kind: "file"; configuration: CompanyConfiguration };
+    };
 try {
   const hubMode = parseHubMode(
     process.argv,
@@ -69,6 +84,15 @@ try {
       ? {
           kind: "dev",
           plugins: loadDevPlugins(hubMode.pluginsDir, hubMode.ids),
+          companyConfiguration:
+            hubMode.companyConfiguration.kind === "file"
+              ? {
+                  kind: "file",
+                  configuration: readCompanyConfigurationFile(
+                    hubMode.companyConfiguration.path,
+                  ),
+                }
+              : { kind: "registry" },
         }
       : hubMode;
 } catch (error) {
@@ -302,12 +326,23 @@ function runHub(): void {
     // With the Hub Settings and keys saved when each chat starts, for `hub.ai` and the Assistant.
     const aiDepsNow = (): AiCallDeps =>
       aiCallDeps(diagnostics, lifecycle.storedSettings(), aiKeys);
+    // The Company Configuration (spec #99): dev mode's file as it is, or the cache now and a fetch
+    // that does not hold the window back, whose answer redraws the company Theme. An installed Hub
+    // always uses the Registry's.
+    const companyConfiguration =
+      startedAs.kind === "dev"
+        ? startedAs.companyConfiguration
+        : ({ kind: "registry" } as const);
     const lifecycle = createLifecycle({
       // package.json's `version`: without one Electron would answer its own version.
       hubVersion: parseHubVersion(app.getVersion()),
       systemLanguage: displayLanguageFor(app.getPreferredSystemLanguages()),
       installed: installed.loaded,
       storedAtStart: settings,
+      companyAtStart:
+        companyConfiguration.kind === "file"
+          ? companyConfiguration.configuration
+          : cachedCompanyConfiguration(hubDataDir),
       keyedAtStart: new Set(aiKeys.keys()),
       save: (saved, providerKeys) => {
         const keys = keysAfterSave(aiKeys, providerKeys);
@@ -357,6 +392,18 @@ function runHub(): void {
         });
       },
     });
+    // A failed fetch or cache write is logged inside; anything else thrown is an unhandled
+    // rejection, a Hub crash, as with installs.
+    if (companyConfiguration.kind === "registry") {
+      void refreshCompanyConfiguration({
+        url: companyConfigurationUrlFrom(registryUrl),
+        fetch: fetchFromWeb,
+        dataDir: hubDataDir,
+        diagnostics,
+      }).then((configuration) => {
+        lifecycle.companyConfigured(configuration);
+      });
+    }
     // At launch and every 4 hours (spec #91); Retry checks through the lifecycle too.
     if (startedAs.kind === "installed") {
       checkRegistryNow();

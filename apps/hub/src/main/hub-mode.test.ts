@@ -36,16 +36,52 @@ test("each --plugin names a folder of --plugins-dir, resolved against the workin
     kind: "dev",
     pluginsDir: join(cwd, "..", "..", "plugins"),
     ids: ["seating-plan", "class-timer"],
+    companyConfiguration: { kind: "registry" },
   });
 });
 
-test("a packaged Hub ignores --plugin", () => {
+test("--company-config reads the Company Configuration from a file, resolved against the working folder", () => {
   expect(
     parseHubMode(
-      [...electron, "--plugins-dir", "/plugins", "--plugin", "seating-plan"],
+      [
+        ...electron,
+        "--plugins-dir",
+        "/plugins",
+        "--plugin",
+        "seating-plan",
+        "--company-config",
+        "e2e/company-config.json",
+      ],
+      false,
+      cwd,
+    ),
+  ).toMatchObject({
+    kind: "dev",
+    companyConfiguration: {
+      kind: "file",
+      path: join(cwd, "e2e", "company-config.json"),
+    },
+  });
+});
+
+test("a packaged Hub ignores --plugin and --company-config", () => {
+  expect(
+    parseHubMode(
+      [
+        ...electron,
+        "--plugins-dir",
+        "/plugins",
+        "--plugin",
+        "seating-plan",
+        "--company-config",
+        "company-config.json",
+      ],
       true,
       cwd,
     ),
+  ).toEqual({ kind: "installed" });
+  expect(
+    parseHubMode([...electron, "--company-config", "c.json"], true, cwd),
   ).toEqual({ kind: "installed" });
 });
 
@@ -73,4 +109,14 @@ test("a malformed dev-mode command line throws with why", () => {
       cwd,
     ),
   ).toThrow('--plugin "a" is named twice');
+  expect(() =>
+    parseHubMode(
+      [...electron, "--plugins-dir", "/p", "--plugin", "a", "--company-config"],
+      false,
+      cwd,
+    ),
+  ).toThrow("--company-config needs a file");
+  expect(() =>
+    parseHubMode([...electron, "--company-config", "c.json"], false, cwd),
+  ).toThrow("--company-config needs dev mode: --plugin <id>");
 });

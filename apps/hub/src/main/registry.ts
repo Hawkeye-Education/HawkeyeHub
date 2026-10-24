@@ -59,10 +59,11 @@ export interface RegistryPlugin {
   access: CatalogueAccess;
 }
 
-export type RegistryCheckFailure =
-  | { kind: "http-status"; status: number }
-  | { kind: "no-response" }
-  | { kind: "invalid" };
+/** How a fetch from the web failed to get a good answer: an HTTP error, or no whole response. */
+export type FetchFailure =
+  { kind: "http-status"; status: number } | { kind: "no-response" };
+
+export type RegistryCheckFailure = FetchFailure | { kind: "invalid" };
 
 export type RegistryCheck =
   | { kind: "listed"; plugins: RegistryPlugin[] }

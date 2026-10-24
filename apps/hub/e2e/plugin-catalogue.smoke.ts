@@ -218,7 +218,11 @@ test("dev mode has no Catalogue button and checks no Registry", async ({
     await expect(
       hubChrome.getByRole("button", { name: strings.catalogue }),
     ).toHaveCount(0);
-    expect(registry.requests).toEqual([]);
+    // Only the Company Configuration: without `--company-config`, dev mode "signs in with the
+    // Company Configuration from the Registry" (PLUGIN_STANDARD §9.4).
+    await expect
+      .poll(() => registry.requests)
+      .toEqual(["/company-config.json"]);
   } finally {
     await hub.close();
     registry.server.close();

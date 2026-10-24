@@ -38,6 +38,10 @@ import type { AiProviderRow, HubSettingsForm } from "../shared/hub-settings";
 import { AiCallFailed, labelAndModels, targetOf, type AiChat } from "./ai";
 import type { AssistantModels } from "./assistant-models";
 import type { AiProviderKey, SavedProviderKey } from "./ai-keys";
+import {
+  describeAuthProvider,
+  type CompanyConfiguration,
+} from "./company-config";
 import type { SystemDescription } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
 import type { AiProviderLabel, HubApiVersion } from "./ids";
@@ -156,6 +160,11 @@ export interface Lifecycle {
   saveSettings(): void;
   /** Puts the form back to what is stored, dropping typed keys. Throws if settings are not showing. */
   cancelSettings(): void;
+  /**
+   * The Company Configuration the start's fetch resolved to (spec #99): a `company` Theme follows
+   * it at once, with a new snapshot pushed.
+   */
+  companyConfigured(configuration: CompanyConfiguration): void;
   /** The Hub Settings as last saved, whatever the form holds. */
   storedSettings(): HubSettings;
   /** The installation as a Diagnostics Bundle describes it, on the OS `os`. */
@@ -189,6 +198,8 @@ export interface LifecycleDeps {
   systemLanguage: DisplayLanguage;
   installed: readonly InstalledPlugin[];
   storedAtStart: HubSettings;
+  /** The cached Company Configuration, or the built-in one, until `companyConfigured`. */
+  companyAtStart: CompanyConfiguration;
   /** The labels of the stored AI Providers that have a key in the key store. */
   keyedAtStart: ReadonlySet<AiProviderLabel>;
   /**
@@ -264,9 +275,6 @@ export function accessOf(
 export const HAWKEYE = "hawkeye" as ThemeName;
 /** The Themes built into the Hub (ADR 0006): adding one is a Hub release. */
 export const THEMES: readonly ThemeName[] = [HAWKEYE];
-// ponytail: Hawkeye until the Company Configuration is fetched; the Registry work routes the
-// fetched default Theme in here (spec #71).
-const COMPANY_THEME = HAWKEYE;
 
 // The dialog waiting for staff, as the lifecycle holds it: the quit dialog keeps the quit that
 // **Quit anyway** goes ahead with, and the Discard dialog the action **Discard** goes ahead with.
@@ -312,6 +320,7 @@ export function createLifecycle({
   systemLanguage,
   installed,
   storedAtStart,
+  companyAtStart,
   keyedAtStart,
   save,
   unknownTheme,
@@ -454,8 +463,9 @@ export function createLifecycle({
   };
   // The stored Theme resolved: a name this Hub has no Theme for draws in Hawkeye, and is kept.
   const reported = new Set<ThemeName>();
+  let company = companyAtStart;
   const resolveTheme = (setting: HubSettings["theme"]): ThemeName => {
-    const name = setting.kind === "company" ? COMPANY_THEME : setting.name;
+    const name = setting.kind === "company" ? company.theme : setting.name;
     if (THEMES.includes(name)) return name;
     if (!reported.has(name)) {
       reported.add(name);
@@ -921,6 +931,11 @@ export function createLifecycle({
       resetForm();
       changed();
     },
+    companyConfigured: (configuration) => {
+      company = configuration;
+      theme = resolveTheme(stored.theme);
+      changed();
+    },
     storedSettings: () => stored,
     systemDescription: (os) => ({
       hubVersion,
@@ -930,13 +945,13 @@ export function createLifecycle({
       colourScheme: stored.colourScheme,
       plugins: listing.plugins.map(({ plugin }) => pluginRefOf(plugin)),
       // ponytail: uv's interpreters are not listed yet; read `uv/python` if support asks. There is
-      // no Auth Provider yet.
+      // no sign-in until the sign-in spec.
       pythonVersions: [],
       aiProviders: stored.aiProviders.map(({ label, endpoint }) => ({
         label,
         kind: endpoint.kind,
       })),
-      authProvider: { kind: "none" },
+      authProvider: describeAuthProvider(company.authProvider),
     }),
     toggleAssistant: (id) => {
       talkOf(id);
