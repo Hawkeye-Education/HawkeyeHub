@@ -1,9 +1,10 @@
 {
   "extends": "../../../../tsconfig.base.json",
-  // A preload runs in the page's renderer, sandboxed: DOM, plus Electron's process typings.
+  // A preload runs in the page's renderer, sandboxed: DOM, plus Electron's process typings, and
+  // Vite's for the `?raw` CSS it inlines.
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["node"]
+    "types": ["node", "vite/client"]
   },
   "include": ["."]
 }

@@ -31,6 +31,16 @@ export const STORES = "hub:stores";
 /** Main sends this with a `StoreChanged` for each change a watch sees. */
 export const STORES_CHANGED = "hub:stores-changed";
 
+/** The preload invokes this with the dialog's title; main answers a `PickFolderResult`. */
+export const FILES_PICK_FOLDER = "hub:files-pick-folder";
+
+/** The preload invokes this with the folder's absolute path; main answers an `OpenFolderAnswer`. */
+export const FILES_OPEN_FOLDER = "hub:files-open-folder";
+
+/** Whether the OS opened the folder, or the message it failed with. */
+export type OpenFolderAnswer =
+  { kind: "opened" } | { kind: "failed"; message: string };
+
 /** The preload invokes this for `hub.ai.providers()`; main answers `AiProviderInfo[]`. */
 export const AI_PROVIDERS = "hub:ai-providers";
 

@@ -1,7 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    // plugin-format's sources name their `.ts` imports, for its CLI under Node's type stripping.
+    "allowImportingTsExtensions": true
   },
   "include": ["src", "e2e", "*.config.ts"],
   // The Hub Chrome and the preloads run in a page: each has its own tsconfig, with DOM.
