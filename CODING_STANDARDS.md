@@ -70,7 +70,8 @@ Rules:
 
 ## Git
 
-- Each spec builds on its own `spec/<area>` branch, not `main`. Work each ticket on an `impl/<slug>` branch cut from that spec branch, and open its PR against the spec branch. PRs merge with a merge commit, and CI must be green.
+- Each spec builds on its own `spec/<area>` branch, cut from `main`, never from another spec branch. Work each ticket on an `impl/<slug>` branch cut from that spec branch, and open its PR against the spec branch. PRs merge with a merge commit, and CI must be green.
+- When a spec's issue closes, open a PR from its spec branch into `main`. If it conflicts with `main`, resolve that on an `integrate/<area>` branch cut from `main` with the spec branch merged in, and open the PR from there.
 - A PR into a spec branch closes no issues: close them by hand after the merge (`docs/agents/issue-tracker.md`).
 - Commit subjects are plain imperative sentences ("Add …", "Fix …"), not Conventional Commits. Releases come from tags (`hub@`, `plugin/<id>@`, `sdk-py@`), not from commit messages.
 
