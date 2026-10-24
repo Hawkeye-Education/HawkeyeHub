@@ -57,7 +57,7 @@ export type AiMessage = AiChatRequest["messages"][number];
 
 /** The preload's call on `AI_CHAT`: the request, under the id main tags its stream events with. */
 export const AiChatCallSchema = z.strictObject({
-  id: z.number(),
+  id: z.int(),
   request: AiChatRequestSchema,
 });
 export type AiChatCall = z.infer<typeof AiChatCallSchema>;

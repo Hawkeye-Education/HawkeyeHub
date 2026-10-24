@@ -215,7 +215,7 @@ export function serveAi(
     })();
   });
   webContents.ipc.handle(AI_CANCEL, (_event, raw: unknown) => {
-    chats.get(z.number().parse(raw))?.cancel();
+    chats.get(z.int().parse(raw))?.cancel();
   });
   webContents.once("destroyed", () => {
     for (const chat of chats.values()) chat.cancel();

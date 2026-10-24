@@ -479,6 +479,7 @@ export function createLifecycle({
   interface Talk {
     system: (language: DisplayLanguage) => string;
     conversation: Conversation;
+    // Null while no reply is streaming: between replies, after one ends, and once it is dropped.
     chat: AiChat | null;
   }
   const talks = new Map<PluginId, Talk>();
