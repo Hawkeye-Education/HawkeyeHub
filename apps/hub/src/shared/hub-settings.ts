@@ -11,6 +11,15 @@ import {
 } from "./hub-chrome-ipc";
 import type { Branded } from "./branded";
 
+/**
+ * A Theme's name, which need not be one this Hub has. The regex makes a name a ThemeName, and the
+ * `as` after it grants the brand, as in `ids.ts`.
+ */
+export const ThemeNameSchema = z
+  .string()
+  .regex(KEBAB_CASE)
+  .transform((raw) => raw as ThemeName);
+
 export type AiProviderLabel = Branded<string, "AiProviderLabel">;
 
 export const NonBlank = z.string().refine((raw) => raw.trim() !== "", "blank");
@@ -47,10 +56,7 @@ const APPEARANCE_AND_LANGUAGE = {
     z.strictObject({ kind: z.literal("company") }),
     z.strictObject({
       kind: z.literal("chosen"),
-      name: z
-        .string()
-        .regex(KEBAB_CASE)
-        .transform((raw) => raw as ThemeName),
+      name: ThemeNameSchema,
     }),
   ]),
   colourScheme: z.enum(COLOUR_SCHEMES),
@@ -66,8 +72,7 @@ const APPEARANCE_AND_LANGUAGE = {
 /**
  * Strict throughout: a field this Hub does not know makes the whole value invalid. Every field
  * always holds a value: following the company or the OS is a value of its own, never an absent
- * field. The regex makes a name a ThemeName, and the `as` after it grants the brand, as in
- * `ids.ts`.
+ * field.
  */
 export const HubSettingsSchema = z
   .strictObject({

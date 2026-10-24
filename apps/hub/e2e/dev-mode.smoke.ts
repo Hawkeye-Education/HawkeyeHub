@@ -18,6 +18,7 @@ import {
   FIXTURE_PLUGINS,
   HUB_DIR,
   hubEnv,
+  hubLogLines,
   installFixturePlugins,
   launchHub,
   pluginLogMessages,
@@ -133,6 +134,50 @@ test("dev mode opens the named Plugin from its folder and never touches the reco
     )) as { cwd: string };
     expect(cwd).toBe(join(FIXTURE_PLUGINS, "echo-backend", "backend"));
     expect(existsSync(join(dataDir, "installed-plugins.json"))).toBe(false);
+  } finally {
+    await hub.close();
+  }
+});
+
+// The Hub Chrome's element, whose snapshot is null until the preload delivers the first.
+declare const document: {
+  querySelector(
+    selector: string,
+  ): { snapshot: { theme: string } | null } | null;
+};
+
+// The fixture's Theme, harbour, is one this Hub lacks: the snapshot draws Hawkeye and hub.log says
+// why, which only the file's Theme reaching the lifecycle can cause.
+test("dev mode's --company-config file is the Company Configuration, fetched and cached never", async ({
+  dataDir,
+}) => {
+  const hub = await _electron.launch({
+    args: [
+      HUB_DIR,
+      "--plugins-dir",
+      FIXTURE_PLUGINS,
+      "--plugin",
+      "class-timer",
+      "--company-config",
+      join(import.meta.dirname, "fixtures", "company-config.json"),
+    ],
+    env: hubEnv(dataDir),
+  });
+  try {
+    const hubChrome = await hub.firstWindow();
+    await expect
+      .poll(() =>
+        hubChrome.evaluate(
+          () => document.querySelector("hub-chrome")?.snapshot?.theme,
+        ),
+      )
+      .toBe("hawkeye");
+    expect(hubLogLines(dataDir)).toContainEqual(
+      expect.objectContaining({
+        message: "Theme harbour unknown to this Hub, using hawkeye",
+      }),
+    );
+    expect(existsSync(join(dataDir, "company-config.json"))).toBe(false);
   } finally {
     await hub.close();
   }
