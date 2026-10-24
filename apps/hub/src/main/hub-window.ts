@@ -108,7 +108,7 @@ function hubChromeView(): WebContentsView {
 /** Loads the Hub Chrome page: the Hub Chrome itself, or with `#dialog` the dialog overlay. */
 function loadHubChrome(contents: WebContents, hash: "dialog" | null): void {
   // Set only by `electron-vite dev`; absent in the built Hub.
-  const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
+  const devServerUrl = process.env.ELECTRON_RENDERER_URL;
   const page = join(import.meta.dirname, "../renderer/index.html");
   const load =
     devServerUrl === undefined
