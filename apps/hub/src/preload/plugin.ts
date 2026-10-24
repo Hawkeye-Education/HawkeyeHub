@@ -1,6 +1,6 @@
 // The Plugin preload: builds each Plugin UI's one frozen `window.hub` (ADR 0009) before any Plugin
 // code runs. Sandboxed, so it may import only `electron` (anything else is bundled) and is built as
-// CommonJS. `displayLanguage`, `busy`, `backend` when the Plugin has one, and `stores` when it
+// CommonJS. `displayLanguage`, `busy`, `files`, `ai`, `backend` when the Plugin has one, and `stores` when it
 // declares any.
 
 import type {
@@ -10,7 +10,9 @@ import type {
   HubBackend,
   HubBusy,
   HubError,
+  HubFiles,
   HubStores,
+  PickFolderResult,
   RpcError,
   StoreChange,
 } from "@hawkeye-hub/hub-api";
@@ -24,11 +26,14 @@ import {
   BACKEND_PORT,
   BUSY,
   DISPLAY_LANGUAGE_ARG,
+  FILES_OPEN_FOLDER,
+  FILES_PICK_FOLDER,
   HAS_BACKEND_ARG,
   HAS_STORES_ARG,
   STORES,
   STORES_CHANGED,
   type BusyMessage,
+  type OpenFolderAnswer,
   type StoreAnswer,
   type StoreChanged,
 } from "../shared/plugin-preload";
@@ -60,6 +65,36 @@ const busy: HubBusy = {
   clear: async () => {
     const message: BusyMessage = { kind: "not-busy" };
     await ipcRenderer.invoke(BUSY, message);
+  },
+};
+
+// `hub.files`: main opens the dialog and the shell. Main is trusted, so its answers are not
+// re-validated.
+const files: HubFiles = {
+  pickFolder: (title) =>
+    ipcRenderer
+      .invoke(FILES_PICK_FOLDER, title)
+      .then((result: PickFolderResult) => result),
+  openFolder: async (path) => {
+    const answer = await ipcRenderer
+      .invoke(FILES_OPEN_FOLDER, path)
+      .then((received: OpenFolderAnswer) => received);
+    switch (answer.kind) {
+      case "opened":
+        return;
+      case "failed": {
+        const refusal: HubError = {
+          code: "folder-not-opened",
+          path,
+          message: answer.message,
+        };
+        // A HubError is a plain object by design (ADR 0009).
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw refusal;
+      }
+      default:
+        answer satisfies never;
+    }
   },
 };
 
@@ -99,6 +134,7 @@ contextBridge.executeInMainWorld({
     {
       displayLanguage,
       busy,
+      files,
       ...(process.argv.includes(HAS_BACKEND_ARG)
         ? { backend: connectBackend() }
         : {}),
