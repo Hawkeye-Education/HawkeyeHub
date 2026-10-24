@@ -293,6 +293,16 @@ const cases: [string, HubEvent, unknown][] = [
     { kind: "theme-unknown", name: "aurora" as ThemeName },
     hubLine("warn", "Theme aurora unknown to this Hub, using hawkeye"),
   ],
+  [
+    "AI Provider keys unreadable",
+    { kind: "ai-keys-unreadable" },
+    hubLine("warn", "AI Provider keys unreadable, starting with none"),
+  ],
+  [
+    "Assistant models unreadable",
+    { kind: "assistant-models-unreadable" },
+    hubLine("warn", "Assistant models unreadable, every Plugin on Default"),
+  ],
 ];
 
 test.each(cases)(

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { PluginId } from "@hawkeye-hub/plugin-format";
 import { beforeEach, expect, test } from "vitest";
 import { loadAssistantModels, saveAssistantModels } from "./assistant-models";
+import type { HubEvent } from "./diagnostics";
 import {
   parseAbsolutePath,
   parseAiProviderLabel,
@@ -12,6 +13,10 @@ import {
 
 let dataDir: AbsolutePath;
 
+const unexpected = (event: HubEvent): never => {
+  throw new Error(`Unexpected hub.log event ${event.kind}`);
+};
+
 beforeEach(() => {
   dataDir = parseAbsolutePath(mkdtempSync(join(tmpdir(), "assistant-models-")));
 });
@@ -19,7 +24,7 @@ beforeEach(() => {
 const file = () => join(dataDir, "assistant-models.json");
 
 test("a missing file is every Plugin on Default", () => {
-  expect(loadAssistantModels(dataDir)).toEqual(new Map());
+  expect(loadAssistantModels(dataDir, unexpected)).toEqual(new Map());
 });
 
 test("the choices round-trip as Plugin id to choice", () => {
@@ -39,7 +44,7 @@ test("the choices round-trip as Plugin id to choice", () => {
     "regex-helper": { kind: "chosen", provider: "Local", model: "big-model" },
     "class-timer": { kind: "default" },
   });
-  expect(loadAssistantModels(dataDir)).toEqual(models);
+  expect(loadAssistantModels(dataDir, unexpected)).toEqual(models);
 });
 
 test.each([
@@ -47,7 +52,14 @@ test.each([
   ["an unknown kind", '{"regex-helper":{"kind":"best"}}'],
   ["an unknown field", '{"regex-helper":{"kind":"default","x":1}}'],
   ["a bad Plugin id", '{"Regex Helper":{"kind":"default"}}'],
-])("a file with %s throws", (_, contents) => {
-  writeFileSync(file(), contents);
-  expect(() => loadAssistantModels(dataDir)).toThrow();
-});
+])(
+  "a file with %s is every Plugin on Default, and says so in hub.log",
+  (_, contents) => {
+    writeFileSync(file(), contents);
+    const events: HubEvent[] = [];
+    expect(loadAssistantModels(dataDir, (event) => events.push(event))).toEqual(
+      new Map(),
+    );
+    expect(events).toEqual([{ kind: "assistant-models-unreadable" }]);
+  },
+);

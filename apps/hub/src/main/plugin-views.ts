@@ -302,7 +302,9 @@ export function aiCallDeps(
 ): AiCallDeps {
   return {
     settings,
-    keys: loadAiKeys(hubDataDir, safeStorage),
+    keys: loadAiKeys(hubDataDir, safeStorage, (event) => {
+      diagnostics.recordHubEvent(event);
+    }),
     fetch: aiFetch,
     recordHubEvent: (event) => {
       diagnostics.recordHubEvent(event);

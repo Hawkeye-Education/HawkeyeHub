@@ -18,7 +18,7 @@ import { assistantContext } from "./assistant-context";
 import { loadAssistantModels, saveAssistantModels } from "./assistant-models";
 import { aiCallDeps } from "./plugin-views";
 import { killBackendsNow } from "./backend";
-import { openDiagnostics } from "./diagnostics";
+import { openDiagnostics, type HubEvent } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
 import { loadHubSettings, saveHubSettings } from "./hub-settings";
 import { openHubWindow } from "./hub-window";
@@ -133,6 +133,9 @@ function runHub(): void {
     now,
   );
   diagnostics.recordHubEvent({ kind: "hub-opened" });
+  const recordHubEvent = (event: HubEvent): void => {
+    diagnostics.recordHubEvent(event);
+  };
   // A crash is logged synchronously, then the Hub exits at once: after an uncaught error its
   // state is unknown, so it does not run will-quit and log "Hub closing". There is no clean-exit
   // marker and no prompt about the crash on the next start (ADR 0012). Electron's main process only
@@ -300,9 +303,11 @@ function runHub(): void {
       systemLanguage: displayLanguageFor(app.getPreferredSystemLanguages()),
       installed: installed.loaded,
       storedAtStart: settings,
-      keyedAtStart: new Set(loadAiKeys(hubDataDir, safeStorage).keys()),
+      keyedAtStart: new Set(
+        loadAiKeys(hubDataDir, safeStorage, recordHubEvent).keys(),
+      ),
       save: (saved, providerKeys) => {
-        const storedKeys = loadAiKeys(hubDataDir, safeStorage);
+        const storedKeys = loadAiKeys(hubDataDir, safeStorage, recordHubEvent);
         const keys = keysAfterSave(storedKeys, providerKeys);
         // Written only when a key changed: safeStorage's own key reaches disk only some time after
         // first use (seen: a Hub killed after a Save could not decrypt the file on its next start).
@@ -319,7 +324,7 @@ function runHub(): void {
       // With the Hub Settings and keys saved when each chat starts, as `hub.ai`'s are.
       assistant: {
         context: ({ folder }, language) => assistantContext(folder, language),
-        modelsAtStart: loadAssistantModels(hubDataDir),
+        modelsAtStart: loadAssistantModels(hubDataDir, recordHubEvent),
         saveModels: (models) => {
           saveAssistantModels(hubDataDir, models);
         },
