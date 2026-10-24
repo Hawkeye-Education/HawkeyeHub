@@ -6,6 +6,6 @@
     "allowImportingTsExtensions": true
   },
   "include": ["src", "e2e", "*.config.ts"],
-  // The Hub Chrome and the preloads run in a page: each has its own tsconfig, with DOM.
-  "exclude": ["src/renderer", "src/preload"]
+  // The Hub Chrome, the preloads and the Hub Kit run in a page: each has its own tsconfig, with DOM.
+  "exclude": ["src/renderer", "src/preload", "src/hub-kit"]
 }

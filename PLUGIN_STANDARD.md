@@ -113,7 +113,7 @@ export default defineConfig({
 });
 ```
 
-`package.json` scripts: `build` (`vite build`), `dev` (`vite build --watch`), `test` (`vitest run`) and `typecheck` (`tsc --noEmit`, extending the shared `tsconfig`). Lint and format run from the repo root. The types for `window.hub`, the Hub Kit elements and the `Manifest` come from the `@hawkeye-hub/hub-api` workspace package; add it as a devDependency.
+`package.json` scripts: `build` (`vite build`), `dev` (`vite build --watch`), `test` (`vitest run`) and `typecheck` (`tsc --noEmit`, extending the shared `tsconfig`). Lint and format run from the repo root. The types for `window.hub`, the Hub Kit elements and the `Manifest` come from the `@hawkeye-hub/hub-api` workspace package; add it as a devDependency. The Hub Kit elements' types are its `@hawkeye-hub/hub-api/hub-kit` entry, because they need the DOM.
 
 ### 4.2 What the page gets
 

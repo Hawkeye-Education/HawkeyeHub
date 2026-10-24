@@ -40,6 +40,7 @@ import {
 import type { StoreCall } from "../shared/store-call";
 import hawkeyeCss from "../hub-kit/hawkeye.css?raw";
 import nativeCss from "../hub-kit/native.css?raw";
+import hubKitComponents from "virtual:hub-kit-components";
 
 /** A JSON-RPC response or notification from the Backend, as main relays it. */
 type BackendMessage =
@@ -377,6 +378,8 @@ contextBridge.executeInMainWorld({
 // microtask checkpoint before the parser runs any script, so Plugin code already sees it, and it
 // wins over a lang the page's own `<html>` carries. The Hub Kit's tokens and native-element
 // stylesheet (ADR 0006) go in then too, first in `<html>`, so the page's own CSS comes after them.
+// So do its components (ADR 0010), as an inline script: one inserted into the DOM runs at once and
+// in the page's world, where the page's `customElements` and `window.hub` are.
 // ponytail: Hawkeye is the only Theme; swap its stylesheet on a Theme change once a second exists.
 const observer = new MutationObserver(() => {
   // Not documentElement: its typings say it is never null, which is untrue before the parser runs.
@@ -386,6 +389,10 @@ const observer = new MutationObserver(() => {
   const hubKit = document.createElement("style");
   hubKit.textContent = `${hawkeyeCss}\n${nativeCss}`;
   root.prepend(hubKit);
+  const components = document.createElement("script");
+  components.textContent = hubKitComponents;
+  hubKit.after(components);
+  components.remove();
   observer.disconnect();
 });
 observer.observe(document, { childList: true });
