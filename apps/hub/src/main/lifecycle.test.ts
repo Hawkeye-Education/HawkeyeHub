@@ -9,6 +9,7 @@ import { AiCallFailed, type AiChat, type AiFailure } from "./ai";
 import {
   parseAbsolutePath,
   parseAiProviderLabel,
+  parseModelId,
   parseHubApiVersion,
   parseHubVersion,
 } from "./ids";
@@ -360,13 +361,13 @@ const WITH_CLAUDE: HubSettings = {
     {
       label: label("Claude"),
       endpoint: { kind: "anthropic" },
-      models: [{ id: "claude-opus-5-5", acceptsImages: true }],
+      models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
     },
   ],
   defaultAiProvider: {
     kind: "chosen",
     provider: label("Claude"),
-    model: "claude-opus-5-5",
+    model: parseModelId("claude-opus-5-5"),
   },
 };
 const CLAUDE_KEY = new Map([[label("Claude"), key("sk-ant-stored")]]);
@@ -445,6 +446,22 @@ test("removing the default provider sets the default back to none, and its key g
   expect(keys()).toEqual(new Map());
 });
 
+test("removing the default's model sets the default back to none", () => {
+  const { lifecycle } = inSettings(WITH_CLAUDE, CLAUDE_KEY);
+  const form = formOf(WITH_CLAUDE);
+  lifecycle.editSettings({
+    ...form,
+    aiProviders: form.aiProviders.map((each) => ({
+      ...each,
+      models: [{ id: "claude-sonnet-5", acceptsImages: true }],
+    })),
+  });
+  expect(lifecycle.snapshot().content).toMatchObject({
+    form: { defaultAiProvider: { kind: "none" } },
+    savable: true,
+  });
+});
+
 test("Save refuses a form that is not valid Hub Settings, and saves nothing", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
   lifecycle.editSettings({
@@ -455,6 +472,19 @@ test("Save refuses a form that is not valid Hub Settings, and saves nothing", ()
   lifecycle.saveSettings();
   expect(saved).toEqual([]);
   expect(lifecycle.snapshot().content).toMatchObject({ savable: false });
+});
+
+test("Save refuses an Anthropic provider with no key, so the SDK never reads one from the environment", () => {
+  const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.editSettings(formOf(WITH_CLAUDE));
+  expect(lifecycle.snapshot().content).toMatchObject({ savable: false });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([]);
+
+  lifecycle.typeAiKey(row("0"), key("sk-ant-typed"));
+  expect(lifecycle.snapshot().content).toMatchObject({ savable: true });
+  lifecycle.saveSettings();
+  expect(saved).toEqual([WITH_CLAUDE]);
 });
 
 test("Cancel drops AI Provider edits and typed keys", () => {
@@ -1391,12 +1421,12 @@ test("the system description holds what is stored and drawn, and the installed P
           kind: "openai-compatible",
           baseUrl: "https://school.openai.azure.com/openai/v1",
         },
-        models: [{ id: "gpt-5", acceptsImages: true }],
+        models: [{ id: parseModelId("gpt-5"), acceptsImages: true }],
       },
       {
         label: parseAiProviderLabel("Claude"),
         endpoint: { kind: "anthropic" },
-        models: [{ id: "claude-opus-5-5", acceptsImages: true }],
+        models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
       },
     ],
   };
@@ -1966,9 +1996,9 @@ function withAssistant(
       saveModels: (models) => {
         saved.push(new Map(models));
       },
-      context: ({ manifest }, language) => {
+      context: ({ manifest }) => {
         read.push(manifest.id);
-        return `Context of ${manifest.id} in ${language}`;
+        return (language) => `Context of ${manifest.id} in ${language}`;
       },
       chat: (request) => {
         requests.push(request);
@@ -2050,6 +2080,19 @@ test("the open Panel's current model is the Default AI Provider's, with whether 
       acceptsImages: true,
     },
   });
+});
+
+test("the context's Display Language is the one at send, while its files are read only at open", () => {
+  const { lifecycle, requests, read } = withAssistant();
+  lifecycle.open(HELPER);
+  lifecycle.showSettings();
+  lifecycle.editSettings(formOf(IN_CHINESE));
+  lifecycle.saveSettings();
+  lifecycle.open(HELPER);
+
+  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  expect(requests[0]?.system).toBe("Context of regex-helper in zh-HK");
+  expect(read).toEqual(["regex-helper"]);
 });
 
 test("a message streams a reply from the Default AI Provider, with the context read at open", async () => {
@@ -2182,7 +2225,11 @@ test("closing the Plugin cancels its reply and drops its conversation", async ()
 
 test("the model picker saves its choice at once, for its Plugin only, and later messages use it", () => {
   const local = parseAiProviderLabel("Local");
-  const big = { kind: "chosen" as const, provider: local, model: "big-model" };
+  const big = {
+    kind: "chosen" as const,
+    provider: local,
+    model: parseModelId("big-model"),
+  };
   const other = id("other-helper");
   const stored: HubSettings = {
     ...FIRST_LAUNCH_SETTINGS,
@@ -2190,7 +2237,7 @@ test("the model picker saves its choice at once, for its Plugin only, and later 
       {
         label: local,
         endpoint: { kind: "openai-compatible", baseUrl: "http://localhost:1" },
-        models: [{ id: "big-model", acceptsImages: true }],
+        models: [{ id: parseModelId("big-model"), acceptsImages: true }],
       },
     ],
   };
@@ -2241,7 +2288,7 @@ test("a chosen provider or model since removed is missing: it offers no images, 
   const gone = {
     kind: "chosen" as const,
     provider: parseAiProviderLabel("Gone"),
-    model: "x",
+    model: parseModelId("x"),
   };
   const { lifecycle, requests } = withAssistant(
     WITH_CLAUDE,

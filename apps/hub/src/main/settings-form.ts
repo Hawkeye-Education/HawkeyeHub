@@ -4,16 +4,18 @@
 
 import {
   HubSettingsSchema,
+  AiProviderRowSchema,
   type AiProviderRow,
   type HubSettings,
   type HubSettingsForm,
 } from "../shared/hub-settings";
 import type { AiProviderKey, SavedProviderKey } from "./ai-keys";
+import type { AiProviderLabel } from "./ids";
 
 /** The form showing `settings`: each stored provider in a row of its own, numbered in order. */
 export function formOf(settings: HubSettings): HubSettingsForm {
-  // The index makes a row unique within the form, and the `as` grants the brand.
-  const rowOf = (index: number) => String(index) as AiProviderRow;
+  // The index makes a row unique within the form.
+  const rowOf = (index: number) => AiProviderRowSchema.parse(String(index));
   const { aiProviders, defaultAiProvider } = settings;
   return {
     ...settings,
@@ -39,16 +41,40 @@ export function formOf(settings: HubSettings): HubSettingsForm {
   };
 }
 
+/** The rows whose provider has a key: one typed for it, or the stored key of the provider it was. */
+export function rowsWithKey(
+  form: HubSettingsForm,
+  typedKeys: ReadonlyMap<AiProviderRow, AiProviderKey>,
+  keyed: ReadonlySet<AiProviderLabel>,
+): AiProviderRow[] {
+  return form.aiProviders.flatMap(({ row, was }) =>
+    typedKeys.has(row) || (was.kind === "stored" && keyed.has(was.label))
+      ? [row]
+      : [],
+  );
+}
+
 /**
  * The Hub Settings `form` saves as, and what happens to each provider's key, with the keys typed
- * by row; `invalid` when the form is not valid Hub Settings.
+ * by row and the labels with a stored key; `invalid` when the form is not valid Hub Settings, or
+ * an Anthropic provider has no key (the SDK would otherwise read `ANTHROPIC_API_KEY`).
  */
 export function settingsFrom(
   form: HubSettingsForm,
   typedKeys: ReadonlyMap<AiProviderRow, AiProviderKey>,
+  keyed: ReadonlySet<AiProviderLabel>,
 ):
   | { kind: "valid"; settings: HubSettings; keys: SavedProviderKey[] }
   | { kind: "invalid" } {
+  const withKey = rowsWithKey(form, typedKeys, keyed);
+  if (
+    form.aiProviders.some(
+      ({ row, endpoint }) =>
+        endpoint.kind === "anthropic" && !withKey.includes(row),
+    )
+  ) {
+    return { kind: "invalid" };
+  }
   const { defaultAiProvider } = form;
   const defaultLabel =
     defaultAiProvider.kind === "chosen"

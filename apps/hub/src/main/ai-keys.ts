@@ -7,7 +7,8 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import type { Branded } from "../shared/branded";
-import { AiProviderLabelSchema } from "../shared/hub-settings";
+import { AiProviderLabelSchema, NonBlank } from "../shared/hub-settings";
+import type { HubEvent } from "./diagnostics";
 import { errorCode } from "./error-code";
 import type { AbsolutePath, AiProviderLabel } from "./ids";
 
@@ -16,10 +17,7 @@ export const KEYS_FILE = "ai-provider-keys.bin";
 export type AiProviderKey = Branded<string, "AiProviderKey">;
 
 // As in `ids.ts`, the check makes it the type, and the `as` grants the brand.
-const AiProviderKeySchema = z
-  .string()
-  .refine((raw) => raw.trim() !== "", "blank")
-  .transform((raw) => raw as AiProviderKey);
+const AiProviderKeySchema = NonBlank.transform((raw) => raw as AiProviderKey);
 
 export function parseAiProviderKey(raw: string): AiProviderKey {
   return AiProviderKeySchema.parse(raw);
@@ -38,10 +36,15 @@ const KeysFileSchema = z.array(
 );
 
 /**
- * The stored keys. A missing file is no keys. One that cannot be decrypted (another OS user's, say)
- * or parsed throws: losing every key silently would look like none was ever set.
+ * The stored keys. A missing file is no keys. One that cannot be decrypted or parsed (another OS
+ * user's, or one cut short by a crash just after a Save) is no keys too, recorded once in hub.log
+ * without its contents (ADR 0012), so the Hub still starts and staff type the keys again.
  */
-export function loadAiKeys(dataDir: AbsolutePath, cipher: KeyCipher): AiKeys {
+export function loadAiKeys(
+  dataDir: AbsolutePath,
+  cipher: KeyCipher,
+  recordHubEvent: (event: HubEvent) => void,
+): AiKeys {
   let encrypted: Buffer;
   try {
     encrypted = readFileSync(join(dataDir, KEYS_FILE));
@@ -49,9 +52,14 @@ export function loadAiKeys(dataDir: AbsolutePath, cipher: KeyCipher): AiKeys {
     if (errorCode(error) === "ENOENT") return new Map();
     throw error;
   }
-  return new Map(
-    KeysFileSchema.parse(JSON.parse(cipher.decryptString(encrypted))),
-  );
+  try {
+    return new Map(
+      KeysFileSchema.parse(JSON.parse(cipher.decryptString(encrypted))),
+    );
+  } catch {
+    recordHubEvent({ kind: "ai-keys-unreadable" });
+    return new Map();
+  }
 }
 
 /** Writes every key, through a temporary file as `saveHubSettings` does. */

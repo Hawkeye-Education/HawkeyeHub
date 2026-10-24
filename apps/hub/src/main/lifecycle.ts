@@ -34,13 +34,13 @@ import type {
   AiModelChoice,
 } from "../shared/ai-call";
 import type { AiProviderRow, HubSettingsForm } from "../shared/hub-settings";
-import { AiCallFailed, type AiChat } from "./ai";
+import { AiCallFailed, labelAndModels, targetOf, type AiChat } from "./ai";
 import type { AssistantModels } from "./assistant-models";
 import type { AiProviderKey, SavedProviderKey } from "./ai-keys";
 import type { SystemDescription } from "./diagnostics";
 import { HUB_API_VERSION } from "./hub-api-version";
 import type { AiProviderLabel, HubApiVersion } from "./ids";
-import { formOf, settingsFrom } from "./settings-form";
+import { formOf, rowsWithKey, settingsFrom } from "./settings-form";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import { pluginIconUrl, registryIconUrl } from "./plugin-icons";
 import type { InstallOutcome } from "./plugin-install";
@@ -130,8 +130,9 @@ export interface Lifecycle {
    */
   updated(plugin: InstalledPlugin): void;
   /**
-   * Replaces the unsaved form. Removing the Default AI Provider's provider sets the default back to
-   * `none`, and drops any key typed for it. Throws if settings are not showing.
+   * Replaces the unsaved form. Removing the Default AI Provider's provider or model sets the
+   * default back to `none`; removing a provider drops any key typed for it. Throws if settings are
+   * not showing.
    */
   editSettings(form: HubSettingsForm): void;
   /**
@@ -141,8 +142,9 @@ export interface Lifecycle {
   typeAiKey(row: AiProviderRow, key: AiProviderKey): void;
   /**
    * Saves the form through the save callback and makes it what is stored. Does nothing when the
-   * form is what is stored and no key was typed, or when it is not valid Hub Settings (the form
-   * shows it is not savable). Throws if settings are not showing.
+   * form is what is stored and no key was typed, or when it is not valid Hub Settings or an
+   * Anthropic provider has no key (the form shows it is not savable). Throws if settings are not
+   * showing.
    */
   saveSettings(): void;
   /** Puts the form back to what is stored, dropping typed keys. Throws if settings are not showing. */
@@ -191,8 +193,11 @@ export interface LifecycleDeps {
     keys: readonly SavedProviderKey[],
   ) => ReadonlySet<AiProviderLabel>;
   assistant: {
-    /** An installed Plugin's Assistant context (`assistantContext`), read as the Plugin opens. */
-    context: (plugin: InstalledPlugin, language: DisplayLanguage) => string;
+    /**
+     * An installed Plugin's Assistant context (`assistantContext`): its files read as the Plugin
+     * opens, giving the system prompt in the Display Language at each send.
+     */
+    context: (plugin: InstalledPlugin) => (language: DisplayLanguage) => string;
     /** Starts a chat through the call module (`startAiChat`). */
     chat: (request: AiChatRequest) => AiChat;
     /** Each Plugin's Assistant model as stored (`loadAssistantModels`). */
@@ -409,12 +414,6 @@ export function createLifecycle({
   };
   const edited = (): boolean =>
     typedKeys.size > 0 || !isDeepStrictEqual(form, formOf(stored));
-  const keysSet = (): AiProviderRow[] =>
-    form.aiProviders.flatMap(({ row, was }) =>
-      typedKeys.has(row) || (was.kind === "stored" && keyed.has(was.label))
-        ? [row]
-        : [],
-    );
   // Picking a Plugin or quitting with unsaved edits asks the Discard dialog first. Edits are only
   // made while settings show, and can only be left behind through **Discard**.
   const discardingEditsFirst = (proceed: () => void): void => {
@@ -478,8 +477,9 @@ export function createLifecycle({
   // Each open Plugin with an Assistant: its context, read at open, its conversation, and the chat
   // streaming the reply, if one is.
   interface Talk {
-    system: string;
+    system: (language: DisplayLanguage) => string;
     conversation: Conversation;
+    // Null while no reply is streaming: between replies, after one ends, and once it is dropped.
     chat: AiChat | null;
   }
   const talks = new Map<PluginId, Talk>();
@@ -502,21 +502,26 @@ export function createLifecycle({
   // The Plugin's picker choice resolved against the saved Hub Settings, as the call module does.
   const currentModel = (id: PluginId): CurrentModel => {
     const choice = modelOf(id);
-    const chosen =
-      choice.kind === "default" ? stored.defaultAiProvider : choice;
-    if (chosen.kind === "none") return { choice, kind: "none" };
-    const acceptsImages = stored.aiProviders
-      .find(({ label }) => label === chosen.provider)
-      ?.models.find(({ id: model }) => model === chosen.model)?.acceptsImages;
-    // Only a chosen one can be missing: HubSettingsSchema keeps the Default configured.
-    if (acceptsImages === undefined) return { choice, kind: "missing" };
-    return {
-      choice,
-      kind: "chosen",
-      provider: chosen.provider,
-      model: chosen.model,
-      acceptsImages,
-    };
+    const target = targetOf(stored, choice);
+    if (target.kind === "found") {
+      const { provider, model } = target;
+      return {
+        choice,
+        kind: "chosen",
+        provider: provider.label,
+        model: model.id,
+        acceptsImages: model.acceptsImages,
+      };
+    }
+    switch (target.failure.code) {
+      case "no-provider":
+        return { choice, kind: "none" };
+      // Only a chosen one can be missing: HubSettingsSchema keeps the Default configured.
+      case "provider-missing":
+        return { choice, kind: "missing" };
+      default:
+        return target.failure satisfies never;
+    }
   };
   const panelOf = (id: PluginId): AssistantPanel => {
     const talk = talks.get(id);
@@ -535,10 +540,7 @@ export function createLifecycle({
             }))
           : [],
       model: currentModel(id),
-      providers: stored.aiProviders.map(({ label, models }) => ({
-        label,
-        models,
-      })),
+      providers: stored.aiProviders.map(labelAndModels),
     };
   };
   // A chat dropped (by New conversation or a close) is no longer the talk's: nothing more of it
@@ -626,8 +628,8 @@ export function createLifecycle({
           ? {
               ...content,
               form,
-              keysSet: keysSet(),
-              savable: settingsFrom(form, typedKeys).kind === "valid",
+              keysSet: rowsWithKey(form, typedKeys, keyed),
+              savable: settingsFrom(form, typedKeys, keyed).kind === "valid",
             }
           : content,
       dialog: dialogOf(asking),
@@ -666,7 +668,7 @@ export function createLifecycle({
           plugin.manifest.assistant.kind === "enabled"
         ) {
           talks.set(id, {
-            system: assistant.context(plugin, listing.language),
+            system: assistant.context(plugin),
             conversation: NEW_CONVERSATION,
             chat: null,
           });
@@ -837,7 +839,9 @@ export function createLifecycle({
       const { defaultAiProvider } = next;
       form =
         defaultAiProvider.kind === "chosen" &&
-        !rows.has(defaultAiProvider.provider)
+        next.aiProviders
+          .find(({ row }) => row === defaultAiProvider.provider)
+          ?.models.some(({ id }) => id === defaultAiProvider.model) !== true
           ? { ...next, defaultAiProvider: { kind: "none" } }
           : next;
       typedKeys = new Map([...typedKeys].filter(([row]) => rows.has(row)));
@@ -854,7 +858,7 @@ export function createLifecycle({
     saveSettings: () => {
       const showing = settingsShowing("saveSettings");
       if (!edited()) return;
-      const valid = settingsFrom(form, typedKeys);
+      const valid = settingsFrom(form, typedKeys, keyed);
       if (valid.kind === "invalid") return;
       keyed = save(valid.settings, valid.keys);
       stored = valid.settings;
@@ -907,7 +911,7 @@ export function createLifecycle({
       ];
       const chat = assistant.chat({
         model: modelOf(id),
-        system: talk.system,
+        system: talk.system(listing.language),
         messages,
       });
       talk.chat = chat;

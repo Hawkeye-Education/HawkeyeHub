@@ -23,17 +23,21 @@ const LANGUAGE_NAMES = {
 // A Theme's own name, the same in every Display Language.
 const THEME_LABELS = new Map([["hawkeye", "Hawkeye"]]);
 
-const AI_PROVIDER_KINDS = [
-  "openai-compatible",
-  "anthropic",
-] as const satisfies readonly AiProviderKind[];
-
 // Every handler using these is bound to an <input> or <select>, the event's target.
 function inputOf(event: Event): HTMLInputElement {
   return event.target as HTMLInputElement;
 }
 function valueOf(event: Event): string {
   return (event.target as HTMLInputElement | HTMLSelectElement).value;
+}
+
+/**
+ * The AI Provider kinds, from the names Strings gives each: a `Record<AiProviderKind, string>`
+ * checked with `satisfies`, so it has exactly the schema's kinds. Object.keys widens them to string,
+ * so the `as` narrows them back.
+ */
+function kindsOf(names: Record<AiProviderKind, string>): AiProviderKind[] {
+  return Object.keys(names) as AiProviderKind[];
 }
 
 function themeLabel(name: ThemeName): string {
@@ -181,7 +185,7 @@ export class HubSettings extends LitElement {
                   }));
                 }}
               >
-                ${AI_PROVIDER_KINDS.map(
+                ${kindsOf(strings.providerKinds).map(
                   (kind) =>
                     html`<option
                       value=${kind}

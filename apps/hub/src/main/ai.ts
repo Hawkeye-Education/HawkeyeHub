@@ -55,21 +55,35 @@ export interface AiChat {
   cancel(): void;
 }
 
+/** A provider's label and models: what a model picker offers. No key, no Base URL. */
+export function labelAndModels({
+  label,
+  models,
+}: AiProvider): Pick<AiProvider, "label" | "models"> {
+  return { label, models };
+}
+
 /** What `hub.ai.providers()` lists: no key, no Base URL. */
 export function aiProvidersOf({ aiProviders }: HubSettings): AiProviderInfo[] {
-  return aiProviders.map(({ label, endpoint: { kind }, models }) => ({
-    label,
-    kind,
-    models,
+  return aiProviders.map((provider) => ({
+    ...labelAndModels(provider),
+    kind: provider.endpoint.kind,
   }));
 }
 
 /** The provider and model a chat uses, or why there is none. */
-type Target =
+export type Target =
   | { kind: "found"; provider: AiProvider; model: AiProvider["models"][number] }
-  | { kind: "failed"; failure: AiFailure };
+  | {
+      kind: "failed";
+      failure: Extract<AiFailure, { code: "no-provider" | "provider-missing" }>;
+    };
 
-function targetOf(settings: HubSettings, model: AiModelChoice): Target {
+/**
+ * A model choice resolved against the saved Hub Settings: the one resolver, for a chat and for the
+ * Assistant Panel's current model alike.
+ */
+export function targetOf(settings: HubSettings, model: AiModelChoice): Target {
   const chosen = model.kind === "default" ? settings.defaultAiProvider : model;
   if (chosen.kind === "none") {
     return { kind: "failed", failure: { code: "no-provider" } };
@@ -201,7 +215,7 @@ export function serveAi(
     })();
   });
   webContents.ipc.handle(AI_CANCEL, (_event, raw: unknown) => {
-    chats.get(z.number().parse(raw))?.cancel();
+    chats.get(z.int().parse(raw))?.cancel();
   });
   webContents.once("destroyed", () => {
     for (const chat of chats.values()) chat.cancel();
@@ -211,23 +225,26 @@ export function serveAi(
 function languageModelOf(
   { endpoint }: AiProvider,
   model: string,
-  // A provider may have no key, such as a local Ollama.
+  // An OpenAI-compatible provider may have no key, such as a local Ollama.
   key: AiProviderKey | undefined,
   fetch: typeof globalThis.fetch,
 ): LanguageModel {
-  const apiKey = key === undefined ? {} : { apiKey: key };
   switch (endpoint.kind) {
     case "openai-compatible":
       return createOpenAICompatible({
         name: "hub",
         baseURL: endpoint.baseUrl,
         fetch,
-        ...apiKey,
+        ...(key === undefined ? {} : { apiKey: key }),
       }).chatModel(model);
     case "anthropic":
-      // ponytail: with no key the SDK reads ANTHROPIC_API_KEY, then fails as a Hub error;
-      // refuse earlier if Settings ever lets an Anthropic provider save without a key.
-      return createAnthropic({ fetch, ...apiKey })(model);
+      // Save refuses an Anthropic provider with no key; only an unreadable key file leaves one.
+      // It fails as Anthropic answers a missing key, without a call: given no key, the SDK would
+      // read ANTHROPIC_API_KEY from the environment instead.
+      if (key === undefined) {
+        throw new AiCallFailed({ code: "provider-rejected", status: 401 });
+      }
+      return createAnthropic({ fetch, apiKey: key })(model);
     default:
       return endpoint satisfies never;
   }

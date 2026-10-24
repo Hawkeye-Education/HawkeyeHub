@@ -1,18 +1,21 @@
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, expect, test } from "vitest";
 import {
+  KEYS_FILE,
   keysAfterSave,
   loadAiKeys,
   parseAiProviderKey,
   saveAiKeys,
   type KeyCipher,
 } from "./ai-keys";
+import type { HubEvent } from "./diagnostics";
 import { FIRST_LAUNCH_SETTINGS, saveHubSettings } from "./hub-settings";
 import {
   parseAbsolutePath,
   parseAiProviderLabel,
+  parseModelId,
   type AbsolutePath,
 } from "./ids";
 
@@ -24,6 +27,10 @@ const cipher: KeyCipher = {
 };
 
 let dataDir: AbsolutePath;
+
+const unexpected = (event: HubEvent): never => {
+  throw new Error(`Unexpected hub.log event ${event.kind}`);
+};
 
 beforeEach(() => {
   dataDir = parseAbsolutePath(mkdtempSync(join(tmpdir(), "hub-ai-keys-")));
@@ -41,7 +48,7 @@ function filesText(): string {
 }
 
 test("with no key file there are no keys", () => {
-  expect(loadAiKeys(dataDir, cipher)).toEqual(new Map());
+  expect(loadAiKeys(dataDir, cipher, unexpected)).toEqual(new Map());
 });
 
 test("saved keys load back the same, and are never written readable", () => {
@@ -50,11 +57,11 @@ test("saved keys load back the same, and are never written readable", () => {
     [CLAUDE, CLAUDE_KEY],
   ]);
   saveAiKeys(dataDir, cipher, keys);
-  expect(loadAiKeys(dataDir, cipher)).toEqual(keys);
+  expect(loadAiKeys(dataDir, cipher, unexpected)).toEqual(keys);
   expect(filesText()).not.toContain("secret");
 });
 
-test("a key file this OS user cannot decrypt is an error, not an empty store", () => {
+test("a key file that cannot be decrypted holds no keys, and says so once in hub.log", () => {
   saveAiKeys(dataDir, cipher, new Map([[AZURE, AZURE_KEY]]));
   const otherUser: KeyCipher = {
     ...cipher,
@@ -62,7 +69,20 @@ test("a key file this OS user cannot decrypt is an error, not an empty store", (
       throw new Error("Error while decrypting the ciphertext provided");
     },
   };
-  expect(() => loadAiKeys(dataDir, otherUser)).toThrow();
+  const events: HubEvent[] = [];
+  expect(loadAiKeys(dataDir, otherUser, (event) => events.push(event))).toEqual(
+    new Map(),
+  );
+  expect(events).toEqual([{ kind: "ai-keys-unreadable" }]);
+});
+
+test("a key file that decrypts to something else holds no keys", () => {
+  writeFileSync(join(dataDir, KEYS_FILE), cipher.encryptString("{"));
+  const events: HubEvent[] = [];
+  expect(loadAiKeys(dataDir, cipher, (event) => events.push(event))).toEqual(
+    new Map(),
+  );
+  expect(events).toEqual([{ kind: "ai-keys-unreadable" }]);
 });
 
 test("Save keeps unchanged keys, replaces typed ones, moves a renamed provider's key and drops a removed one", () => {
@@ -105,7 +125,7 @@ test("hub-settings.json never holds a key", () => {
       {
         label: AZURE,
         endpoint: { kind: "anthropic" },
-        models: [{ id: "claude-opus-5-5", acceptsImages: true }],
+        models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
       },
     ],
   });

@@ -9,6 +9,7 @@ import type { Branded } from "./branded";
 import type {
   AiProvider,
   AiProviderLabel,
+  ModelId,
   AiProviderRow,
   HubSettings,
   HubSettingsForm,
@@ -189,7 +190,7 @@ export type CurrentModel = { choice: AiModelChoice } & (
   | {
       kind: "chosen";
       provider: AiProviderLabel;
-      model: string;
+      model: ModelId;
       acceptsImages: boolean;
     }
 );

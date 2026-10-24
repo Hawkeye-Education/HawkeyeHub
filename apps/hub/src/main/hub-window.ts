@@ -50,6 +50,7 @@ import type { HubMode } from "./hub-mode";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
 import type { Lifecycle } from "./lifecycle";
 import { contentAreaOf, createPluginViews } from "./plugin-views";
+import type { AiCallDeps } from "./ai";
 import {
   countHubChromeCrashes,
   HUB_CHROME_CRASH_WINDOW_SECONDS,
@@ -126,6 +127,7 @@ export function openHubWindow(
   lifecycle: Lifecycle,
   hubDataDir: AbsolutePath,
   mode: HubMode["kind"],
+  aiDepsNow: () => AiCallDeps,
 ): BaseWindow {
   // Native frame and title bar until the Theme brings the Hub Chrome's own (ADR 0006).
   // Size and position are not remembered.
@@ -148,6 +150,7 @@ export function openHubWindow(
     hubDataDir,
     lifecycle,
     mode,
+    aiDepsNow,
   );
   // The dialog overlay, while a dialog is showing: the whole window, so nothing beneath takes a
   // click, and transparent but for the dialog it draws. Null while no dialog is showing.

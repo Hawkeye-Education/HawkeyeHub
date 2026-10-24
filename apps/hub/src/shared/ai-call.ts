@@ -4,7 +4,7 @@
 
 import type { HubError } from "@hawkeye-hub/hub-api";
 import { z } from "zod";
-import { AiProviderLabelSchema } from "./hub-settings";
+import { AiProviderLabelSchema, ModelIdSchema } from "./hub-settings";
 
 /** Why a chat failed, as `hub.ai` rejects with it. There is no fallback to another provider. */
 export type AiFailure = Extract<
@@ -23,7 +23,7 @@ export const AiModelChoiceSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("chosen"),
     provider: AiProviderLabelSchema,
-    model: z.string(),
+    model: ModelIdSchema,
   }),
 ]);
 export type AiModelChoice = z.infer<typeof AiModelChoiceSchema>;
@@ -57,7 +57,7 @@ export type AiMessage = AiChatRequest["messages"][number];
 
 /** The preload's call on `AI_CHAT`: the request, under the id main tags its stream events with. */
 export const AiChatCallSchema = z.strictObject({
-  id: z.number(),
+  id: z.int(),
   request: AiChatRequestSchema,
 });
 export type AiChatCall = z.infer<typeof AiChatCallSchema>;

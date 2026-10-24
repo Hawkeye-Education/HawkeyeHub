@@ -12,13 +12,13 @@ import {
   safeStorage,
   session,
 } from "electron";
-import { startAiChat } from "./ai";
+import { startAiChat, type AiCallDeps } from "./ai";
 import { keysAfterSave, loadAiKeys, saveAiKeys } from "./ai-keys";
 import { assistantContext } from "./assistant-context";
 import { loadAssistantModels, saveAssistantModels } from "./assistant-models";
-import { aiCallDeps } from "./plugin-views";
+import { aiCallDeps } from "./ai-deps";
 import { killBackendsNow } from "./backend";
-import { openDiagnostics } from "./diagnostics";
+import { openDiagnostics, type HubEvent } from "./diagnostics";
 import { displayLanguageFor } from "./display-language";
 import { loadHubSettings, saveHubSettings } from "./hub-settings";
 import { openHubWindow } from "./hub-window";
@@ -133,6 +133,9 @@ function runHub(): void {
     now,
   );
   diagnostics.recordHubEvent({ kind: "hub-opened" });
+  const recordHubEvent = (event: HubEvent): void => {
+    diagnostics.recordHubEvent(event);
+  };
   // A crash is logged synchronously, then the Hub exits at once: after an uncaught error its
   // state is unknown, so it does not run will-quit and log "Hub closing". There is no clean-exit
   // marker and no prompt about the crash on the next start (ADR 0012). Electron's main process only
@@ -294,21 +297,26 @@ function runHub(): void {
           lifecycle.uninstallFinished(id);
         });
     };
+    // Decrypted once, at start, and replaced on Save: a chat never reads the key file.
+    let aiKeys = loadAiKeys(hubDataDir, safeStorage, recordHubEvent);
+    // With the Hub Settings and keys saved when each chat starts, for `hub.ai` and the Assistant.
+    const aiDepsNow = (): AiCallDeps =>
+      aiCallDeps(diagnostics, lifecycle.storedSettings(), aiKeys);
     const lifecycle = createLifecycle({
       // package.json's `version`: without one Electron would answer its own version.
       hubVersion: parseHubVersion(app.getVersion()),
       systemLanguage: displayLanguageFor(app.getPreferredSystemLanguages()),
       installed: installed.loaded,
       storedAtStart: settings,
-      keyedAtStart: new Set(loadAiKeys(hubDataDir, safeStorage).keys()),
+      keyedAtStart: new Set(aiKeys.keys()),
       save: (saved, providerKeys) => {
-        const storedKeys = loadAiKeys(hubDataDir, safeStorage);
-        const keys = keysAfterSave(storedKeys, providerKeys);
+        const keys = keysAfterSave(aiKeys, providerKeys);
         // Written only when a key changed: safeStorage's own key reaches disk only some time after
         // first use (seen: a Hub killed after a Save could not decrypt the file on its next start).
-        if (!isDeepStrictEqual(keys, storedKeys)) {
+        if (!isDeepStrictEqual(keys, aiKeys)) {
           saveAiKeys(hubDataDir, safeStorage, keys);
         }
+        aiKeys = keys;
         saveHubSettings(hubDataDir, saved);
         applyColourScheme(saved);
         return new Set(keys.keys());
@@ -316,18 +324,13 @@ function runHub(): void {
       unknownTheme: (name) => {
         diagnostics.recordHubEvent({ kind: "theme-unknown", name });
       },
-      // With the Hub Settings and keys saved when each chat starts, as `hub.ai`'s are.
       assistant: {
-        context: ({ folder }, language) => assistantContext(folder, language),
-        modelsAtStart: loadAssistantModels(hubDataDir),
+        context: ({ folder }) => assistantContext(folder),
+        modelsAtStart: loadAssistantModels(hubDataDir, recordHubEvent),
         saveModels: (models) => {
           saveAssistantModels(hubDataDir, models);
         },
-        chat: (request) =>
-          startAiChat(
-            aiCallDeps(hubDataDir, diagnostics, lifecycle.storedSettings()),
-            request,
-          ),
+        chat: (request) => startAiChat(aiDepsNow(), request),
       },
       // Dev mode runs no Registry checks (PLUGIN_STANDARD §9.4).
       registry:
@@ -365,6 +368,7 @@ function runHub(): void {
       lifecycle,
       hubDataDir,
       startedAs.kind,
+      aiDepsNow,
     );
   });
 
