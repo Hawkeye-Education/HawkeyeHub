@@ -79,9 +79,10 @@ def test_an_uncaught_exception_is_answered_with_internal_and_logs_its_traceback(
             backend.request("crash", {})
         assert (failed.value.code, failed.value.reason) == (-32603, "internal")
         assert "ValueError: a bug in the handler" in failed.value.message
-        assert "Traceback" in backend.stderr
         # It keeps serving.
         assert backend.request("echo", {"text": "a", "repeatCount": 1}) == {"texts": ["a"]}
+    # stderr is read on its own thread, so it is complete only once the Backend has exited.
+    assert "Traceback" in backend.stderr
 
 
 def test_an_unknown_method_is_answered_with_method_not_found(tmp_path: Path) -> None:
