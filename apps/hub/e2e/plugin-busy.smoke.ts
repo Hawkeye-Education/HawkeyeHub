@@ -1,6 +1,6 @@
 // A Busy Plugin asks before it closes and before the Hub quits, on the dialog overlay (#54).
 
-import type { ElectronApplication, Locator, Page } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import {
   answerWithKey,
   displayLanguageOf,
@@ -9,7 +9,10 @@ import {
   fixtureInstall,
   installFixturePlugins,
   launchHub,
+  overlay,
+  overlayShowing,
   pluginPage,
+  press,
   test,
   type DisplayLanguage,
 } from "./hub";
@@ -69,33 +72,6 @@ async function openBusy(
   const page = await pluginPage(() => hub.windows(), id);
   await page.evaluate((reason) => window.hub.busy.set(reason), reason);
   return page;
-}
-
-/** The dialog overlay's page, once it is showing. */
-async function overlay(hub: ElectronApplication): Promise<Page> {
-  let page: Page | undefined;
-  await expect
-    .poll(() => {
-      page = hub.windows().find((each) => each.url().endsWith("#dialog"));
-      return page !== undefined;
-    })
-    .toBe(true);
-  if (page === undefined) throw new Error("unreachable: polled for above");
-  return page;
-}
-
-/**
- * Presses a dialog button with Enter going down only. Its answer takes the overlay away, so a mouse
- * click can lose its page before the mouseup that fired it is acknowledged (seen on macOS CI).
- */
-async function press(button: Locator): Promise<void> {
-  await button.focus();
-  await answerWithKey(button.page(), "Enter");
-}
-
-/** Whether the dialog overlay is showing. */
-function overlayShowing(hub: ElectronApplication): boolean {
-  return hub.windows().some((page) => page.url().endsWith("#dialog"));
 }
 
 test("closing a Busy Plugin asks with its reason; Keep open leaves it open and Close anyway closes it", async ({
@@ -232,4 +208,40 @@ test("quitting with two Busy Plugins asks once, listing both; Keep open keeps th
   page = await overlay(hub);
   await press(page.getByRole("button", { name: words.quitAnyway }));
   expect(await exitCode).toBe(0);
+});
+
+test("a Busy Plugin whose Backend crashes while its dialog is up closes, and its crash message takes the dialog's place", async ({
+  dataDir,
+}) => {
+  installFixturePlugins(dataDir, [fixtureInstall("crashing-backend")]);
+  const hub = await launchHub(dataDir);
+  try {
+    const hubChrome = await hub.firstWindow();
+    await displayLanguageOf(hubChrome);
+    const page = await openBusy(
+      hub,
+      hubChrome,
+      "Crashing",
+      "crashing-backend",
+      "Saving",
+    );
+    const closeButton = hubChrome.getByRole("button", {
+      name: /^(Close Crashing|關閉 Crashing)$/,
+    });
+    await closeButton.click();
+    await overlay(hub);
+
+    await page.evaluate(() => {
+      void window.hub.backend.request("exit", {});
+    });
+
+    await expect(closeButton).toHaveCount(0);
+    const dialog = (await overlay(hub)).getByRole("dialog");
+    await expect(dialog).toContainText(
+      /Crashing (stopped unexpectedly|意外停止運作)/,
+    );
+    await expect(dialog).not.toContainText("Saving");
+  } finally {
+    await hub.close();
+  }
 });

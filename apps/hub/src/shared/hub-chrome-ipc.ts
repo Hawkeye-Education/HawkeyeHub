@@ -225,21 +225,37 @@ export interface BusyPlugin {
 }
 
 /**
+ * Why a Plugin closed abnormally, in the words of its crash message (ADR 0012). Each cause has its
+ * words in the Hub Chrome's strings.
+ */
+export type CrashCause = "crashed" | "failed-to-start" | "stopped-responding";
+
+/** A Plugin that closed abnormally, by its name in the Display Language. */
+export interface CrashedPlugin {
+  id: PluginId;
+  name: string;
+}
+
+/**
  * A Hub Chrome dialog. Its Busy reasons are those at the time it was asked: a Plugin clearing or
  * changing Busy leaves the dialog as it is (spec #44). A Plugin that closes leaves it.
  * `discard-changes` asks before picking a Plugin or quitting drops unsaved Hub Settings edits.
  * `uninstall` confirms an uninstall, with its "Also delete my data" checkbox.
+ * `plugin-crashed` is a crash message: its **Export diagnostics** leaves it up, and **OK**
+ * dismisses it.
  */
 export type HubChromeDialog =
   | { kind: "busy-close"; plugin: BusyPlugin }
   | { kind: "busy-quit"; plugins: BusyPlugin[] }
   | { kind: "discard-changes" }
-  | { kind: "uninstall"; plugin: { id: PluginId; name: string } };
+  | { kind: "uninstall"; plugin: { id: PluginId; name: string } }
+  | { kind: "plugin-crashed"; plugin: CrashedPlugin; cause: CrashCause };
 
 /**
  * Staff's answers to the pending dialog: **Keep open**, or **Close anyway** / **Quit anyway**, to
  * a Busy dialog; **Keep editing** or **Discard** to the Discard dialog; **Keep installed**, or
- * **Uninstall** with the checkbox unticked or ticked, to the uninstall dialog.
+ * **Uninstall** with the checkbox unticked or ticked, to the uninstall dialog; **OK** to a crash
+ * message.
  */
 export const DIALOG_ANSWERS = [
   "keep-open",
@@ -250,6 +266,7 @@ export const DIALOG_ANSWERS = [
   "keep-installed",
   "uninstall",
   "uninstall-and-delete-data",
+  "ok",
 ] as const;
 export type DialogAnswer = (typeof DIALOG_ANSWERS)[number];
 
@@ -259,6 +276,7 @@ export const KEEP_ANSWERS = {
   "busy-quit": "keep-open",
   "discard-changes": "keep-editing",
   uninstall: "keep-installed",
+  "plugin-crashed": "ok",
 } as const satisfies Record<HubChromeDialog["kind"], DialogAnswer>;
 
 /** What the Hub Chrome preload exposes as `window.hubChrome`. */

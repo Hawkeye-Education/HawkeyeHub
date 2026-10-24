@@ -29,7 +29,7 @@ import {
 } from "../shared/plugin-preload";
 import { serveAi, type AiCallDeps } from "./ai";
 import { startBackend } from "./backend";
-import type { Diagnostics, NetErrorCode, PluginCrash } from "./diagnostics";
+import type { Diagnostics, PluginCrash, NetErrorCode } from "./diagnostics";
 import { errorCode } from "./error-code";
 import type { HubMode } from "./hub-mode";
 import type { AbsolutePath } from "./ids";
@@ -38,6 +38,7 @@ import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
 import { serveStores } from "./stores";
+import { watchResponsiveness } from "./plugin-ui-responsiveness";
 
 // What the preload sends on `BUSY`. An empty reason would show staff nothing, so it is refused. A
 // brand cannot be narrowed to, so the `as` after the check is where the type is granted.
@@ -84,12 +85,12 @@ export function createPluginViews(
   diagnostics: Diagnostics,
   hubDataDir: AbsolutePath,
   /**
-   * Told when a Plugin's crash is recorded (`close`: its UI crashed or failed to load, or its
-   * Backend broke or failed to start, and the whole Plugin closes), when a closed Plugin is gone
-   * (`closed`: its page destroyed and its Backend, if any, exited), and of its page's Busy. Asked
-   * for each installed Plugin it opens.
+   * Told when a Plugin's crash is recorded (`crashed`: its UI crashed, failed to load or stopped
+   * responding, or its Backend broke or failed to start, and the whole Plugin closes), when a
+   * closed Plugin is gone (`closed`: its page destroyed and its Backend, if any, exited), and of
+   * its page's Busy. Asked for each installed Plugin it opens.
    */
-  lifecycle: Pick<Lifecycle, "installed" | "close" | "closed" | "setBusy">,
+  lifecycle: Pick<Lifecycle, "installed" | "crashed" | "closed" | "setBusy">,
   /** Dev mode gives each Plugin UI DevTools, and copies each Backend's stderr to the terminal. */
   mode: HubMode["kind"],
   /** What a chat with an AI Provider needs, as saved when it starts (`aiCallDeps`). */
@@ -154,7 +155,7 @@ export function createPluginViews(
     const crashed = (crash: PluginCrash): void => {
       if (opened.get(id)?.view !== view) return;
       pluginSession.recordCrash(crash);
-      lifecycle.close(id);
+      lifecycle.crashed(id, crash.cause);
     };
     view.webContents.on(
       "render-process-gone",
@@ -165,6 +166,9 @@ export function createPluginViews(
         });
       },
     );
+    watchResponsiveness(view.webContents, () => {
+      crashed({ cause: "stopped-responding" });
+    });
     view.webContents.on("console-message", ({ level, message }) => {
       pluginSession.recordConsoleMessage(level, message);
     });

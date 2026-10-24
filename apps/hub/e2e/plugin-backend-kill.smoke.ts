@@ -12,6 +12,7 @@ import {
   isRunning,
   launchHub,
   lifecycleLine,
+  overlayShowing,
   pluginLogMessages,
   pluginPage,
   test,
@@ -100,8 +101,9 @@ test("a Backend that ignores shutdown is killed with its child after the grace p
       })
       .toEqual([false, false]);
     await expect(item).not.toContainText(/Closing|正在關閉/);
-    // A kill after shutdown is a normal exit: no crash record.
+    // A kill after shutdown is a normal exit: no crash record, and no crash message.
     expect(errorLines(dataDir)).toEqual([]);
+    expect(overlayShowing(hub)).toBe(false);
 
     await name.click();
     await pluginPage(() => hub.windows(), "stubborn-backend");

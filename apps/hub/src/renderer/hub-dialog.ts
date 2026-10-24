@@ -1,6 +1,6 @@
 // A Hub Chrome dialog, drawn on the dialog overlay: a modal <dialog> over a dimmed window. Its
-// first button keeps things as they are (**Keep open**, **Keep editing** or **Keep installed**),
-// focused, so Enter picks it, and Esc picks it too.
+// first button keeps things as they are (**Keep open**, **Keep editing**, **Keep installed**, or a
+// crash message's **OK**), focused, so Enter picks it, and Esc picks it too.
 
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import {
@@ -11,10 +11,10 @@ import {
 } from "../shared/hub-chrome-ipc";
 import type { Strings } from "./strings";
 
-/** A dialog button: its label and the answer it gives. */
+/** A dialog's secondary button: its label and what it does. */
 interface Button {
-  answer: DialogAnswer;
   label: string;
+  press: () => void;
 }
 
 export class HubDialog extends LitElement {
@@ -68,23 +68,29 @@ export class HubDialog extends LitElement {
   }
 
   /**
-   * The dialog's heading, its body, its first button's label, and its other button: what it says
-   * and what it answers. The first button answers `KEEP_ANSWERS`, as main expects.
+   * The dialog's heading, its body, its first button's label, and its secondary button: what it
+   * says and what it does. The first button answers `KEEP_ANSWERS`, as main expects.
    */
   private content(): {
     heading: string;
     body: TemplateResult | typeof nothing;
     keepLabel: string;
-    anyway: Button;
+    secondary: Button;
   } {
-    const { dialog, strings } = this;
+    const { dialog, strings, hub } = this;
+    const answering = (answer: DialogAnswer, label: string): Button => ({
+      label,
+      press: () => {
+        hub.answer(answer);
+      },
+    });
     switch (dialog.kind) {
       case "busy-close":
         return {
           heading: strings.closeQuestion(dialog.plugin.name),
           body: html`<p>${dialog.plugin.reason}</p>`,
           keepLabel: strings.keepOpen,
-          anyway: { answer: "close-anyway", label: strings.closeAnyway },
+          secondary: answering("close-anyway", strings.closeAnyway),
         };
       case "busy-quit":
         return {
@@ -96,14 +102,27 @@ export class HubDialog extends LitElement {
               )}
             </ul>`,
           keepLabel: strings.keepOpen,
-          anyway: { answer: "quit-anyway", label: strings.quitAnyway },
+          secondary: answering("quit-anyway", strings.quitAnyway),
         };
       case "discard-changes":
         return {
           heading: strings.discardQuestion,
           body: nothing,
           keepLabel: strings.keepEditing,
-          anyway: { answer: "discard", label: strings.discard },
+          secondary: answering("discard", strings.discard),
+        };
+      case "plugin-crashed":
+        // Exporting leaves the message up: only **OK** dismisses it.
+        return {
+          heading: strings.stoppedUnexpectedly(dialog.plugin.name),
+          body: html`<p>${strings.crashCauses[dialog.cause]}</p>`,
+          keepLabel: strings.ok,
+          secondary: {
+            label: strings.exportDiagnostics,
+            press: () => {
+              hub.exportDiagnostics();
+            },
+          },
         };
       case "uninstall":
         return {
@@ -121,10 +140,10 @@ export class HubDialog extends LitElement {
             ${strings.alsoDeleteData}</label
           >`,
           keepLabel: strings.keepInstalled,
-          anyway: {
-            answer: this.deleteData ? "uninstall-and-delete-data" : "uninstall",
-            label: strings.uninstall,
-          },
+          secondary: answering(
+            this.deleteData ? "uninstall-and-delete-data" : "uninstall",
+            strings.uninstall,
+          ),
         };
       default:
         return dialog satisfies never;
@@ -133,7 +152,7 @@ export class HubDialog extends LitElement {
 
   override render() {
     const { hub } = this;
-    const { heading, body, keepLabel, anyway } = this.content();
+    const { heading, body, keepLabel, secondary } = this.content();
     const keep = KEEP_ANSWERS[this.dialog.kind];
     // Esc cancels the <dialog>: that is the first button. Main then takes the overlay away.
     return html`<dialog
@@ -154,13 +173,7 @@ export class HubDialog extends LitElement {
         >
           ${keepLabel}
         </button>
-        <button
-          @click=${() => {
-            hub.answer(anyway.answer);
-          }}
-        >
-          ${anyway.label}
-        </button>
+        <button @click=${secondary.press}>${secondary.label}</button>
       </div>
     </dialog>`;
   }

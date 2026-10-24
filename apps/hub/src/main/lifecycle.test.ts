@@ -880,7 +880,7 @@ test("a Busy Plugin that closes abnormally while its dialog is up takes the dial
   });
 });
 
-test("a Busy Plugin that closes abnormally while the quit dialog is up leaves its list, and the last one takes the dialog with it", () => {
+test("a Busy Plugin that closes abnormally while the quit dialog is up leaves its list, and the last one takes the dialog with it and quits", () => {
   const lifecycle = createLifecycle({
     hubVersion: HUB_VERSION,
     systemLanguage: "en-HK",
@@ -906,9 +906,10 @@ test("a Busy Plugin that closes abnormally while the quit dialog is up leaves it
     kind: "busy-quit",
     plugins: [{ id: "class-timer", name: "Timer", reason: "Timing an exam" }],
   });
+  expect(quits).toBe(0);
   lifecycle.close(id("class-timer"));
   expect(lifecycle.snapshot().dialog).toBeNull();
-  expect(quits).toBe(0);
+  expect(quits).toBe(1);
 });
 
 test("a Busy reason that changes while its dialog is up leaves the dialog as it was asked", () => {
@@ -1903,6 +1904,22 @@ test("uninstalling a Busy Plugin closes it on Close anyway, then asks", () => {
   expect(uninstalls).toEqual(["class-timer delete-data"]);
 });
 
+test("a Busy Plugin that crashes while its uninstall waits shows its crash message until the uninstall finishes", () => {
+  const { lifecycle } = withRegistry("en-HK");
+  lifecycle.registryChecked({ kind: "listed", plugins: OFFERED });
+  lifecycle.open(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), busy("Timing a test"));
+  lifecycle.uninstall(id("class-timer"));
+
+  lifecycle.crashed(id("class-timer"), "crashed");
+  expect(lifecycle.snapshot().dialog).toMatchObject({ kind: "uninstall" });
+  lifecycle.answer("uninstall");
+  expect(lifecycle.snapshot().dialog).toMatchObject({ kind: "plugin-crashed" });
+  lifecycle.closed(id("class-timer"));
+  lifecycle.uninstallFinished(id("class-timer"));
+  expect(lifecycle.snapshot().dialog).toBeNull();
+});
+
 test("Uninstall throws for a Plugin not installed or already uninstalling, and finishing one not uninstalling throws", () => {
   const { lifecycle } = withRegistry("en-HK");
   lifecycle.registryChecked({ kind: "listed", plugins: [LIBRARY] });
@@ -2311,4 +2328,175 @@ test("choosing a model needs the Plugin open with an Assistant", () => {
   expect(() => {
     lifecycle.chooseModel(id("class-timer"), { kind: "default" });
   }).toThrow();
+});
+function lifecycleIn(systemLanguage: "en-HK" | "zh-HK"): Lifecycle {
+  return createLifecycle({
+    hubVersion: HUB_VERSION,
+    systemLanguage,
+    installed: plugins,
+    storedAtStart: FIRST_LAUNCH_SETTINGS,
+    keyedAtStart: new Set(),
+    save: ignoreSave,
+    unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
+    registry: DEV_MODE,
+  });
+}
+
+test("a crash closes the Plugin and shows its message, naming it and the cause; OK dismisses it", () => {
+  const lifecycle = lifecycleIn("en-HK");
+  lifecycle.open(id("class-timer"));
+
+  lifecycle.crashed(id("class-timer"), "crashed");
+  expect(lifecycle.snapshot()).toMatchObject({
+    open: [],
+    closing: ["class-timer"],
+    dialog: {
+      kind: "plugin-crashed",
+      plugin: { id: "class-timer", name: "Timer" },
+      cause: "crashed",
+    },
+  });
+
+  lifecycle.answer("ok");
+  expect(lifecycle.snapshot().dialog).toBeNull();
+});
+
+test("two crashes show two messages, one after the other", () => {
+  const lifecycle = lifecycleIn("en-HK");
+  lifecycle.open(id("class-timer"));
+  lifecycle.open(id("attendance"));
+
+  lifecycle.crashed(id("class-timer"), "crashed");
+  lifecycle.crashed(id("attendance"), "failed-to-start");
+  expect(lifecycle.snapshot().dialog).toEqual({
+    kind: "plugin-crashed",
+    plugin: { id: "class-timer", name: "Timer" },
+    cause: "crashed",
+  });
+  lifecycle.answer("ok");
+  expect(lifecycle.snapshot().dialog).toEqual({
+    kind: "plugin-crashed",
+    plugin: { id: "attendance", name: "Attendance" },
+    cause: "failed-to-start",
+  });
+  lifecycle.answer("ok");
+  expect(lifecycle.snapshot().dialog).toBeNull();
+});
+
+test("a crash message names the Plugin in the Display Language", () => {
+  const lifecycle = lifecycleIn("zh-HK");
+  lifecycle.open(id("class-timer"));
+
+  lifecycle.crashed(id("class-timer"), "failed-to-start");
+  expect(lifecycle.snapshot().dialog).toMatchObject({
+    plugin: { name: "計時器" },
+  });
+});
+
+test("a normal close shows no crash message", () => {
+  const lifecycle = lifecycleIn("en-HK");
+  lifecycle.open(id("class-timer"));
+
+  lifecycle.close(id("class-timer"));
+  lifecycle.closed(id("class-timer"));
+  expect(lifecycle.snapshot().dialog).toBeNull();
+});
+
+test("a crash message waits behind a Busy dialog that is up, and shows once it is answered", () => {
+  const lifecycle = lifecycleIn("en-HK");
+  lifecycle.open(id("class-timer"));
+  lifecycle.open(id("attendance"));
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
+  lifecycle.requestClose(id("class-timer"));
+
+  lifecycle.crashed(id("attendance"), "crashed");
+  expect(lifecycle.snapshot().dialog).toMatchObject({ kind: "busy-close" });
+  lifecycle.answer("keep-open");
+  expect(lifecycle.snapshot().dialog).toMatchObject({
+    kind: "plugin-crashed",
+    plugin: { id: "attendance" },
+  });
+});
+
+test("a crash message waits behind the Discard dialog, and a quit asked while one shows goes in front of it", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.open(id("attendance"));
+  lifecycle.showSettings();
+  lifecycle.editSettings(
+    formOf({ ...FIRST_LAUNCH_SETTINGS, colourScheme: "dark" }),
+  );
+  lifecycle.open(id("class-timer"));
+
+  lifecycle.crashed(id("attendance"), "crashed");
+  expect(lifecycle.snapshot().dialog).toEqual({ kind: "discard-changes" });
+  lifecycle.answer("keep-editing");
+  expect(lifecycle.snapshot().dialog).toMatchObject({
+    kind: "plugin-crashed",
+  });
+
+  lifecycle.requestQuit(() => undefined);
+  expect(lifecycle.snapshot().dialog).toEqual({ kind: "discard-changes" });
+  lifecycle.answer("keep-editing");
+  expect(lifecycle.snapshot().dialog).toMatchObject({
+    kind: "plugin-crashed",
+  });
+});
+
+test("a crash message takes no other dialog's answers, and a Busy dialog's crashed Plugin takes that dialog with it", () => {
+  const lifecycle = lifecycleIn("en-HK");
+  lifecycle.open(id("class-timer"));
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
+  lifecycle.requestClose(id("class-timer"));
+
+  lifecycle.crashed(id("class-timer"), "crashed");
+  expect(lifecycle.snapshot().dialog).toMatchObject({
+    kind: "plugin-crashed",
+  });
+  expect(() => {
+    lifecycle.answer("keep-open");
+  }).toThrow();
+});
+
+test("a crash of the only Plugin a Busy quit lists goes on quitting", () => {
+  const lifecycle = lifecycleIn("en-HK");
+  lifecycle.open(id("class-timer"));
+  lifecycle.open(id("attendance"));
+  lifecycle.setBusy(id("class-timer"), busy("Timing an exam"));
+  let quits = 0;
+  lifecycle.requestQuit(() => {
+    quits += 1;
+  });
+
+  lifecycle.crashed(id("attendance"), "crashed");
+  expect(quits).toBe(0);
+  lifecycle.crashed(id("class-timer"), "crashed");
+  expect(quits).toBe(1);
+});
+
+test("a queued crash message names the Plugin in the Display Language a later Save chose", () => {
+  const { lifecycle } = inSettings(FIRST_LAUNCH_SETTINGS);
+  lifecycle.open(id("class-timer"));
+  lifecycle.crashed(id("class-timer"), "crashed");
+
+  lifecycle.showSettings();
+  lifecycle.editSettings(
+    formOf({
+      ...FIRST_LAUNCH_SETTINGS,
+      displayLanguage: { kind: "chosen", language: "zh-HK" },
+    }),
+  );
+  lifecycle.saveSettings();
+  expect(lifecycle.snapshot().dialog).toMatchObject({
+    kind: "plugin-crashed",
+    plugin: { id: "class-timer", name: "計時器" },
+  });
+});
+
+test("a crash of a Plugin that is not open throws and shows nothing", () => {
+  const lifecycle = lifecycleIn("en-HK");
+  expect(() => {
+    lifecycle.crashed(id("class-timer"), "crashed");
+  }).toThrow();
+  expect(lifecycle.snapshot().dialog).toBeNull();
 });
