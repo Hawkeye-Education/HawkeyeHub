@@ -18,20 +18,25 @@ const FIXTURE = {
   "agents/assistant.md": "ASSISTANT PROMPT",
   "agents/skills/drafting-regex/SKILL.md": "SKILL DRAFTING",
   "agents/skills/drafting-regex/references/flags.md": "REFERENCE FLAGS",
+  "agents/skills/drafting-regex/references/unicode/classes.md":
+    "REFERENCE NESTED",
+  "agents/skills/drafting-regex/assets/template.txt": "ASSET TEMPLATE",
   "agents/skills/checking-pages/SKILL.md": "SKILL CHECKING",
   "manifest.json": "OUTSIDE MANIFEST",
   "ui/index.html": "OUTSIDE UI",
   "notes.md": "OUTSIDE NOTES",
 };
 
-test("the context is the Hub preamble, then assistant.md, then every Skill with its references", () => {
+test("the context is the Hub preamble, then assistant.md, then every Skill whole: SKILL.md, then every other file by path", () => {
   const context = assistantContext(pluginFolder(FIXTURE), "en-HK");
   const order = [
     "You advise",
     "ASSISTANT PROMPT",
     "SKILL CHECKING",
     "SKILL DRAFTING",
+    "ASSET TEMPLATE",
     "REFERENCE FLAGS",
+    "REFERENCE NESTED",
   ].map((text) => context.indexOf(text));
   expect(order.every((at) => at >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((a, b) => a - b));
