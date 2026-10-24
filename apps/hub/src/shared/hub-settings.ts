@@ -13,7 +13,7 @@ import type { Branded } from "./branded";
 
 export type AiProviderLabel = Branded<string, "AiProviderLabel">;
 
-const NonBlank = z.string().refine((raw) => raw.trim() !== "", "blank");
+export const NonBlank = z.string().refine((raw) => raw.trim() !== "", "blank");
 /** As with a ThemeName below, the check makes it the type, and the `as` grants the brand. */
 export const AiProviderLabelSchema = NonBlank.transform(
   (raw) => raw as AiProviderLabel,
@@ -23,6 +23,23 @@ export const AiProviderLabelSchema = NonBlank.transform(
 export type ModelId = Branded<string, "ModelId">;
 /** As above, the check makes it the type, and the `as` grants the brand. */
 export const ModelIdSchema = NonBlank.transform((raw) => raw as ModelId);
+
+// An AI Provider's endpoint, stored with a valid Base URL and drafted with any text.
+const endpointSchema = <BaseUrl extends z.ZodType<string>>(baseUrl: BaseUrl) =>
+  z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("openai-compatible"), baseUrl }),
+    z.strictObject({ kind: z.literal("anthropic") }),
+  ]);
+
+// The Default AI Provider: none, or a provider (by label when stored, by row in the form) and model.
+const defaultSchema = <Provider extends z.ZodType, Model extends z.ZodType>(
+  provider: Provider,
+  model: Model,
+) =>
+  z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("none") }),
+    z.strictObject({ kind: z.literal("chosen"), provider, model }),
+  ]);
 
 // The settings the form holds just as they are stored.
 const APPEARANCE_AND_LANGUAGE = {
@@ -59,13 +76,7 @@ export const HubSettingsSchema = z
     aiProviders: z.array(
       z.strictObject({
         label: AiProviderLabelSchema,
-        endpoint: z.discriminatedUnion("kind", [
-          z.strictObject({
-            kind: z.literal("openai-compatible"),
-            baseUrl: z.url(),
-          }),
-          z.strictObject({ kind: z.literal("anthropic") }),
-        ]),
+        endpoint: endpointSchema(z.url()),
         models: z
           .array(
             z.strictObject({ id: ModelIdSchema, acceptsImages: z.boolean() }),
@@ -73,14 +84,7 @@ export const HubSettingsSchema = z
           .min(1),
       }),
     ),
-    defaultAiProvider: z.discriminatedUnion("kind", [
-      z.strictObject({ kind: z.literal("none") }),
-      z.strictObject({
-        kind: z.literal("chosen"),
-        provider: AiProviderLabelSchema,
-        model: ModelIdSchema,
-      }),
-    ]),
+    defaultAiProvider: defaultSchema(AiProviderLabelSchema, ModelIdSchema),
   })
   .superRefine(({ aiProviders, defaultAiProvider }, context) => {
     const labels = aiProviders.map(({ label }) => label);
@@ -133,13 +137,7 @@ export const HubSettingsFormSchema = z.strictObject({
           }),
         ]),
         label: z.string(),
-        endpoint: z.discriminatedUnion("kind", [
-          z.strictObject({
-            kind: z.literal("openai-compatible"),
-            baseUrl: z.string(),
-          }),
-          z.strictObject({ kind: z.literal("anthropic") }),
-        ]),
+        endpoint: endpointSchema(z.string()),
         models: z.array(
           z.strictObject({ id: z.string(), acceptsImages: z.boolean() }),
         ),
@@ -149,14 +147,7 @@ export const HubSettingsFormSchema = z.strictObject({
       (rows) => new Set(rows.map(({ row }) => row)).size === rows.length,
       "AI Provider rows repeat",
     ),
-  defaultAiProvider: z.discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("none") }),
-    z.strictObject({
-      kind: z.literal("chosen"),
-      provider: AiProviderRowSchema,
-      model: z.string(),
-    }),
-  ]),
+  defaultAiProvider: defaultSchema(AiProviderRowSchema, z.string()),
 });
 
 export type HubSettingsForm = z.infer<typeof HubSettingsFormSchema>;

@@ -55,12 +55,19 @@ export interface AiChat {
   cancel(): void;
 }
 
+/** A provider's label and models: what a model picker offers. No key, no Base URL. */
+export function labelAndModels({
+  label,
+  models,
+}: AiProvider): Pick<AiProvider, "label" | "models"> {
+  return { label, models };
+}
+
 /** What `hub.ai.providers()` lists: no key, no Base URL. */
 export function aiProvidersOf({ aiProviders }: HubSettings): AiProviderInfo[] {
-  return aiProviders.map(({ label, endpoint: { kind }, models }) => ({
-    label,
-    kind,
-    models,
+  return aiProviders.map((provider) => ({
+    ...labelAndModels(provider),
+    kind: provider.endpoint.kind,
   }));
 }
 

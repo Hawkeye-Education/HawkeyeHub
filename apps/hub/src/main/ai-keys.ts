@@ -7,7 +7,7 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import type { Branded } from "../shared/branded";
-import { AiProviderLabelSchema } from "../shared/hub-settings";
+import { AiProviderLabelSchema, NonBlank } from "../shared/hub-settings";
 import type { HubEvent } from "./diagnostics";
 import { errorCode } from "./error-code";
 import type { AbsolutePath, AiProviderLabel } from "./ids";
@@ -17,10 +17,7 @@ export const KEYS_FILE = "ai-provider-keys.bin";
 export type AiProviderKey = Branded<string, "AiProviderKey">;
 
 // As in `ids.ts`, the check makes it the type, and the `as` grants the brand.
-const AiProviderKeySchema = z
-  .string()
-  .refine((raw) => raw.trim() !== "", "blank")
-  .transform((raw) => raw as AiProviderKey);
+const AiProviderKeySchema = NonBlank.transform((raw) => raw as AiProviderKey);
 
 export function parseAiProviderKey(raw: string): AiProviderKey {
   return AiProviderKeySchema.parse(raw);

@@ -34,7 +34,7 @@ import type {
   AiModelChoice,
 } from "../shared/ai-call";
 import type { AiProviderRow, HubSettingsForm } from "../shared/hub-settings";
-import { AiCallFailed, targetOf, type AiChat } from "./ai";
+import { AiCallFailed, labelAndModels, targetOf, type AiChat } from "./ai";
 import type { AssistantModels } from "./assistant-models";
 import type { AiProviderKey, SavedProviderKey } from "./ai-keys";
 import type { SystemDescription } from "./diagnostics";
@@ -539,10 +539,7 @@ export function createLifecycle({
             }))
           : [],
       model: currentModel(id),
-      providers: stored.aiProviders.map(({ label, models }) => ({
-        label,
-        models,
-      })),
+      providers: stored.aiProviders.map(labelAndModels),
     };
   };
   // A chat dropped (by New conversation or a close) is no longer the talk's: nothing more of it
