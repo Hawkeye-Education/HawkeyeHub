@@ -4,3 +4,4 @@ test-results/
 playwright-report/
 .hub-data/
 .venv/
+__pycache__/

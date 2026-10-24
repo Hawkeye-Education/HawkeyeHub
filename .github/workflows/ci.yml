@@ -55,3 +55,24 @@ jobs:
         with:
           name: smoke-${{ matrix.os }}
           path: apps/hub/test-results
+
+  python-sdk:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: python/hawkeye-hub
+    steps:
+      - uses: actions/checkout@v4
+      # Picks the uv `required-version` in python/hawkeye-hub/pyproject.toml.
+      - uses: astral-sh/setup-uv@v6
+        with:
+          working-directory: python/hawkeye-hub
+      - run: uv sync --locked
+      - run: uv run pytest
+      - run: uv run pyright
+      - run: uv run ruff check
+      - run: uv run ruff format --check
