@@ -279,3 +279,15 @@ test("dev mode's local file is read and parsed, and one that does not parse thro
     `${path} is not a valid Company Configuration`,
   );
 });
+
+test("the Company Configuration CI publishes parses", () => {
+  const published = parseAbsolutePath(
+    join(import.meta.dirname, "../../../../registry/company-config.json"),
+  );
+
+  expect(readCompanyConfigurationFile(published)).toEqual({
+    theme: "hawkeye",
+    authProvider: { kind: "none" },
+    roleMapping: [],
+  });
+});
