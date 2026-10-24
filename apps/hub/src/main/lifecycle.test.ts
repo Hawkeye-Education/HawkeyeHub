@@ -445,6 +445,22 @@ test("removing the default provider sets the default back to none, and its key g
   expect(keys()).toEqual(new Map());
 });
 
+test("removing the default's model sets the default back to none", () => {
+  const { lifecycle } = inSettings(WITH_CLAUDE, CLAUDE_KEY);
+  const form = formOf(WITH_CLAUDE);
+  lifecycle.editSettings({
+    ...form,
+    aiProviders: form.aiProviders.map((each) => ({
+      ...each,
+      models: [{ id: "claude-sonnet-5", acceptsImages: true }],
+    })),
+  });
+  expect(lifecycle.snapshot().content).toMatchObject({
+    form: { defaultAiProvider: { kind: "none" } },
+    savable: true,
+  });
+});
+
 test("Save refuses a form that is not valid Hub Settings, and saves nothing", () => {
   const { lifecycle, saved } = inSettings(FIRST_LAUNCH_SETTINGS);
   lifecycle.editSettings({

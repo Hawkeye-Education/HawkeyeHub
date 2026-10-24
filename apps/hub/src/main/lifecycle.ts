@@ -130,8 +130,9 @@ export interface Lifecycle {
    */
   updated(plugin: InstalledPlugin): void;
   /**
-   * Replaces the unsaved form. Removing the Default AI Provider's provider sets the default back to
-   * `none`, and drops any key typed for it. Throws if settings are not showing.
+   * Replaces the unsaved form. Removing the Default AI Provider's provider or model sets the
+   * default back to `none`; removing a provider drops any key typed for it. Throws if settings are
+   * not showing.
    */
   editSettings(form: HubSettingsForm): void;
   /**
@@ -832,7 +833,9 @@ export function createLifecycle({
       const { defaultAiProvider } = next;
       form =
         defaultAiProvider.kind === "chosen" &&
-        !rows.has(defaultAiProvider.provider)
+        next.aiProviders
+          .find(({ row }) => row === defaultAiProvider.provider)
+          ?.models.some(({ id }) => id === defaultAiProvider.model) !== true
           ? { ...next, defaultAiProvider: { kind: "none" } }
           : next;
       typedKeys = new Map([...typedKeys].filter(([row]) => rows.has(row)));
