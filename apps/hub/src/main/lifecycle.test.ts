@@ -118,18 +118,21 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
         name: "Attendance",
         iconUrl: "hawkeye-icon://attendance/icon.svg",
         access: { kind: "openable" },
+        favourite: false,
       },
       {
         id: "seating-plan",
         name: "Seating Plan",
         iconUrl: "hawkeye-icon://seating-plan/icon.svg",
         access: { kind: "openable" },
+        favourite: false,
       },
       {
         id: "class-timer",
         name: "Timer",
         iconUrl: "hawkeye-icon://class-timer/icon.svg",
         access: { kind: "openable" },
+        favourite: false,
       },
     ],
     open: [],
@@ -2608,4 +2611,145 @@ test("a crash of a Plugin that is not open throws and shows nothing", () => {
     lifecycle.crashed(id("class-timer"), "crashed");
   }).toThrow();
   expect(lifecycle.snapshot().dialog).toBeNull();
+});
+
+function withFavourites(favourites: string[]) {
+  const saved: HubSettings[] = [];
+  const keysSaved: unknown[] = [];
+  const lifecycle = createLifecycle({
+    hubVersion: HUB_VERSION,
+    systemLanguage: "en-HK",
+    installed: [
+      ...plugins,
+      installed("sign-in", "Sign In", {
+        identity: { kind: "required", roles: [] },
+      }),
+    ],
+    storedAtStart: { ...FIRST_LAUNCH_SETTINGS, favourites: favourites.map(id) },
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
+    keyedAtStart: new Set(),
+    save: (settings, keys) => {
+      saved.push(settings);
+      keysSaved.push(keys);
+      return new Set();
+    },
+    unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
+    registry: {
+      kind: "on",
+      check: () => undefined,
+      install: () => undefined,
+      uninstall: () => undefined,
+    },
+  });
+  const favouritesShown = () =>
+    lifecycle
+      .snapshot()
+      .plugins.filter(({ favourite }) => favourite)
+      .map(({ id }) => id);
+  return { lifecycle, saved, keysSaved, favouritesShown };
+}
+
+test("stored Favourites are marked in the Switcher, which keeps its order", () => {
+  const { lifecycle } = withFavourites(["class-timer", "attendance"]);
+  expect(
+    lifecycle.snapshot().plugins.map(({ id, favourite }) => [id, favourite]),
+  ).toEqual([
+    ["attendance", true],
+    ["seating-plan", false],
+    ["sign-in", false],
+    ["class-timer", true],
+  ]);
+});
+
+test("starring a Plugin makes it a Favourite at once and saves it, with no Save", () => {
+  const { lifecycle, saved, keysSaved, favouritesShown } = withFavourites([]);
+  lifecycle.toggleFavourite(id("seating-plan"));
+  expect(favouritesShown()).toEqual(["seating-plan"]);
+  expect(saved).toEqual([
+    { ...FIRST_LAUNCH_SETTINGS, favourites: ["seating-plan"] },
+  ]);
+  // No provider, so no key to keep.
+  expect(keysSaved).toEqual([[]]);
+
+  lifecycle.toggleFavourite(id("seating-plan"));
+  expect(favouritesShown()).toEqual([]);
+  expect(saved.at(-1)).toEqual(FIRST_LAUNCH_SETTINGS);
+});
+
+test("starring keeps every stored key with its provider", () => {
+  const label = parseAiProviderLabel("Claude");
+  const stored: HubSettings = {
+    ...FIRST_LAUNCH_SETTINGS,
+    aiProviders: [
+      {
+        label,
+        endpoint: { kind: "anthropic" },
+        models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
+      },
+    ],
+  };
+  const keysSaved: unknown[] = [];
+  const lifecycle = createLifecycle({
+    hubVersion: HUB_VERSION,
+    systemLanguage: "en-HK",
+    installed: plugins,
+    storedAtStart: stored,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
+    keyedAtStart: new Set([label]),
+    save: (_, keys) => {
+      keysSaved.push(keys);
+      return new Set([label]);
+    },
+    unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
+    registry: DEV_MODE,
+  });
+  lifecycle.toggleFavourite(id("attendance"));
+  expect(keysSaved).toEqual([
+    [{ label, was: { kind: "stored", label }, key: { kind: "unchanged" } }],
+  ]);
+});
+
+test("a blocked Plugin can be a Favourite, and stays one with its reason", () => {
+  const { lifecycle, favouritesShown } = withFavourites(["sign-in"]);
+  expect(favouritesShown()).toEqual(["sign-in"]);
+  expect(
+    lifecycle.snapshot().plugins.find(({ id }) => id === "sign-in")?.access,
+  ).toEqual({ kind: "blocked", reason: "needs-sign-in" });
+  lifecycle.toggleFavourite(id("sign-in"));
+  expect(favouritesShown()).toEqual([]);
+});
+
+test("starring a Plugin that is not installed throws", () => {
+  const { lifecycle } = withFavourites([]);
+  expect(() => {
+    lifecycle.toggleFavourite(id("gone"));
+  }).toThrow();
+});
+
+test("uninstalling a Favourite removes it from the Favourites, and saves that", () => {
+  const { lifecycle, saved } = withFavourites(["class-timer", "attendance"]);
+  lifecycle.uninstall(id("class-timer"));
+  lifecycle.answer("uninstall");
+  lifecycle.uninstallFinished(id("class-timer"));
+  expect(saved.at(-1)?.favourites).toEqual(["attendance"]);
+});
+
+test("starring while Hub Settings show leaves the unsaved form alone, and Save keeps the Favourites", () => {
+  const { lifecycle, saved } = withFavourites(["attendance"]);
+  lifecycle.showSettings();
+  lifecycle.editSettings(
+    formOf({ ...FIRST_LAUNCH_SETTINGS, colourScheme: "dark" }),
+  );
+  lifecycle.toggleFavourite(id("seating-plan"));
+  const { content } = lifecycle.snapshot();
+  expect(content.kind === "settings" && content.form.colourScheme).toBe("dark");
+
+  lifecycle.saveSettings();
+  expect(saved.at(-1)).toEqual({
+    ...FIRST_LAUNCH_SETTINGS,
+    colourScheme: "dark",
+    favourites: ["attendance", "seating-plan"],
+  });
 });

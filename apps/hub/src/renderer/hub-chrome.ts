@@ -38,10 +38,6 @@ export class HubChrome extends LitElement {
       }
       plugin-switcher {
         flex: 1;
-        overflow-y: auto;
-      }
-      h1 {
-        padding: var(--hub-space-4);
       }
       .gear {
         border: none;
@@ -102,20 +98,20 @@ export class HubChrome extends LitElement {
           ></hub-dialog>`;
     }
     const { content, foreground, assistant } = this.snapshot;
-    const settingsShowing = content.kind === "settings";
     // The front Plugin's, while it shows.
     const front =
       content.kind === "plugin" && foreground !== null ? foreground : null;
     const panel = front === null ? { kind: "none" as const } : assistant;
     this.toggleAttribute("panel", panel.kind === "open");
     return html`<aside>
-        <h1>Hawkeye Hub</h1>
         <plugin-switcher
           .strings=${strings}
           .plugins=${this.snapshot.plugins}
           .open=${this.snapshot.open}
           .closing=${this.snapshot.closing}
           .foreground=${content.kind === "plugin" ? foreground : null}
+          .screen=${content.kind}
+          .catalogueOn=${this.snapshot.catalogue.kind !== "off"}
           .hub=${window.hubChrome}
         ></plugin-switcher>
         ${
@@ -131,29 +127,6 @@ export class HubChrome extends LitElement {
                 ${strings.assistant}
               </button>`
         }
-        ${
-          // Dev mode has no Catalogue (PLUGIN_STANDARD §9.4).
-          this.snapshot.catalogue.kind === "off"
-            ? nothing
-            : html`<button
-                class="gear"
-                aria-current=${content.kind === "catalogue" ? "page" : nothing}
-                @click=${() => {
-                  window.hubChrome.showCatalogue();
-                }}
-              >
-                <span aria-hidden="true">＋</span> ${strings.catalogue}
-              </button>`
-        }
-        <button
-          class="gear"
-          aria-current=${settingsShowing ? "page" : nothing}
-          @click=${() => {
-            window.hubChrome.showSettings();
-          }}
-        >
-          <span aria-hidden="true">⚙</span> ${strings.settings}
-        </button>
       </aside>
       <main>${this.renderContent(strings)}</main>
       ${

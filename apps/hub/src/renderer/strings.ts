@@ -12,6 +12,11 @@ import type {
 export const STRINGS = {
   "en-HK": {
     plugins: "Plugins",
+    favourites: "Favourites",
+    noFavourites: "Star a Plugin to keep it here.",
+    addFavourite: (name: string) => `Add ${name} to Favourites`,
+    removeFavourite: (name: string) => `Remove ${name} from Favourites`,
+    open: "Open",
     noPluginOpen: "No Plugin is open",
     close: (name: string) => `Close ${name}`,
     closing: "Closing…",
@@ -119,6 +124,11 @@ export const STRINGS = {
   },
   "zh-HK": {
     plugins: "外掛程式",
+    favourites: "我的最愛",
+    noFavourites: "為外掛程式加上星號，即可放在這裏。",
+    addFavourite: (name: string) => `把 ${name} 加入我的最愛`,
+    removeFavourite: (name: string) => `把 ${name} 從我的最愛移除`,
+    open: "已開啟",
     noPluginOpen: "未有開啟任何外掛程式",
     close: (name: string) => `關閉 ${name}`,
     closing: "正在關閉…",

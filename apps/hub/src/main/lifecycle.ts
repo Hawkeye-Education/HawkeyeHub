@@ -190,6 +190,11 @@ export interface Lifecycle {
    * with an Assistant.
    */
   chooseModel(id: PluginId, model: AiModelChoice): void;
+  /**
+   * Stars or unstars an installed Plugin, blocked or not, as a Favourite: saved at once with the
+   * stored Hub Settings, outside Save and Cancel. Throws unless the Plugin is installed.
+   */
+  toggleFavourite(id: PluginId): void;
 }
 
 export interface LifecycleDeps {
@@ -337,6 +342,8 @@ export function createLifecycle({
         return displayLanguage satisfies never;
     }
   };
+  // The Hub Settings as last saved. Favourites change here at once; the rest only through Save.
+  let stored = storedAtStart;
   // Grows as installs finish, and shrinks as uninstalls do.
   let installedPlugins = [...installed];
   // The Display Language and the installed Plugins named and sorted in it.
@@ -350,6 +357,7 @@ export function createLifecycle({
           name: displayTextIn(plugin.manifest.name, language),
           iconUrl: pluginIconUrl(plugin.manifest.id),
           access: accessOf(plugin.manifest, HUB_API_VERSION),
+          favourite: stored.favourites.includes(plugin.manifest.id),
         },
       }))
       .sort((a, b) => byName(a.listed.name, b.listed.name));
@@ -439,7 +447,6 @@ export function createLifecycle({
     }
     return registry;
   };
-  let stored = storedAtStart;
   let keyed = keyedAtStart;
   // The unsaved form: what is stored until staff edit it.
   let form = formOf(storedAtStart);
@@ -448,6 +455,20 @@ export function createLifecycle({
   const resetForm = (): void => {
     form = formOf(stored);
     typedKeys = new Map();
+  };
+  // Favourites save with what is stored, every key kept with its provider, as an unedited Save
+  // would.
+  const saveFavourites = (favourites: PluginId[]): void => {
+    stored = { ...stored, favourites };
+    keyed = save(
+      stored,
+      stored.aiProviders.map(({ label }) => ({
+        label,
+        was: { kind: "stored", label },
+        key: { kind: "unchanged" },
+      })),
+    );
+    listing = listingIn(listing.language);
   };
   const edited = (): boolean =>
     typedKeys.size > 0 || !isDeepStrictEqual(form, formOf(stored));
@@ -672,7 +693,9 @@ export function createLifecycle({
               ...content,
               form,
               keysSet: rowsWithKey(form, typedKeys, keyed),
-              savable: settingsFrom(form, typedKeys, keyed).kind === "valid",
+              savable:
+                settingsFrom(form, typedKeys, keyed, stored.favourites).kind ===
+                "valid",
             }
           : content,
       dialog: dialogOf(
@@ -870,6 +893,9 @@ export function createLifecycle({
         ({ manifest }) => manifest.id !== id,
       );
       listing = listingIn(listing.language);
+      if (stored.favourites.includes(id)) {
+        saveFavourites(stored.favourites.filter((other) => other !== id));
+      }
       // A crash message names its Plugin when drawn, so one still up for it goes with it.
       crashMessages = crashMessages.filter((message) => message.id !== id);
       changed();
@@ -911,7 +937,7 @@ export function createLifecycle({
     saveSettings: () => {
       const showing = settingsShowing("saveSettings");
       if (!edited()) return;
-      const valid = settingsFrom(form, typedKeys, keyed);
+      const valid = settingsFrom(form, typedKeys, keyed, stored.favourites);
       if (valid.kind === "invalid") return;
       keyed = save(valid.settings, valid.keys);
       stored = valid.settings;
@@ -990,6 +1016,15 @@ export function createLifecycle({
       talkOf(id);
       models.set(id, model);
       assistant.saveModels(models);
+      changed();
+    },
+    toggleFavourite: (id) => {
+      installedPlugin(id);
+      saveFavourites(
+        stored.favourites.includes(id)
+          ? stored.favourites.filter((other) => other !== id)
+          : [...stored.favourites, id],
+      );
       changed();
     },
     answer: (answer) => {

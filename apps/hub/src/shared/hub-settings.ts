@@ -2,7 +2,7 @@
 // the type inferred from it. The Hub Chrome and its preload import only the type, so zod stays out
 // of their bundles.
 
-import { KEBAB_CASE } from "@hawkeye-hub/plugin-format";
+import { KEBAB_CASE, PluginId } from "@hawkeye-hub/plugin-format";
 import { z } from "zod";
 import {
   COLOUR_SCHEMES,
@@ -90,6 +90,10 @@ export const HubSettingsSchema = z
       }),
     ),
     defaultAiProvider: defaultSchema(AiProviderLabelSchema, ModelIdSchema),
+    // The starred Plugins (CONTEXT.md "Favourite"), saved on each star, outside the form's Save.
+    // The default reads a file written before Favourites existed as having none (#149): a real
+    // state, not missing data. An id no longer installed is left alone and simply not shown.
+    favourites: z.array(PluginId).default([]),
   })
   .superRefine(({ aiProviders, defaultAiProvider }, context) => {
     const labels = aiProviders.map(({ label }) => label);

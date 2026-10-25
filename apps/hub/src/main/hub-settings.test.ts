@@ -20,6 +20,7 @@ const FIRST_LAUNCH = {
   displayLanguage: { kind: "system" },
   aiProviders: [],
   defaultAiProvider: { kind: "none" },
+  favourites: [],
 };
 
 let dataDir: AbsolutePath;
@@ -51,6 +52,7 @@ const CHOSEN = {
   displayLanguage: { kind: "chosen", language: "zh-HK" },
   aiProviders: [],
   defaultAiProvider: { kind: "none" },
+  favourites: ["class-timer"],
 };
 
 test("a valid file is returned as it is, with nothing logged", () => {
@@ -58,6 +60,23 @@ test("a valid file is returned as it is, with nothing logged", () => {
   expect(loadHubSettings(dataDir, diagnostics)).toEqual(CHOSEN);
   expect(settingsOnDisk()).toEqual(CHOSEN);
   expect(existsSync(join(logsDir, "hub.log"))).toBe(false);
+});
+
+test("a file from before Favourites reads as having none, with nothing logged", () => {
+  const { favourites: _, ...withoutFavourites } = CHOSEN;
+  writeSettings(JSON.stringify(withoutFavourites));
+  expect(loadHubSettings(dataDir, diagnostics)).toEqual({
+    ...CHOSEN,
+    favourites: [],
+  });
+  expect(existsSync(join(logsDir, "hub.log"))).toBe(false);
+});
+
+test("a Favourite that is not a Plugin id is refused", () => {
+  expect(
+    HubSettingsSchema.safeParse({ ...CHOSEN, favourites: ["Not An Id"] })
+      .success,
+  ).toBe(false);
 });
 
 function hubLogMessages(): unknown[] {

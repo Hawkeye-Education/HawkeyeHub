@@ -22,7 +22,7 @@ export const DISPLAY_LANGUAGES = ["en-HK", "zh-HK"] as const;
 export type DisplayLanguage = (typeof DISPLAY_LANGUAGES)[number];
 
 /** The Plugin Switcher's width: the Hub Chrome draws it, main lays Plugin UIs out beside it. */
-export const SWITCHER_WIDTH_PX = 240;
+export const SWITCHER_WIDTH_PX = 260;
 
 /**
  * Why the Hub cannot run an installed Plugin (ADRs 0002, 0005): it needs a Staff Identity and
@@ -54,6 +54,8 @@ export interface SwitcherPlugin {
   /** The Plugin's `icon.svg`, served to the Hub Chrome only as a CSS mask (spec #44 story 53). */
   iconUrl: IconUrl;
   access: PluginAccess;
+  /** Starred by staff (CONTEXT.md "Favourite"): the Switcher shows it in its own section. */
+  favourite: boolean;
 }
 
 /** Why an install failed (spec #91): `environment` is a Python Backend's venv that would not build. */
@@ -322,6 +324,8 @@ export interface HubChromeApi {
   newConversation(id: PluginId): void;
   /** Sets an open Plugin's Assistant model, saved at once. */
   chooseModel(id: PluginId, model: AiModelChoice): void;
+  /** Stars or unstars an installed Plugin as a Favourite, saved at once. */
+  toggleFavourite(id: PluginId): void;
 }
 
 /** Hub Chrome → main, `invoke`: answers the current snapshot. */
@@ -364,3 +368,5 @@ export const STOP_ASSISTANT = "hub-chrome:stop-assistant";
 export const NEW_CONVERSATION = "hub-chrome:new-conversation";
 /** Hub Chrome → main, `invoke`: an open Plugin's id and the `AiModelChoice` its Assistant uses. */
 export const CHOOSE_MODEL = "hub-chrome:choose-model";
+/** Hub Chrome → main, `invoke`: the id of an installed Plugin to star or unstar. */
+export const TOGGLE_FAVOURITE = "hub-chrome:toggle-favourite";
