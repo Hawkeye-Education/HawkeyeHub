@@ -38,6 +38,9 @@ importers:
       fflate:
         specifier: 0.8.2
         version: 0.8.2
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
     devDependencies:
       '@hawkeye-hub/hub-api':
         specifier: workspace:*
@@ -81,9 +84,6 @@ importers:
       vitest:
         specifier: 5.0.5
         version: 5.0.5(@types/node@22.17.2)(happy-dom@21.0.4)(vite@7.3.6(@types/node@22.17.2)(jiti@2.7.0)(lightningcss@1.33.0))
-      zod:
-        specifier: 4.6.7
-        version: 4.6.7
 
   packages/fake-hub:
     dependencies:

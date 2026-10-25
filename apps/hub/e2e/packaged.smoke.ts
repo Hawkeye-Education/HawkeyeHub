@@ -3,6 +3,8 @@
 // only where HAWKEYE_HUB_PACKAGED=1, which CI sets on its Windows runner after packaging. A Plugin UI
 // gets the Hub Kit fonts from the bundle too (#121).
 
+import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron } from "@playwright/test";
 import {
@@ -23,7 +25,21 @@ declare const document: {
   fonts: { load(font: string, text: string): Promise<readonly object[]> };
 };
 
-const PACKAGED_HUB = join(HUB_DIR, "dist", "win-unpacked", "Hawkeye Hub.exe");
+// The build runs from a copy outside the repo, as an installed Hub does. Node looks for a package in
+// every parent folder's node_modules, so from dist/ the build finds what it failed to pack in the
+// repo's node_modules, as zod went missing from 0.1.0 (#129).
+let packagedDir: string;
+let PACKAGED_HUB: string;
+test.beforeAll(() => {
+  packagedDir = mkdtempSync(join(tmpdir(), "hawkeye-hub-packaged-"));
+  cpSync(join(HUB_DIR, "dist", "win-unpacked"), packagedDir, {
+    recursive: true,
+  });
+  PACKAGED_HUB = join(packagedDir, "Hawkeye Hub.exe");
+});
+test.afterAll(() => {
+  rmSync(packagedDir, { recursive: true, force: true });
+});
 
 const WORDS = {
   "en-HK": {
