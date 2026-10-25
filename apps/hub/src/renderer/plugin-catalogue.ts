@@ -1,8 +1,7 @@
 // The Plugin Catalogue, drawn in the content area while the open Plugins run hidden behind them:
 // every Plugin the Registry offers, with its name, description and icon, its installed version, and
 // **Install**, *Installing…*, an install's failure, **Uninstall**, *Uninstalling…*, or why it
-// cannot be installed (spec #91). No
-// Theme yet (ADR 0006).
+// cannot be installed (spec #91).
 
 import { LitElement, css, html, nothing } from "lit";
 import type {
@@ -11,6 +10,7 @@ import type {
   HubChromeApi,
 } from "../shared/hub-chrome-ipc";
 import type { Strings } from "./strings";
+import { native } from "./theme";
 
 /** As in the Plugin Switcher: the icon URL for the `li::before` mask, set through the CSSOM. */
 function iconStyle({ iconUrl }: CataloguePlugin): string {
@@ -18,59 +18,62 @@ function iconStyle({ iconUrl }: CataloguePlugin): string {
 }
 
 export class PluginCatalogue extends LitElement {
-  static override styles = css`
-    :host {
-      display: block;
-      height: 100%;
-      overflow-y: auto;
-      padding: 24px;
-      box-sizing: border-box;
-    }
-    h2 {
-      margin: 0 0 16px;
-      font-size: 20px;
-    }
-    ul {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-    li {
-      display: flex;
-      gap: 12px;
-      padding: 8px 0;
-    }
-    h3 {
-      margin: 0;
-      font-size: 16px;
-    }
-    p {
-      margin: 4px 0 0;
-    }
-    .reason {
-      color: #666;
-      font-size: smaller;
-    }
-    .entry {
-      flex: 1;
-    }
-    .action {
-      flex: none;
-      align-self: start;
-    }
-    /* The Registry's icon.svg as a mask over currentColor, as in the Plugin Switcher. */
-    li::before {
-      content: "";
-      flex: none;
-      width: 32px;
-      height: 32px;
-      background-color: currentColor;
-      mask-size: contain;
-      mask-repeat: no-repeat;
-      mask-position: center;
-      mask-image: var(--icon);
-    }
-  `;
+  static override styles = [
+    native,
+    css`
+      :host {
+        display: block;
+        height: 100%;
+        overflow-y: auto;
+        padding: var(--hub-space-5);
+        box-sizing: border-box;
+      }
+      h2 {
+        margin: 0 0 var(--hub-space-4);
+        font-size: var(--hub-text-xl);
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      li {
+        display: flex;
+        gap: var(--hub-space-3);
+        padding: var(--hub-space-2) 0;
+      }
+      h3 {
+        margin: 0;
+        font-size: var(--hub-text-lg);
+        font-weight: var(--hub-weight-strong);
+      }
+      p {
+        margin: var(--hub-space-1) 0 0;
+      }
+      .reason {
+        font-size: var(--hub-text-sm);
+      }
+      .entry {
+        flex: 1;
+      }
+      .action {
+        flex: none;
+        align-self: start;
+      }
+      /* The Registry's icon.svg as a mask over currentColor, as in the Plugin Switcher. */
+      li::before {
+        content: "";
+        flex: none;
+        width: 32px;
+        height: 32px;
+        background-color: currentColor;
+        mask-size: contain;
+        mask-repeat: no-repeat;
+        mask-position: center;
+        mask-image: var(--icon);
+      }
+    `,
+  ];
 
   static override properties = {
     strings: { attribute: false },

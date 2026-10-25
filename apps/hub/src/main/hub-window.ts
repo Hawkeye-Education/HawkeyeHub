@@ -2,6 +2,7 @@
 // UIs above it, and, only while a Hub Chrome dialog is showing, the dialog overlay above them all:
 // a second Hub Chrome view (ADRs 0003, 0006).
 
+import { release } from "node:os";
 import { join } from "node:path";
 import { PluginId } from "@hawkeye-hub/plugin-format";
 import {
@@ -9,6 +10,7 @@ import {
   BaseWindow,
   dialog,
   ipcMain,
+  nativeTheme,
   WebContentsView,
   type WebContents,
 } from "electron";
@@ -41,6 +43,7 @@ import { AiContentSchema, AiModelChoiceSchema } from "../shared/ai-call";
 import { z } from "zod";
 import { bundleFileName, type Diagnostics } from "./diagnostics";
 import { errorCode } from "./error-code";
+import { HAWKEYE_TINT, TRANSPARENT } from "./hub-kit";
 import {
   AiProviderRowSchema,
   HubSettingsFormSchema,
@@ -49,6 +52,7 @@ import { parseAiProviderKey } from "./ai-keys";
 import type { HubMode } from "./hub-mode";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
 import type { Lifecycle } from "./lifecycle";
+import { windowBackdrop } from "./platform";
 import { contentAreaOf, createPluginViews } from "./plugin-views";
 import type { AiCallDeps } from "./ai";
 import {
@@ -92,7 +96,7 @@ function isCutShort(error: unknown): boolean {
 // These are Electron's defaults; they are spelled out because no Hub Chrome view may ever have
 // Node access. Its preload is its only way to the main process.
 function hubChromeView(): WebContentsView {
-  return new WebContentsView({
+  const view = new WebContentsView({
     webPreferences: {
       sandbox: true,
       contextIsolation: true,
@@ -103,6 +107,9 @@ function hubChromeView(): WebContentsView {
       preload: join(import.meta.dirname, "../preload/hub-chrome.cjs"),
     },
   });
+  // So the window's material or tint shows through, and the overlay shows the views beneath.
+  view.setBackgroundColor(TRANSPARENT);
+  return view;
 }
 
 /** Loads the Hub Chrome page: the Hub Chrome itself, or with `#dialog` the dialog overlay. */
@@ -123,6 +130,20 @@ function loadHubChrome(contents: WebContents, hash: "dialog" | null): void {
   });
 }
 
+/** Paints the Theme's solid tint behind every view, following the Colour Scheme live. */
+function followTint(window: BaseWindow): void {
+  const paintTint = (): void => {
+    window.setBackgroundColor(
+      HAWKEYE_TINT[nativeTheme.shouldUseDarkColors ? "dark" : "light"],
+    );
+  };
+  paintTint();
+  nativeTheme.on("updated", paintTint);
+  window.on("closed", () => {
+    nativeTheme.off("updated", paintTint);
+  });
+}
+
 export function openHubWindow(
   diagnostics: Diagnostics,
   now: () => Date,
@@ -131,8 +152,10 @@ export function openHubWindow(
   mode: HubMode["kind"],
   aiDepsNow: () => AiCallDeps,
 ): BaseWindow {
-  // Native frame and title bar until the Theme brings the Hub Chrome's own (ADR 0006).
-  // Size and position are not remembered.
+  // Native frame and title bar (ADR 0006). Size and position are not remembered. Behind every
+  // view, which is transparent, the OS material, or on Windows 10 the Theme's solid tint, which
+  // follows the Colour Scheme live.
+  const backdrop = windowBackdrop(process.platform, release());
   const window = new BaseWindow({
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
@@ -142,6 +165,21 @@ export function openHubWindow(
     // A BaseWindow does not take its title from the page.
     title: "Hawkeye Hub",
   });
+  switch (backdrop) {
+    case "vibrancy":
+      window.setBackgroundColor(TRANSPARENT);
+      window.setVibrancy("under-window");
+      break;
+    case "acrylic":
+      window.setBackgroundColor(TRANSPARENT);
+      window.setBackgroundMaterial("acrylic");
+      break;
+    case "tint":
+      followTint(window);
+      break;
+    default:
+      backdrop satisfies never;
+  }
 
   const hubChrome = hubChromeView();
   window.contentView.addChildView(hubChrome);
@@ -160,7 +198,6 @@ export function openHubWindow(
   const followDialog = (pending: HubChromeDialog | null): void => {
     if (pending !== null && overlay === null) {
       const view = hubChromeView();
-      view.setBackgroundColor("#00000000");
       view.setBounds(contentAreaOf(window));
       // Added last, so above every Plugin UI.
       window.contentView.addChildView(view);

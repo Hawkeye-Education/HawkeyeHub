@@ -56,7 +56,7 @@ import {
   type WebUrl,
 } from "./registry";
 import { PLUGIN_SCHEME } from "./plugin-scheme";
-import { HUB_KIT_SCHEME } from "./hub-kit";
+import { HUB_KIT_SCHEME, serveHubKit } from "./hub-kit";
 import { createUv } from "./uv";
 import type { PluginId } from "@hawkeye-hub/plugin-format";
 
@@ -240,6 +240,8 @@ function runHub(): void {
         fetchFromWeb,
       ),
     );
+    // The Hub Chrome is built from the Theme too, fonts included (ADR 0006).
+    serveHubKit(session.defaultSession);
     // The Colour Scheme drives `prefers-color-scheme` in every view (ADR 0006), so it is applied
     // before the window opens, and again on every Save.
     const applyColourScheme = ({ colourScheme }: HubSettings): void => {

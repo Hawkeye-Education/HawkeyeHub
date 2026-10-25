@@ -10,6 +10,7 @@ import {
   type HubChromeDialog,
 } from "../shared/hub-chrome-ipc";
 import type { Strings } from "./strings";
+import { native } from "./theme";
 
 /** A dialog's secondary button: its label and what it does. */
 interface Button {
@@ -18,31 +19,26 @@ interface Button {
 }
 
 export class HubDialog extends LitElement {
-  static override styles = css`
-    dialog {
-      max-width: 480px;
-      border: none;
-      border-radius: 8px;
-      padding: 24px;
-      font-family: system-ui, sans-serif;
-    }
-    dialog::backdrop {
-      background: rgb(0 0 0 / 40%);
-    }
-    h2 {
-      margin: 0 0 12px;
-      font-size: 18px;
-    }
-    ul {
-      padding-inline-start: 20px;
-    }
-    .buttons {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      margin-top: 20px;
-    }
-  `;
+  static override styles = [
+    native,
+    css`
+      dialog {
+        max-width: 480px;
+      }
+      h2 {
+        margin-bottom: var(--hub-space-3);
+      }
+      ul {
+        padding-inline-start: var(--hub-space-5);
+      }
+      .buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--hub-space-2);
+        margin-top: var(--hub-space-5);
+      }
+    `,
+  ];
 
   static override properties = {
     dialog: { attribute: false },

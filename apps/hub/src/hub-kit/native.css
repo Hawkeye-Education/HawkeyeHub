@@ -46,19 +46,43 @@ input:not([type="checkbox"], [type="radio"], [type="range"]),
 select,
 textarea {
   box-sizing: border-box;
-  min-height: 32px;
+  min-height: 28px;
   font: inherit;
   color: inherit;
-  background: var(--hub-color-surface);
+  background-color: var(--hub-color-surface-raised);
   border: 1px solid var(--hub-color-line);
-  border-radius: var(--hub-radius-2);
-  padding: var(--hub-space-1) var(--hub-space-3);
-  transition: border-color var(--hub-motion-fast) var(--hub-motion-ease);
+  border-radius: var(--hub-radius-1);
+  padding: 2px var(--hub-space-2);
+  transition:
+    border-color var(--hub-motion-fast) var(--hub-motion-ease),
+    box-shadow var(--hub-motion-fast) var(--hub-motion-ease);
 }
+/* The focus ring of a field is its border and a soft halo, in place of the outline. */
 input:not([type="checkbox"], [type="radio"], [type="range"]):focus,
 select:focus,
 textarea:focus {
-  border-color: var(--hub-color-accent);
+  outline: none;
+  border-color: var(--hub-color-focus);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--hub-color-focus) 25%, transparent);
+}
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.5;
+}
+/* The select's own arrow, drawn as a chevron from two gradients: no image the CSP must allow. */
+select {
+  appearance: none;
+  padding-inline-end: var(--hub-space-6);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 55%,
+    calc(100% - 11px) 55%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
 }
 select option {
   background: var(--hub-color-surface-raised);
@@ -68,34 +92,89 @@ textarea::placeholder {
   color: var(--hub-color-fg-muted);
 }
 input[type="checkbox"],
-input[type="radio"],
+input[type="radio"] {
+  appearance: none;
+  box-sizing: border-box;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  vertical-align: -3px;
+  cursor: pointer;
+  background-color: var(--hub-color-surface-raised);
+  border: 1px solid color-mix(in srgb, var(--hub-color-fg) 35%, transparent);
+  border-radius: var(--hub-radius-1);
+  transition:
+    background-color var(--hub-motion-fast) var(--hub-motion-ease),
+    border-color var(--hub-motion-fast) var(--hub-motion-ease);
+}
+input[type="radio"] {
+  border-radius: 50%;
+}
+input[type="checkbox"]:checked,
+input[type="radio"]:checked {
+  background-color: var(--hub-color-accent);
+  border-color: var(--hub-color-accent);
+}
+/* The tick and the dot, in the on-accent colour, grown in when checked. */
+input[type="checkbox"]::before,
+input[type="radio"]::before {
+  content: "";
+  transform: scale(0);
+  transition: transform var(--hub-motion-fast) var(--hub-motion-ease);
+}
+input[type="checkbox"]::before {
+  width: 4px;
+  height: 8px;
+  margin-top: -2px;
+  border: solid var(--hub-color-on-accent);
+  border-width: 0 2px 2px 0;
+  rotate: 45deg;
+}
+input[type="radio"]::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--hub-color-on-accent);
+}
+input[type="checkbox"]:checked::before,
+input[type="radio"]:checked::before {
+  transform: scale(1);
+}
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 input[type="range"],
 progress {
   accent-color: var(--hub-color-accent);
 }
 button {
   box-sizing: border-box;
-  min-height: 32px;
+  min-height: 28px;
   font: inherit;
   cursor: pointer;
   color: var(--hub-color-fg);
-  background-color: var(--hub-color-surface);
+  background-color: var(--hub-color-surface-raised);
   border: 1px solid var(--hub-color-line);
-  border-radius: var(--hub-radius-2);
-  padding: var(--hub-space-1) var(--hub-space-4);
-  box-shadow: var(--hub-shadow-1);
-  transition:
-    transform var(--hub-motion-fast) var(--hub-motion-ease),
-    background-color var(--hub-motion-fast) var(--hub-motion-ease);
+  border-radius: var(--hub-radius-1);
+  padding: 2px var(--hub-space-3);
+  transition: background-color var(--hub-motion-fast) var(--hub-motion-ease);
 }
 button:hover:not(:disabled) {
   background-image: linear-gradient(
-    rgb(127 127 127 / 0.1),
-    rgb(127 127 127 / 0.1)
+    rgb(127 127 127 / 0.12),
+    rgb(127 127 127 / 0.12)
   );
 }
 button:active:not(:disabled) {
-  transform: scale(0.96);
+  background-image: linear-gradient(
+    rgb(127 127 127 / 0.2),
+    rgb(127 127 127 / 0.2)
+  );
 }
 button[data-variant="primary"] {
   color: var(--hub-color-on-accent);

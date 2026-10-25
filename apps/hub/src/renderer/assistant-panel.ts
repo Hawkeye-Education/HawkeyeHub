@@ -1,6 +1,6 @@
 // The Assistant Panel (spec #101): the front Plugin's conversation with its Assistant, held in
 // main and drawn from snapshots, and a composer. Replies are Markdown (`reply-markdown`), each
-// code block with a copy button. No Theme yet (ADR 0006).
+// code block with a copy button.
 
 import type { PluginId } from "@hawkeye-hub/plugin-format";
 import { LitElement, css, html, nothing } from "lit";
@@ -15,6 +15,7 @@ import type {
 } from "../shared/hub-chrome-ipc";
 import { replyHtml } from "./reply-markdown";
 import type { Strings } from "./strings";
+import { native } from "./theme";
 
 /** A paste longer than this many characters becomes a "Pasted text" chip. */
 const LONG_PASTE_CHARS = 1000;
@@ -41,94 +42,91 @@ function sameChoice(a: AiModelChoice, b: AiModelChoice): boolean {
 }
 
 export class AssistantPanel extends LitElement {
-  static override styles = css`
-    :host {
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-      border-left: 1px solid #ccc;
-    }
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 16px;
-      border-bottom: 1px solid #ccc;
-    }
-    h2 {
-      margin: 0;
-      font-size: 16px;
-    }
-    ol {
-      flex: 1;
-      overflow-y: auto;
-      list-style: none;
-      margin: 0;
-      padding: 8px 16px;
-    }
-    li {
-      margin-block: 8px;
-    }
-    .user {
-      white-space: pre-wrap;
-      background: #f0f0f0;
-      padding: 8px;
-      border-radius: 8px;
-    }
-    .code {
-      position: relative;
-    }
-    pre {
-      overflow-x: auto;
-      background: #f6f6f6;
-      padding: 8px;
-    }
-    .copy {
-      position: absolute;
-      top: 4px;
-      right: 4px;
-    }
-    form {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 8px 16px 16px;
-      border-top: 1px solid #ccc;
-    }
-    textarea {
-      font: inherit;
-      resize: vertical;
-      min-height: 4lh;
-    }
-    form > button {
-      align-self: end;
-    }
-    .chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-    .chips li {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 4px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-    }
-    img {
-      max-width: 64px;
-      max-height: 64px;
-    }
-    .user img {
-      display: block;
-      max-width: 100%;
-      max-height: 200px;
-    }
-  `;
+  static override styles = [
+    native,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        background: var(--hub-color-surface);
+        border-left: 1px solid var(--hub-color-line);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--hub-space-2) var(--hub-space-4);
+        border-bottom: 1px solid var(--hub-color-line);
+      }
+      ol {
+        flex: 1;
+        overflow-y: auto;
+        list-style: none;
+        margin: 0;
+        padding: var(--hub-space-2) var(--hub-space-4);
+      }
+      li {
+        margin-block: var(--hub-space-2);
+      }
+      .user {
+        white-space: pre-wrap;
+        background: var(--hub-color-surface-raised);
+        padding: var(--hub-space-2);
+        border-radius: var(--hub-radius-2);
+      }
+      .code {
+        position: relative;
+      }
+      pre {
+        overflow-x: auto;
+      }
+      .copy {
+        position: absolute;
+        top: var(--hub-space-1);
+        right: var(--hub-space-1);
+      }
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: var(--hub-space-2);
+        padding: var(--hub-space-2) var(--hub-space-4) var(--hub-space-4);
+        border-top: 1px solid var(--hub-color-line);
+      }
+      textarea {
+        resize: vertical;
+        min-height: 4lh;
+      }
+      form > button {
+        align-self: end;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--hub-space-2);
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .chips li {
+        display: flex;
+        align-items: center;
+        gap: var(--hub-space-1);
+        padding: var(--hub-space-1);
+        border: 1px solid var(--hub-color-line);
+        border-radius: var(--hub-radius-2);
+      }
+      img {
+        max-width: 64px;
+        max-height: 64px;
+      }
+      .user img {
+        display: block;
+        max-width: 100%;
+        max-height: 200px;
+      }
+    `,
+  ];
 
   static override properties = {
     strings: { attribute: false },
