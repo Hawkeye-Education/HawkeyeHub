@@ -35,6 +35,9 @@ export interface FakeHub {
   readonly files: {
     /** The next `pickFolder` answers with `result`; one queued pick per call. */
     queuePick(result: PickFolderResult): void;
+    /** The next `openFolder` rejects with `error`, as when the OS cannot open the folder. */
+    failNextOpen(error: HubError): void;
+    /** Every path `openFolder` was called with, whether or not it opened. */
     readonly opened: readonly string[];
   };
   readonly ai: {
@@ -80,6 +83,7 @@ export function installFakeHub(options: {
 
   const picks: PickFolderResult[] = [];
   const opened: string[] = [];
+  const openFailures: HubError[] = [];
   const replies: string[] = [];
   const chats: AiChatRequest[] = [];
   let busy: BusyState = { kind: "idle" };
@@ -143,7 +147,11 @@ export function installFakeHub(options: {
       },
       openFolder: (path: string) => {
         opened.push(path);
-        return Promise.resolve();
+        const failure = openFailures.shift();
+        if (failure === undefined) return Promise.resolve();
+        // A HubError is a plain object by contract (hub-api).
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+        return Promise.reject(failure);
       },
     }),
     ai: Object.freeze({
@@ -179,7 +187,11 @@ export function installFakeHub(options: {
         return busy;
       },
     },
-    files: { queuePick: (result) => picks.push(result), opened },
+    files: {
+      queuePick: (result) => picks.push(result),
+      failNextOpen: (error) => openFailures.push(error),
+      opened,
+    },
     ai: { queueReply: (text) => replies.push(text), chats },
     settle: async () => {
       do {

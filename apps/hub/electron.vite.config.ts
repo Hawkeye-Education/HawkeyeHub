@@ -29,6 +29,9 @@ function hubKitComponents(): Plugin {
             name: "hubKit",
           },
         },
+        // build() is typed as one output, an array or a watcher; a lib build makes rollup's output
+        // an array (one per format) and returns an array, and no watch is set (read in Vite 7.3's
+        // resolveBuildOutputs and build; the Hub Kit smoke tests load what it gives).
       })) as Rollup.RollupOutput[];
       const chunk = built[0]?.output[0];
       if (chunk === undefined) throw new Error("The Hub Kit built nothing");

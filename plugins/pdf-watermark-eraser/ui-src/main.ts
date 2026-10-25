@@ -113,7 +113,10 @@ input.addEventListener("change", () => {
   showListing(input.value);
 });
 
-let shownText = "";
+// The page text Copy copies: none until Show text succeeds.
+let shown: { kind: "none" } | { kind: "shown"; text: string } = {
+  kind: "none",
+};
 show.addEventListener("click", () => {
   void (async () => {
     // Show is enabled only once the input folder has PDFs.
@@ -126,14 +129,15 @@ show.addEventListener("click", () => {
           page: page.valueAsNumber - 1, // staff count from 1, the Backend from 0
         }),
       );
-      shownText = result.lines.join("\n");
-      pageTextView.textContent = shownText;
+      shown = { kind: "shown", text: result.lines.join("\n") };
+      pageTextView.textContent = shown.text;
       repeated.textContent =
         result.repeated.length > 0
           ? t("repeated", { lines: result.repeated.join(" · ") })
           : "";
       copy.disabled = false;
     } catch (e) {
+      shown = { kind: "none" };
       pageTextView.textContent = explain(e);
       copy.disabled = true;
     }
@@ -142,7 +146,9 @@ show.addEventListener("click", () => {
 
 const COPIED_MS = 1500;
 copy.addEventListener("click", () => {
-  void navigator.clipboard.writeText(shownText).then(() => {
+  // Copy is enabled only while page text is shown.
+  if (shown.kind === "none") return;
+  void navigator.clipboard.writeText(shown.text).then(() => {
     copy.textContent = t("copied");
     setTimeout(() => (copy.textContent = t("copy")), COPIED_MS);
   });

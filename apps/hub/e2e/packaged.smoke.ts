@@ -1,18 +1,27 @@
 // The packaged Hub (#119): `pnpm package`'s unpacked build runs without the repo, its Hub Chrome
 // and preloads loading from the app bundle. Slow, since it needs `pnpm package` first, so it runs
-// only where HAWKEYE_HUB_PACKAGED=1, which CI sets on its Windows runner after packaging.
+// only where HAWKEYE_HUB_PACKAGED=1, which CI sets on its Windows runner after packaging. A Plugin UI
+// gets the Hub Kit fonts from the bundle too (#121).
 
 import { join } from "node:path";
 import { _electron } from "@playwright/test";
 import {
   displayLanguageOf,
   expect,
+  fixtureInstall,
   HUB_DIR,
   hubEnv,
   hubLogLines,
+  installFixturePlugins,
   lifecycleLine,
+  pluginPage,
   test,
 } from "./hub";
+
+// The page's own globals, for code evaluated in it; the smoke suite has no DOM types.
+declare const document: {
+  fonts: { load(font: string, text: string): Promise<readonly object[]> };
+};
 
 const PACKAGED_HUB = join(HUB_DIR, "dist", "win-unpacked", "Hawkeye Hub.exe");
 
@@ -22,12 +31,14 @@ const WORDS = {
     noPlugins: "The Registry offers no Plugins",
     settings: "Settings",
     save: "Save",
+    timer: "Timer",
   },
   "zh-HK": {
     catalogue: "外掛程式目錄",
     noPlugins: "外掛程式庫未有提供任何外掛程式",
     settings: "設定",
     save: "儲存",
+    timer: "計時器",
   },
 };
 
@@ -60,4 +71,34 @@ test("the packaged Hub shows the Plugin Catalogue and Hub Settings, and logs to 
     await hub.close();
   }
   expect(hubLogLines(dataDir)).toContainEqual(lifecycleLine("Hub opened"));
+});
+
+test("a Plugin UI in the packaged Hub loads the Hub Kit fonts from the app bundle", async ({
+  dataDir,
+}) => {
+  installFixturePlugins(dataDir, [fixtureInstall("class-timer")]);
+  const hub = await _electron.launch({
+    executablePath: PACKAGED_HUB,
+    args: [],
+    env: hubEnv(dataDir),
+  });
+  try {
+    const hubChrome = await hub.firstWindow();
+    const words = WORDS[await displayLanguageOf(hubChrome)];
+    await hubChrome
+      .getByRole("button", { name: words.timer, exact: true })
+      .click();
+    const timer = await pluginPage(() => hub.windows(), "class-timer");
+
+    // A face loads only when its file does, so an empty answer is a font that failed to load.
+    const loaded = await timer.evaluate(() =>
+      Promise.all([
+        document.fonts.load("16px Inter", "Hub"),
+        document.fonts.load('16px "Noto Sans TC"', "計時器"),
+      ]).then((faces) => faces.map((face) => face.length)),
+    );
+    expect(loaded).toEqual([1, 1]);
+  } finally {
+    await hub.close();
+  }
 });

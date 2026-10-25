@@ -29,7 +29,9 @@ function release(version: string): PluginRelease {
 test("index.json lists every release, newest first, and the Hub's RegistryIndex parses it", () => {
   const one = release("1.0.0");
 
-  const index = registryIndexFrom([one, release("1.1.0")]);
+  const { index, skipped } = registryIndexFrom([one, release("1.1.0")]);
+
+  expect(skipped).toEqual([]);
 
   const parsed = RegistryIndex.parse(JSON.parse(index));
   expect(Object.keys(parsed.plugins)).toEqual(["pdf-watermark-eraser"]);
@@ -49,26 +51,46 @@ test("index.json lists every release, newest first, and the Hub's RegistryIndex 
 test("the same releases in any order give the same index.json", () => {
   const releases = [release("1.0.0"), release("2.0.0"), release("1.10.0")];
 
-  expect(registryIndexFrom(releases)).toBe(
-    registryIndexFrom([...releases].reverse()),
+  expect(registryIndexFrom(releases).index).toBe(
+    registryIndexFrom([...releases].reverse()).index,
   );
 });
 
-test("a release whose tag disagrees with its packed Manifest is refused", () => {
+test("a release whose tag disagrees with its packed Manifest is left out and reported", () => {
   const bad = { ...release("1.0.0"), tag: "plugin/pdf-watermark-eraser@1.0.1" };
 
-  expect(() => registryIndexFrom([bad])).toThrow(
-    "plugin/pdf-watermark-eraser@1.0.1 holds pdf-watermark-eraser 1.0.0",
-  );
+  const { index, skipped } = registryIndexFrom([bad, release("1.1.0")]);
+
+  expect(skipped).toEqual([
+    {
+      tag: "plugin/pdf-watermark-eraser@1.0.1",
+      reason:
+        "plugin/pdf-watermark-eraser@1.0.1 holds pdf-watermark-eraser 1.0.0",
+    },
+  ]);
+  expect(index).toBe(registryIndexFrom([release("1.1.0")]).index);
 });
 
-test("a release whose package has an invalid Manifest is refused", () => {
-  const bad = {
+test("a release whose package has an invalid Manifest, or is no zip, is left out and reported", () => {
+  const invalid = {
     ...release("1.0.0"),
     packageZip: zipSync({ "manifest.json": strToU8('{"id": "x"}') }),
   };
+  const notZip = {
+    ...release("1.0.1"),
+    packageZip: strToU8("not a zip"),
+  };
 
-  expect(() => registryIndexFrom([bad])).toThrow(
-    "plugin/pdf-watermark-eraser@1.0.0 has an invalid manifest.json",
-  );
+  const { index, skipped } = registryIndexFrom([
+    notZip,
+    release("1.1.0"),
+    invalid,
+  ]);
+
+  expect(skipped.map(({ tag }) => tag)).toEqual([
+    "plugin/pdf-watermark-eraser@1.0.0",
+    "plugin/pdf-watermark-eraser@1.0.1",
+  ]);
+  expect(skipped[0]?.reason).toContain("has an invalid manifest.json");
+  expect(index).toBe(registryIndexFrom([release("1.1.0")]).index);
 });

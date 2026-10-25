@@ -1,6 +1,6 @@
 {
   "name": "@hawkeye-hub/fake-hub",
-  "description": "A fake window.hub for Plugin UI tests under Vitest (PLUGIN_STANDARD.md 禮9.1).",
+  "description": "A fake window.hub for Plugin UI tests under Vitest (PLUGIN_STANDARD.md §9.1).",
   "private": true,
   "type": "module",
   "exports": {

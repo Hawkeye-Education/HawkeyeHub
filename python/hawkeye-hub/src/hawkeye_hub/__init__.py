@@ -8,18 +8,27 @@ import inspect
 import json
 import logging
 import os
+import re
 import sys
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal, TypeVar, get_type_hints
+from typing import Any, Literal, Self, TypeVar, get_type_hints
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    GetCoreSchemaHandler,
+    TypeAdapter,
+    ValidationError,
+)
 from pydantic.alias_generators import to_camel
+from pydantic_core import core_schema
 
-__all__ = ["Backend", "Context", "Model", "RpcError"]
+__all__ = ["Backend", "Context", "Model", "Reason", "RpcError", "SemVer"]
 
 log = logging.getLogger("hawkeye_hub")
 
@@ -43,13 +52,49 @@ class Model(BaseModel):
     )
 
 
+class _Constrained(str):
+    """A str that only holds values matching `_pattern`; constructing one validates it."""
+
+    _pattern: re.Pattern[str]
+    _what: str
+
+    def __new__(cls, value: str) -> Self:
+        if cls._pattern.fullmatch(value) is None:
+            raise ValueError(f"{value!r} is not {cls._what}")
+        return super().__new__(cls, value)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source: type[Any], handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        return core_schema.no_info_after_validator_function(cls, core_schema.str_schema())
+
+
+class SemVer(_Constrained):
+    """A semantic version (semver.org), such as the Hub API version `1.3.0`."""
+
+    _pattern = re.compile(
+        r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+        r"(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?"
+    )
+    _what = "a semantic version"
+
+
+class Reason(_Constrained):
+    """A kebab-case error code, such as `folder-missing`, that the Plugin UI translates."""
+
+    _pattern = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+    _what = "a kebab-case reason"
+
+
 class RpcError(Exception):
     """Rejects a request: `reason` is a kebab-case code the Plugin UI translates, `message` is
-    technical English."""
+    technical English. A `reason` that is not kebab-case raises `ValueError`, which the request is
+    then answered with as `internal`."""
 
     def __init__(self, reason: str, message: str) -> None:
         super().__init__(message)
-        self.reason = reason
+        self.reason = Reason(reason)
         self.message = message
 
 
@@ -62,7 +107,7 @@ class Context:
 
     data_dir: Path
     stores: Mapping[str, Path]
-    hub_api: str
+    hub_api: SemVer
     _write: Callable[[Message], None] = field(repr=False)
 
     def notify(self, method: str, params: Model) -> None:
@@ -95,7 +140,7 @@ _incoming: TypeAdapter[_Request | _Notification] = TypeAdapter(_Request | _Notif
 class _Initialize(Model):
     data_dir: Path
     stores: dict[str, Path]
-    hub_api: str
+    hub_api: SemVer
 
 
 @dataclass(frozen=True)
@@ -192,7 +237,7 @@ class Backend:
                 return
 
     def _answer(self, ctx: Context, request: _Request, write: Callable[[Message], None]) -> None:
-        def error(code: int, reason: str, message: str) -> None:
+        def error(code: int, reason: Reason, message: str) -> None:
             write(
                 {
                     "jsonrpc": "2.0",
@@ -203,12 +248,12 @@ class Backend:
 
         handler = self._requests.get(request.method)
         if handler is None:
-            error(METHOD_NOT_FOUND, "method-not-found", f"No method {request.method!r}")
+            error(METHOD_NOT_FOUND, Reason("method-not-found"), f"No method {request.method!r}")
             return
         try:
             params = handler.params.model_validate(request.params, by_name=False)
         except ValidationError as e:
-            error(INVALID_PARAMS, "invalid-params", str(e))
+            error(INVALID_PARAMS, Reason("invalid-params"), str(e))
             return
         try:
             result = handler.run(ctx, params)
@@ -219,7 +264,7 @@ class Backend:
             # A bug in the handler: the traceback goes to stderr, the Backend's log, and the Plugin
             # UI gets `internal`. The process keeps serving other requests.
             log.exception("%s failed", request.method)
-            error(INTERNAL_ERROR, "internal", f"{type(e).__name__}: {e}")
+            error(INTERNAL_ERROR, Reason("internal"), f"{type(e).__name__}: {e}")
             return
         if not isinstance(result, Model):
             raise TypeError(f"{request.method} returned {type(result).__name__}, not a Model")

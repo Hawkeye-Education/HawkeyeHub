@@ -46,7 +46,11 @@ def _strip_stream(doc: Doc, pno: int, xref: int, rx: re.Pattern[str]) -> int:
     page text and see which lines vanished, bisecting to stay fast. A block goes only if every
     line it contributed matches `rx`.
     """
-    raw: bytes = doc.xref_stream(xref) or b""
+    raw: bytes | None = doc.xref_stream(xref)
+    if raw is None:
+        # A Contents or form entry that is no stream draws nothing; PyMuPDF answers None for it
+        # (probed: a page whose /Contents names a plain dict reads as no text).
+        return 0
     spans = [m.span() for m in BT_ET.finditer(raw)]
     if not spans:
         return 0
@@ -83,7 +87,9 @@ def _used_xobjects(doc: Doc, pno: int) -> list[int]:
     seen: set[int] = set()
 
     def walk(parent: int, stream_xrefs: list[int]) -> None:
-        content = b"".join(doc.xref_stream(x) or b"" for x in stream_xrefs)
+        # A stream xref that is no stream (None, see `_strip_stream`) calls nothing.
+        streams: list[bytes | None] = [doc.xref_stream(x) for x in stream_xrefs]
+        content = b"".join(s for s in streams if s is not None)
         called = set(DO_CALL.findall(content))
         for xref, name, invoker, _ in xobjects:
             if (

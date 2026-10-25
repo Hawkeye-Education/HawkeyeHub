@@ -6,7 +6,6 @@ import { z } from "zod";
 export const ListPdfsResult = z.strictObject({ files: z.array(z.string()) });
 
 export const PageTextResult = z.strictObject({
-  pageCount: z.number().int(),
   lines: z.array(z.string()),
   repeated: z.array(z.string()),
 });
