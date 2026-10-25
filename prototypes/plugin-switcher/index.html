@@ -28,7 +28,7 @@
   input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea { min-height: 28px; border-radius: var(--hub-radius-1); }
 
   .win { display: flex; height: 100vh; }
-  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .body { flex: 1; display: flex; min-height: 0; gap: var(--hub-space-2); padding: 0 var(--hub-space-2) var(--hub-space-2) 0; }
   .win.no-side .body { padding-left: var(--hub-space-2); }
   .view { flex: 1; overflow: auto; background: var(--hub-color-surface); border: 1px solid var(--hub-color-line);
@@ -55,7 +55,7 @@
   .ib[aria-current] { background: var(--item-front); color: var(--hub-color-accent); }
 
   /* ---------- Switcher, shared row ---------- */
-  .sw { flex: none; width: 224px; display: flex; flex-direction: column; min-height: 0; }
+  .sw { flex: none; width: var(--sw-width, 224px); display: flex; flex-direction: column; min-height: 0; }
   .scroll { flex: 1; overflow-y: auto; padding: 0 var(--hub-space-2) var(--hub-space-2); }
   .sec { margin: var(--hub-space-3) var(--hub-space-2) 2px; font-size: 11px; font-weight: 500; color: var(--hub-color-fg-muted); }
   .hint { margin: 0 var(--hub-space-2); font-size: var(--hub-text-sm); }
@@ -83,6 +83,7 @@
   /* ---------- B: Favourites as tiles ---------- */
   .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
   .tile { position: relative; }
+  .tile .main > span:first-of-type { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tile .main { width: 100%; display: grid; justify-items: center; gap: 4px; padding: 8px 2px 6px; border-radius: var(--hub-radius-1);
                 font-size: 11px; text-align: center; line-height: 1.2; }
   .tile .main svg { width: 18px; height: 18px; }
@@ -97,7 +98,7 @@
   .tile .reason { font-size: 10px; color: var(--hub-color-warning); }
 
   /* ---------- C: on a card ---------- */
-  .swC { width: 232px; margin: 0 var(--hub-space-2) var(--hub-space-2); background: var(--hub-color-surface); border: 1px solid var(--hub-color-line);
+  .swC { width: var(--sw-width, 224px); margin: 0 var(--hub-space-2) var(--hub-space-2); background: var(--hub-color-surface); border: 1px solid var(--hub-color-line);
          border-radius: var(--hub-radius-2); }
   .win.side-c .body { padding-left: 0; }
   .swC .brand { border-bottom: 1px solid var(--hub-color-line); }
@@ -144,6 +145,7 @@
   <button data-p="prev">‹</button><span class="lbl" id="vlabel"></span><button data-p="next">›</button>
   <button data-p="scheme" id="pscheme"></button>
   <button data-p="cmode" id="pcollapse"></button>
+  <button data-p="width" id="pwidth"></button>
 </div>
 <script>
 // Lucide icons (ISC), inline.
@@ -199,6 +201,7 @@ const q = new URLSearchParams(location.search);
 const S = {
   variant: VARIANTS[q.get('variant')] ? q.get('variant') : 'A',
   scheme: q.get('scheme') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+  width: [224, 260, 300].includes(+q.get('width')) ? +q.get('width') : 260,
   collapseMode: q.get('collapse') === 'hidden' ? 'hidden' : 'rail',
   collapsed: false,
   favs: new Set(['timetable', 'reports', 'eraser']),
@@ -311,12 +314,14 @@ function render() {
     ? `<aside class="panel"><h2>Assistant</h2><p>The Panel itself is the Assistant prototype (#145).</p><textarea placeholder="Ask about ${byId(S.front).name}…"></textarea></aside>` : '';
   const scroll = document.querySelector('.scroll')?.scrollTop;
   document.getElementById('app').innerHTML = `<div class="win ${side ? '' : 'no-side'} ${!S.collapsed && S.variant === 'C' ? 'side-c' : ''}">
-    ${side}<div class="main">${header()}<div class="body">${view()}${panel}</div></div></div>`;
+    ${side}<div class="content">${header()}<div class="body">${view()}${panel}</div></div></div>`;
   if (scroll) document.querySelector('.scroll').scrollTop = scroll;
   document.getElementById('vlabel').textContent = `${S.variant} · ${VARIANTS[S.variant]}`;
   document.getElementById('pscheme').textContent = `scheme: ${S.scheme}`;
   document.getElementById('pcollapse').textContent = `collapse: ${S.collapseMode}`;
-  history.replaceState(null, '', `?${new URLSearchParams({ variant: S.variant, scheme: S.scheme, collapse: S.collapseMode })}`);
+  document.getElementById("pwidth").textContent = `width: ${S.width}px`;
+  document.documentElement.style.setProperty("--sw-width", `${S.width}px`);
+  history.replaceState(null, '', `?${new URLSearchParams({ variant: S.variant, scheme: S.scheme, collapse: S.collapseMode, width: S.width })}`);
 }
 
 // Force hawkeye.css's dark block on or off, whatever the OS says.
@@ -353,6 +358,7 @@ document.addEventListener('click', (e) => {
     }
     case 'scheme': S.scheme = S.scheme === 'dark' ? 'light' : 'dark'; applyScheme(); break;
     case 'cmode': S.collapseMode = S.collapseMode === 'rail' ? 'hidden' : 'rail'; S.collapsed = true; break;
+    case 'width': { const w = [224, 260, 300]; S.width = w[(w.indexOf(S.width) + 1) % w.length]; break; }
   }
   render();
 });
