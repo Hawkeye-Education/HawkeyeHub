@@ -24,6 +24,9 @@ export type DisplayLanguage = (typeof DISPLAY_LANGUAGES)[number];
 /** The Plugin Switcher's width: the Hub Chrome draws it, main lays Plugin UIs out beside it. */
 export const SWITCHER_WIDTH_PX = 260;
 
+/** The Plugin Switcher's width collapsed to its icon rail (#153). */
+export const RAIL_WIDTH_PX = 48;
+
 /** The header strip's height: the Hub Chrome draws it, main lays Plugin UIs out below it. */
 export const HEADER_STRIP_HEIGHT_PX = 40;
 
@@ -180,6 +183,8 @@ export interface HubChromeSnapshot {
   catalogue: Catalogue;
   /** The front Plugin's Assistant Panel. */
   assistant: AssistantPanel;
+  /** The Plugin Switcher shows as its icon rail, `RAIL_WIDTH_PX` wide. */
+  switcherCollapsed: boolean;
 }
 
 /** The Assistant Panel's width: the Hub Chrome draws it, main narrows the Plugin UI beside it. */
@@ -357,6 +362,8 @@ export interface HubChromeApi {
   chooseModel(id: PluginId, model: AiModelChoice): void;
   /** Stars or unstars an installed Plugin as a Favourite, saved at once. */
   toggleFavourite(id: PluginId): void;
+  /** Collapses the Plugin Switcher to its icon rail, or expands it, saved at once. */
+  toggleSwitcher(): void;
 }
 
 /** Hub Chrome → main, `invoke`: answers the current snapshot. */
@@ -401,3 +408,5 @@ export const NEW_CONVERSATION = "hub-chrome:new-conversation";
 export const CHOOSE_MODEL = "hub-chrome:choose-model";
 /** Hub Chrome → main, `invoke`: the id of an installed Plugin to star or unstar. */
 export const TOGGLE_FAVOURITE = "hub-chrome:toggle-favourite";
+/** Hub Chrome → main, `invoke`: collapses or expands the Plugin Switcher. */
+export const TOGGLE_SWITCHER = "hub-chrome:toggle-switcher";

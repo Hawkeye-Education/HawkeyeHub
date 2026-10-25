@@ -16,6 +16,7 @@ import {
 import {
   ASSISTANT_PANEL_WIDTH_PX,
   HEADER_STRIP_HEIGHT_PX,
+  RAIL_WIDTH_PX,
   SWITCHER_WIDTH_PX,
   type BusyReason,
   type DisplayLanguage,
@@ -101,17 +102,20 @@ export function createPluginViews(
 ): PluginViews {
   const opened = new Map<PluginId, OpenPlugin>();
 
-  // Whether the front Plugin's Assistant Panel is open, as the latest snapshot says.
+  // Whether the front Plugin's Assistant Panel is open, and the Switcher collapsed to its rail, as
+  // the latest snapshot says.
   let panelOpen = false;
-  // Beside the Plugin Switcher, below the header strip, and left of the Assistant Panel while it
+  let switcherCollapsed = false;
+  // Beside the Plugin Switcher or its rail, below the header strip, and left of the Assistant Panel while it
   // is open. Only the front view shows, so every view takes the front one's bounds.
   const contentArea = (): Rectangle => {
     const { width, height } = contentAreaOf(window);
     const panel = panelOpen ? ASSISTANT_PANEL_WIDTH_PX : 0;
+    const switcher = switcherCollapsed ? RAIL_WIDTH_PX : SWITCHER_WIDTH_PX;
     return {
-      x: SWITCHER_WIDTH_PX,
+      x: switcher,
       y: HEADER_STRIP_HEIGHT_PX,
-      width: width - SWITCHER_WIDTH_PX - panel,
+      width: width - switcher - panel,
       height: height - HEADER_STRIP_HEIGHT_PX,
     };
   };
@@ -273,8 +277,16 @@ export function createPluginViews(
   };
 
   return {
-    follow({ open: openIds, foreground, content, displayLanguage, assistant }) {
+    follow({
+      open: openIds,
+      foreground,
+      content,
+      displayLanguage,
+      assistant,
+      switcherCollapsed: collapsed,
+    }) {
       panelOpen = assistant.kind === "open";
+      switcherCollapsed = collapsed;
       for (const [id, plugin] of opened) {
         if (!openIds.includes(id)) close(id, plugin);
       }

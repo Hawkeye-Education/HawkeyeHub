@@ -4,6 +4,8 @@
 // open one has a dot and a close control. A closing one says so and cannot be clicked until it is
 // gone. A Plugin the Hub cannot run shows why, and is not a control, so clicking it does nothing.
 // The star on each row saves a Favourite at once.
+// Collapsed, it is the icon rail (#144): the logo mark, each Plugin as an icon with its name and
+// status as a tooltip, the Favourites above a divider, and Catalogue and Settings at the bottom.
 
 import { LitElement, css, html, nothing, unsafeCSS } from "lit";
 import type { PluginId } from "@hawkeye-hub/plugin-format";
@@ -238,6 +240,58 @@ export class PluginSwitcher extends LitElement {
         fill: var(--hub-color-accent);
         stroke: var(--hub-color-accent);
       }
+      /* The icon rail. */
+      :host([collapsed]) .brand {
+        padding: 0;
+        justify-content: center;
+      }
+      :host([collapsed]) nav,
+      :host([collapsed]) .foot {
+        display: grid;
+        justify-items: center;
+        align-content: start;
+        gap: 1px;
+      }
+      :host([collapsed]) nav {
+        padding: 0 0 var(--hub-space-2);
+        scrollbar-width: none;
+      }
+      :host([collapsed]) hr {
+        width: 20px;
+        margin: 4px 0;
+        border: 0;
+        border-top: 1px solid var(--hub-color-line);
+      }
+      :host([collapsed]) .foot {
+        flex: none;
+        border-top: 1px solid var(--hub-color-line);
+        padding: var(--hub-space-1) 0;
+      }
+      .ri {
+        position: relative;
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border-radius: var(--hub-radius-1);
+        color: inherit;
+      }
+      .ri:hover:not(:disabled) {
+        background: var(--item-hover);
+      }
+      .ri[aria-current] {
+        background: var(--item-front);
+        color: var(--hub-color-accent);
+      }
+      .ri.blocked,
+      .ri:disabled {
+        opacity: 0.5;
+      }
+      .ri .dot {
+        position: absolute;
+        right: 4px;
+        bottom: 5px;
+      }
     `,
   ];
 
@@ -249,6 +303,7 @@ export class PluginSwitcher extends LitElement {
     foreground: { attribute: false },
     screen: { attribute: false },
     catalogueOn: { attribute: false },
+    collapsed: { attribute: false },
     hub: { attribute: false },
   };
   // `declare`: a class field would shadow Lit's reactive accessor. The Hub Chrome sets them all
@@ -263,12 +318,16 @@ export class PluginSwitcher extends LitElement {
   declare screen: HubChromeContent["kind"];
   /** Dev mode has no Catalogue (PLUGIN_STANDARD §9.4). */
   declare catalogueOn: boolean;
+  /** Drawn as the icon rail. */
+  declare collapsed: boolean;
   declare hub: HubChromeApi;
 
   override render() {
     const { strings, hub } = this;
     const favourites = this.plugins.filter(({ favourite }) => favourite);
     const rest = this.plugins.filter(({ favourite }) => !favourite);
+    this.toggleAttribute("collapsed", this.collapsed);
+    if (this.collapsed) return this.renderRail(favourites, rest);
     return html`<div class="brand">
         <span class="logo" aria-hidden="true"></span>
         <h1 class="word">Hawkeye <span>Hub</span></h1>
@@ -315,6 +374,84 @@ export class PluginSwitcher extends LitElement {
           ${rest.map((plugin) => this.renderRow(plugin))}
         </ul>
       </nav>`;
+  }
+
+  private renderRail(favourites: SwitcherPlugin[], rest: SwitcherPlugin[]) {
+    const { strings, hub } = this;
+    const screenButton = (
+      screen: "catalogue" | "settings",
+      label: string,
+      show: () => void,
+    ) =>
+      html`<button
+        class="bare ri"
+        aria-label=${label}
+        title=${label}
+        aria-current=${this.screen === screen ? "page" : nothing}
+        @click=${show}
+      >
+        ${icon(screen === "catalogue" ? "layout-grid" : "settings")}
+      </button>`;
+    return html`<div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+      </div>
+      <nav aria-label=${strings.plugins}>
+        ${favourites.map((plugin) => this.renderRailItem(plugin))}
+        ${favourites.length === 0 ? nothing : html`<hr />`}
+        ${rest.map((plugin) => this.renderRailItem(plugin))}
+      </nav>
+      <div class="foot">
+        ${
+          this.catalogueOn
+            ? screenButton("catalogue", strings.catalogue, () => {
+                hub.showCatalogue();
+              })
+            : nothing
+        }
+        ${screenButton("settings", strings.settings, () => {
+          hub.showSettings();
+        })}
+      </div>`;
+  }
+
+  private renderRailItem(plugin: SwitcherPlugin) {
+    const { strings, hub } = this;
+    const open = this.open.includes(plugin.id);
+    const closing = this.closing.includes(plugin.id);
+    const status =
+      plugin.access.kind === "blocked"
+        ? strings.blocked[plugin.access.reason]
+        : closing
+          ? strings.closing
+          : open
+            ? strings.open
+            : null;
+    const tip = status === null ? plugin.name : `${plugin.name} · ${status}`;
+    const inner = html`<span class="glyph"></span>
+      ${open && !closing ? html`<span class="dot"></span>` : nothing}`;
+    // A Plugin the Hub cannot run is not a control, as in the list.
+    return plugin.access.kind === "blocked"
+      ? html`<span
+          class="ri blocked"
+          role="img"
+          aria-label=${tip}
+          title=${tip}
+          .style=${iconStyle(plugin)}
+          >${inner}</span
+        >`
+      : html`<button
+          class="bare ri"
+          aria-label=${tip}
+          title=${tip}
+          aria-current=${plugin.id === this.foreground ? "page" : nothing}
+          ?disabled=${closing}
+          .style=${iconStyle(plugin)}
+          @click=${() => {
+            hub.open(plugin.id);
+          }}
+        >
+          ${inner}
+        </button>`;
   }
 
   private renderRow(plugin: SwitcherPlugin) {

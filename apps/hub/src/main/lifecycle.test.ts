@@ -146,6 +146,7 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
     themes: ["hawkeye"],
     catalogue: { kind: "off" },
     assistant: { kind: "none" },
+    switcherCollapsed: false,
   });
 });
 
@@ -2800,4 +2801,34 @@ test("starring while Hub Settings show leaves the unsaved form alone, and Save k
     colourScheme: "dark",
     favourites: ["attendance", "seating-plan"],
   });
+});
+
+test("collapsing the Switcher shows the rail at once and saves it, with no Save", () => {
+  const { lifecycle, saved } = withFavourites(["attendance"]);
+  expect(lifecycle.snapshot().switcherCollapsed).toBe(false);
+
+  lifecycle.toggleSwitcher();
+  expect(lifecycle.snapshot().switcherCollapsed).toBe(true);
+  expect(saved).toEqual([
+    {
+      ...FIRST_LAUNCH_SETTINGS,
+      favourites: ["attendance"],
+      switcherCollapsed: true,
+    },
+  ]);
+
+  lifecycle.toggleSwitcher();
+  expect(lifecycle.snapshot().switcherCollapsed).toBe(false);
+  expect(saved.at(-1)?.switcherCollapsed).toBe(false);
+});
+
+test("a Save from Hub Settings keeps the Switcher collapsed", () => {
+  const { lifecycle, saved } = withFavourites([]);
+  lifecycle.toggleSwitcher();
+  lifecycle.showSettings();
+  lifecycle.editSettings(
+    formOf({ ...FIRST_LAUNCH_SETTINGS, colourScheme: "dark" }),
+  );
+  lifecycle.saveSettings();
+  expect(saved.at(-1)?.switcherCollapsed).toBe(true);
 });
