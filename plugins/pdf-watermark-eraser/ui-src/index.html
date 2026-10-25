@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- The Hub preload has already set <html lang>, loaded the --hub-* tokens, the native-element
+         stylesheet and the Hub Kit, and exposed window.hub (PLUGIN_STANDARD.md §4.2). -->
+    <link rel="stylesheet" href="./layout.css" />
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <main class="stack">
+      <section class="stack">
+        <hub-folder-field id="input"></hub-folder-field>
+        <hub-folder-field id="output"></hub-folder-field>
+      </section>
+
+      <section class="stack">
+        <label class="stack-tight">
+          <span id="pattern-label"></span>
+          <input id="pattern" type="text" />
+        </label>
+        <div class="row">
+          <label
+            ><input id="regex" type="checkbox" /> <span id="regex-label"></span
+          ></label>
+          <label
+            ><input id="ignore-case" type="checkbox" />
+            <span id="ignore-case-label"></span
+          ></label>
+        </div>
+      </section>
+
+      <details>
+        <summary id="finder"></summary>
+        <div class="stack">
+          <p id="finder-hint"></p>
+          <div class="row">
+            <label
+              ><span id="file-label"></span>
+              <select id="file"></select
+            ></label>
+            <label
+              ><span id="page-label"></span>
+              <input id="page" type="number" min="1" value="1"
+            /></label>
+            <button id="show" type="button" disabled></button>
+            <button id="copy" type="button" disabled></button>
+          </div>
+          <p id="repeated"></p>
+          <pre id="text"></pre>
+        </div>
+      </details>
+
+      <section class="stack">
+        <div class="row">
+          <button id="run" type="button" data-variant="primary"></button>
+          <button id="cancel" type="button" hidden></button>
+          <button id="open-output" type="button" hidden></button>
+        </div>
+        <progress id="progress" value="0" max="1"></progress>
+        <p id="summary" role="status"></p>
+      </section>
+
+      <hub-log id="log"></hub-log>
+    </main>
+  </body>
+</html>

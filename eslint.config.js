@@ -9,6 +9,8 @@ export default tseslint.config(
       "**/dist/",
       "**/test-results/",
       "**/playwright-report/",
+      // A Plugin UI's Vite build output.
+      "plugins/*/ui/",
     ],
   },
   eslint.configs.recommended,
