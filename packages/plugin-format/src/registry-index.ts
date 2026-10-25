@@ -36,23 +36,30 @@ export interface PluginRelease {
   packageZip: Uint8Array;
 }
 
+/** A release left out of `index.json`, and why. */
+export interface SkippedRelease {
+  tag: string;
+  reason: string;
+}
+
 /**
  * The `index.json` text for `releases`: each Plugin's versions newest first, Plugins by id, so the
- * same releases in any order give the same bytes. Throws on a release that disagrees with itself.
+ * same releases in any order give the same bytes. A release that disagrees with itself or does not
+ * unpack leaves out only itself, as a bad index entry does in the Hub, and is reported in `skipped`.
  */
-export function registryIndexFrom(releases: PluginRelease[]): string {
+export function registryIndexFrom(releases: PluginRelease[]): {
+  index: string;
+  skipped: SkippedRelease[];
+} {
+  const skipped: SkippedRelease[] = [];
   const entries = releases
-    .map((release) => {
-      const manifest = packedManifest(release);
-      return {
-        manifest,
-        entry: {
-          manifest,
-          url: WebUrl.parse(release.packageUrl),
-          sha256: createHash("sha256").update(release.packageZip).digest("hex"),
-          iconUrl: WebUrl.parse(release.iconUrl),
-        },
-      };
+    .flatMap((release) => {
+      const read = readRelease(release);
+      if (read.kind === "bad") {
+        skipped.push({ tag: release.tag, reason: read.reason });
+        return [];
+      }
+      return [read];
     })
     .sort(
       (a, b) =>
@@ -63,7 +70,37 @@ export function registryIndexFrom(releases: PluginRelease[]): string {
   for (const { manifest, entry } of entries) {
     (plugins[manifest.id] ??= []).push(entry);
   }
-  return `${JSON.stringify({ plugins }, null, 2)}\n`;
+  return {
+    index: `${JSON.stringify({ plugins }, null, 2)}\n`,
+    skipped: skipped.sort((a, b) => a.tag.localeCompare(b.tag, "en")),
+  };
+}
+
+function readRelease(
+  release: PluginRelease,
+):
+  | { kind: "bad"; reason: string }
+  | { kind: "read"; manifest: Manifest; entry: z.infer<typeof IndexEntry> } {
+  try {
+    const manifest = packedManifest(release);
+    return {
+      kind: "read",
+      manifest,
+      entry: {
+        manifest,
+        url: WebUrl.parse(release.packageUrl),
+        sha256: Sha256.parse(
+          createHash("sha256").update(release.packageZip).digest("hex"),
+        ),
+        iconUrl: WebUrl.parse(release.iconUrl),
+      },
+    };
+  } catch (e) {
+    // Every throw above is this release's own bytes or URLs being bad (fflate, JSON.parse, zod,
+    // packedManifest), so it is reported and left out rather than blocking every other release.
+    if (!(e instanceof Error)) throw e;
+    return { kind: "bad", reason: e.message };
+  }
 }
 
 function packedManifest({ tag, packageZip }: PluginRelease): Manifest {

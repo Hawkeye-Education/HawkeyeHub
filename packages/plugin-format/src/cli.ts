@@ -2,8 +2,9 @@
 // Node runs this file directly with type stripping, so local imports name their `.ts` file.
 //   check <dir> [--tag plugin/<id>@<version>]   prints every problem, exits 1 if there are any
 //   pack <dir>                                  writes out/<id>-<version>.zip, prints its sha256
-//   index <file>                                writes the Registry's index.json from every
-//                                               Plugin release of $GITHUB_REPOSITORY
+//   index <file> [--tag plugin/<id>@<version>]  writes the Registry's index.json from every
+//                                               Plugin release of $GITHUB_REPOSITORY, warns of
+//                                               each bad one it leaves out, exits 1 if --tag is one
 // pnpm runs root scripts in the repo root, so `<dir>` is relative to it (`plugins/<id>`).
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -13,11 +14,15 @@ import semver from "semver";
 import { z } from "zod";
 import { checkPlugin, type CheckContext } from "./check.ts";
 import { packPlugin } from "./pack.ts";
-import { registryIndexFrom, type PluginRelease } from "./registry-index.ts";
+import {
+  registryIndexFrom,
+  type PluginRelease,
+  type SkippedRelease,
+} from "./registry-index.ts";
 
 const REPO = join(import.meta.dirname, "../../..");
 const USAGE =
-  "usage: plugin-format check <dir> [--tag plugin/<id>@<version>]\n       plugin-format pack <dir>\n       plugin-format index <file>";
+  "usage: plugin-format check <dir> [--tag plugin/<id>@<version>]\n       plugin-format pack <dir>\n       plugin-format index <file> [--tag plugin/<id>@<version>]";
 
 function hubApiVersion(): string {
   const raw: unknown = JSON.parse(
@@ -52,12 +57,17 @@ const GitHubReleases = z.array(
 );
 const RELEASES_PAGE_SIZE = 100;
 
-/** Every published `plugin/*` release of `repo`, with its Plugin Package downloaded. */
+/**
+ * Every published `plugin/*` release of `repo`, with its Plugin Package downloaded, and those
+ * whose assets are not one zip and one icon.svg, left out. A failed download throws: it may be
+ * transient, and leaving the release out would drop it from the Catalogue.
+ */
 async function pluginReleases(
   repo: string,
   token: string,
-): Promise<PluginRelease[]> {
+): Promise<{ releases: PluginRelease[]; skipped: SkippedRelease[] }> {
   const releases: PluginRelease[] = [];
+  const skipped: SkippedRelease[] = [];
   for (let page = 1; ; page++) {
     const response = await fetch(
       `https://api.github.com/repos/${repo}/releases?per_page=${String(RELEASES_PAGE_SIZE)}&page=${String(page)}`,
@@ -77,14 +87,22 @@ async function pluginReleases(
       (candidate) =>
         !candidate.draft && candidate.tag_name.startsWith("plugin/"),
     )) {
-      const asset = (name: string, matches: (name: string) => boolean) => {
+      const asset = (matches: (name: string) => boolean) => {
         const [only, ...others] = release.assets.filter((a) => matches(a.name));
-        if (only === undefined || others.length > 0) {
-          throw new Error(`${release.tag_name} needs exactly one ${name}`);
-        }
-        return only.browser_download_url;
+        return only === undefined || others.length > 0
+          ? { kind: "none" as const }
+          : { kind: "one" as const, url: only.browser_download_url };
       };
-      const packageUrl = asset("zip", (name) => name.endsWith(".zip"));
+      const zip = asset((name) => name.endsWith(".zip"));
+      const icon = asset((name) => name === "icon.svg");
+      if (zip.kind === "none" || icon.kind === "none") {
+        skipped.push({
+          tag: release.tag_name,
+          reason: `${release.tag_name} needs exactly one zip and one icon.svg`,
+        });
+        continue;
+      }
+      const packageUrl = zip.url;
       const download = await fetch(packageUrl);
       if (!download.ok) {
         throw new Error(`${packageUrl}: HTTP ${String(download.status)}`);
@@ -92,11 +110,11 @@ async function pluginReleases(
       releases.push({
         tag: release.tag_name,
         packageUrl,
-        iconUrl: asset("icon.svg", (name) => name === "icon.svg"),
+        iconUrl: icon.url,
         packageZip: new Uint8Array(await download.arrayBuffer()),
       });
     }
-    if (batch.length < RELEASES_PAGE_SIZE) return releases;
+    if (batch.length < RELEASES_PAGE_SIZE) return { releases, skipped };
   }
 }
 
@@ -141,12 +159,22 @@ switch (command) {
     break;
   }
   case "index": {
-    const releases = await pluginReleases(
+    const fetched = await pluginReleases(
       requiredEnv("GITHUB_REPOSITORY"),
       requiredEnv("GITHUB_TOKEN"),
     );
-    writeFileSync(resolve(dir), registryIndexFrom(releases));
-    console.log(`${dir} lists ${String(releases.length)} release(s).`);
+    const { index, skipped } = registryIndexFrom(fetched.releases);
+    const left = [...fetched.skipped, ...skipped];
+    writeFileSync(resolve(dir), index);
+    for (const { tag, reason } of left) {
+      // `::warning::` makes it an annotation on the GitHub Actions run, where this command runs.
+      console.warn(`::warning::${tag} is left out of index.json: ${reason}`);
+    }
+    console.log(
+      `${dir} lists ${String(fetched.releases.length - skipped.length)} release(s), leaving out ${String(left.length)}.`,
+    );
+    // The release this run published must not be one left out.
+    if (left.some(({ tag }) => tag === values.tag)) process.exit(1);
     break;
   }
   case undefined:
