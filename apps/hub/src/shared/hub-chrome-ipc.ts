@@ -109,6 +109,27 @@ export const COLOUR_SCHEMES = ["system", "light", "dark"] as const;
 export type ColourScheme = (typeof COLOUR_SCHEMES)[number];
 
 /**
+ * What a model accepts besides text, which every model takes (spec #142): `document` is a PDF,
+ * `audio` a WAV or MP3. No video until a provider kind sends it.
+ */
+export const MODEL_INPUTS = ["image", "document", "audio"] as const;
+export type ModelInput = (typeof MODEL_INPUTS)[number];
+
+/** The inputs a provider of `kind` can send: the Anthropic library sends no audio. */
+export function inputsFor(
+  kind: "openai-compatible" | "anthropic",
+): readonly ModelInput[] {
+  switch (kind) {
+    case "openai-compatible":
+      return MODEL_INPUTS;
+    case "anthropic":
+      return ["image", "document"];
+    default:
+      return kind satisfies never;
+  }
+}
+
+/**
  * What the content area shows: the front Plugin's UI (or the empty state when none is open), or
  * Hub Settings or the Plugin Catalogue, with the open Plugins still running hidden behind them.
  * Settings carry the unsaved form, held in main, so a reloaded Hub Chrome redraws it.
@@ -182,7 +203,7 @@ export interface PromptTemplate {
 /**
  * The Plugin's model: its picker's `choice`, and where its messages go. `none` is Default with no
  * Default AI Provider; `missing` is a chosen provider or model since removed, whose messages fail
- * with `provider-missing` (no silent switch). The composer offers images only when it accepts them.
+ * with `provider-missing` (no silent switch). The composer offers only the `inputs` it accepts.
  */
 export type CurrentModel = { choice: AiModelChoice } & (
   | { kind: "none" }
@@ -191,7 +212,7 @@ export type CurrentModel = { choice: AiModelChoice } & (
       kind: "chosen";
       provider: AiProviderLabel;
       model: ModelId;
-      acceptsImages: boolean;
+      inputs: ModelInput[];
     }
 );
 

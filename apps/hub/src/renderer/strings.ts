@@ -7,6 +7,7 @@ import type {
   CrashCause,
   DisplayLanguage,
   InstallFailureCause,
+  ModelInput,
 } from "../shared/hub-chrome-ipc";
 
 export const STRINGS = {
@@ -61,7 +62,12 @@ export const STRINGS = {
     keySet: "Key set",
     noKey: "No key",
     model: "Model",
-    acceptsImages: "Accepts images",
+    modelInputs: {
+      image: "Image",
+      document: "Document (PDF)",
+      audio: "Audio",
+    } satisfies Record<ModelInput, string>,
+    noAudioForAnthropic: "Anthropic's library can't send audio.",
     addModel: "Add model",
     removeModel: "Remove model",
     defaultAiProvider: "Default AI Provider",
@@ -168,7 +174,12 @@ export const STRINGS = {
     keySet: "已設定金鑰",
     noKey: "未設定金鑰",
     model: "模型",
-    acceptsImages: "接受圖片",
+    modelInputs: {
+      image: "圖片",
+      document: "文件 (PDF)",
+      audio: "音訊",
+    } satisfies Record<ModelInput, string>,
+    noAudioForAnthropic: "Anthropic 的程式庫無法傳送音訊。",
     addModel: "新增模型",
     removeModel: "移除模型",
     defaultAiProvider: "預設 AI 供應商",
