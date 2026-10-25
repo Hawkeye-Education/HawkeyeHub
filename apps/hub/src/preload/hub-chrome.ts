@@ -83,8 +83,8 @@ const api: HubChromeApi = {
   toggleAssistant(id) {
     void ipcRenderer.invoke(TOGGLE_ASSISTANT, id);
   },
-  sendToAssistant(id, content) {
-    void ipcRenderer.invoke(SEND_TO_ASSISTANT, id, content);
+  sendToAssistant(id, parts) {
+    void ipcRenderer.invoke(SEND_TO_ASSISTANT, id, parts);
   },
   stopAssistant(id) {
     void ipcRenderer.invoke(STOP_ASSISTANT, id);

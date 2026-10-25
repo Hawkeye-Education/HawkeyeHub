@@ -4,7 +4,12 @@
 // Types and constants only: the preload is sandboxed and the Hub Chrome has no Node.
 
 import type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
-import type { AiContent, AiFailure, AiMessage, AiModelChoice } from "./ai-call";
+import type {
+  AiContent,
+  AiFailure,
+  AiModelChoice,
+  SentPart,
+} from "./ai-call";
 import type { Branded } from "./branded";
 import type {
   AiProvider,
@@ -224,9 +229,14 @@ export type CurrentModel = { choice: AiModelChoice } & (
  */
 export interface Conversation {
   /** Every message sent and every finished (or stopped) reply, oldest first. */
-  messages: AiMessage[];
+  messages: ConversationMessage[];
   reply: AssistantReply;
 }
+
+/** A message staff sent, with its attachments' names, or a reply, which is text only. */
+export type ConversationMessage =
+  | { role: "user"; parts: SentPart[] }
+  | { role: "assistant"; content: AiContent };
 
 /**
  * The reply under way: none, streaming with what has arrived, or failed. A failure shows until
@@ -338,7 +348,7 @@ export interface HubChromeApi {
   /** Opens or closes an open Plugin's Assistant Panel. */
   toggleAssistant(id: PluginId): void;
   /** Sends a message to an open Plugin's Assistant, which then streams its reply. */
-  sendToAssistant(id: PluginId, content: AiContent): void;
+  sendToAssistant(id: PluginId, parts: SentPart[]): void;
   /** Stops the reply streaming, keeping what has arrived. */
   stopAssistant(id: PluginId): void;
   /** Drops the conversation, stopping any reply, and starts again. */
@@ -379,7 +389,7 @@ export const INSTALL_PLUGIN = "hub-chrome:install-plugin";
 export const UNINSTALL_PLUGIN = "hub-chrome:uninstall-plugin";
 /** Hub Chrome → main, `invoke`: the id of an open Plugin whose Assistant Panel to toggle. */
 export const TOGGLE_ASSISTANT = "hub-chrome:toggle-assistant";
-/** Hub Chrome → main, `invoke`: an open Plugin's id and the `AiContent` to send its Assistant. */
+/** Hub Chrome → main, `invoke`: an open Plugin's id and the `SentPart`s to send its Assistant. */
 export const SEND_TO_ASSISTANT = "hub-chrome:send-to-assistant";
 /** Hub Chrome → main, `invoke`: the id of an open Plugin whose Assistant reply to stop. */
 export const STOP_ASSISTANT = "hub-chrome:stop-assistant";
