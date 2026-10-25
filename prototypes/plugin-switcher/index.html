@@ -18,7 +18,9 @@
   /* The Theme solid tint behind every view (Windows 10), light and dark. */
   :root { --tint: linear-gradient(160deg, #f8f3ee, #ede5dd); --item-hover: color-mix(in srgb, var(--hub-color-accent) 8%, transparent);
           --item-front: color-mix(in srgb, var(--hub-color-accent) 15%, transparent); }
-  :root[data-scheme="dark"] { --tint: linear-gradient(160deg, #26211e, #1b1816); }
+  /* Dark is Near-black (#145, recorded in #142): flat tint, solid neutral panels. */
+  :root[data-scheme="dark"] { --tint: #0c0c0c; --hub-color-surface: #161616; --hub-color-surface-raised: #202020;
+                              --hub-color-fg-muted: #a0a0a0; --hub-color-line: rgb(255 255 255 / 0.1); }
   html, body { height: 100%; }
   body { background: var(--tint); overflow: hidden; font-size: 13px; }
   svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
