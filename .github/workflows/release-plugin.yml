@@ -1,8 +1,8 @@
 name: Release Plugin
 
 # On a `plugin/<id>@<version>` tag (ADR 0011, PLUGIN_STANDARD.md §10): build `ui/`, check, test on
-# one runner per Supported Platform, pack once, create the release, then regenerate the Registry.
-# A push to main that changes the Company Configuration only regenerates the Registry.
+# one runner per Supported Platform, then pack once and create the release, then regenerate the
+# Registry. A push to main that changes the Company Configuration only regenerates the Registry.
 on:
   push:
     tags: ["plugin/*@*"]
@@ -10,7 +10,7 @@ on:
     paths: [registry/company-config.json]
 
 jobs:
-  package:
+  check:
     if: startsWith(github.ref, 'refs/tags/plugin/')
     runs-on: ubuntu-latest
     outputs:
@@ -38,32 +38,24 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: pnpm --filter "${{ steps.tag.outputs.id }}" build
       - run: pnpm plugin-format check "plugins/${{ steps.tag.outputs.id }}" --tag "$GITHUB_REF_NAME"
-      - run: pnpm plugin-format pack "plugins/${{ steps.tag.outputs.id }}"
       - id: runners
         name: Pick a runner per Supported Platform
         run: |
           runners="$(jq -c '[.platforms[] | {"win32-x64": "windows-latest", "darwin-arm64": "macos-latest"}[.]]' "plugins/${{ steps.tag.outputs.id }}/manifest.json")"
           echo "runners=$runners" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: package
-          path: |
-            out/*.zip
-            plugins/${{ steps.tag.outputs.id }}/icon.svg
-          if-no-files-found: error
 
   test:
-    needs: package
+    needs: check
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.package.outputs.runners) }}
+        os: ${{ fromJSON(needs.check.outputs.runners) }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     env:
-      PLUGIN: plugins/${{ needs.package.outputs.id }}
+      PLUGIN: plugins/${{ needs.check.outputs.id }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -72,7 +64,7 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter "${{ needs.package.outputs.id }}" test
+      - run: pnpm --filter "${{ needs.check.outputs.id }}" test
       - if: hashFiles(format('{0}/backend/pyproject.toml', env.PLUGIN)) != ''
         uses: astral-sh/setup-uv@v6
         with:
@@ -81,19 +73,26 @@ jobs:
         working-directory: ${{ env.PLUGIN }}/backend
         run: uv sync --locked && uv run pytest
 
+  # Packs once the tests pass, from the commit they ran on, then publishes the release.
   release:
-    needs: [package, test]
+    needs: [check, test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      PLUGIN: plugins/${{ needs.check.outputs.id }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
-          name: package
-          path: package
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter "${{ needs.check.outputs.id }}" build
+      - run: pnpm plugin-format pack "$PLUGIN"
       # A rerun keeps a published release as it is: its zip and sha256 never change once listed.
       # A draft is what a run that failed mid-upload leaves, so it is replaced.
       - run: |
@@ -104,7 +103,7 @@ jobs:
             fi
             gh release delete "$GITHUB_REF_NAME" --yes
           fi
-          gh release create "$GITHUB_REF_NAME" package/out/*.zip "package/plugins/${{ needs.package.outputs.id }}/icon.svg" \
+          gh release create "$GITHUB_REF_NAME" out/*.zip "$PLUGIN/icon.svg" \
             --title "$GITHUB_REF_NAME" --notes "" --latest=false --verify-tag
 
   registry:
@@ -130,7 +129,14 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm plugin-format index index.json
+      # A bad release is left out with a warning. On a tag, --tag fails the run, before the upload,
+      # if the release it just published is one of them.
+      - if: startsWith(github.ref, 'refs/tags/plugin/')
+        run: pnpm plugin-format index index.json --tag "$GITHUB_REF_NAME"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - if: ${{ !startsWith(github.ref, 'refs/tags/plugin/') }}
+        run: pnpm plugin-format index index.json
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - run: |
