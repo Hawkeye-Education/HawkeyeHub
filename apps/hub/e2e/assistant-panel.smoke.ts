@@ -1,5 +1,5 @@
 // The Assistant Panel (#108) against a local fake OpenAI-compatible server: open a fixture Plugin
-// with an Assistant, toggle its Panel (which narrows the Plugin UI), send a message, watch the
+// with an Assistant, toggle its Panel from the header strip (which narrows the Plugin UI), send a message, watch the
 // reply stream and stop it, then get a Markdown reply and copy its code block. Each branch of the
 // conversation is a Vitest test of the lifecycle. Then the composer (#110): a Prompt Template, and
 // images and a long text pasted from the system clipboard. Last, the model picker (#109) saves its
@@ -96,10 +96,14 @@ test("the Assistant Panel streams a Markdown reply, stops one, and copies a code
     const page = await pluginPage(() => hub.windows(), "regex-helper");
     const fullWidth = await page.evaluate(() => window.innerWidth);
 
-    const toggle = hubChrome.getByRole("button", {
+    // The Assistant button is in the header strip, and no longer in the Plugin Switcher.
+    const toggle = hubChrome.getByRole("banner").getByRole("button", {
       name: labels.assistant,
       exact: true,
     });
+    await expect(
+      hubChrome.getByRole("button", { name: labels.assistant, exact: true }),
+    ).toHaveCount(1);
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-pressed", "true");

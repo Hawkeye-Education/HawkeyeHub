@@ -1,23 +1,33 @@
-// The Hub Chrome's root element: the Plugin Switcher down the side and the content area beside it.
+// The Hub Chrome's root element: the Plugin Switcher down the side, and beside it the header strip
+// above the content area and the Assistant Panel.
 // It draws the latest snapshot of the lifecycle state held in main, built from the Theme (ADR 0006).
 // Loaded with #dialog it is the dialog overlay instead, above every Plugin UI, and draws only the
 // pending dialog.
 
 import { LitElement, css, html, nothing, unsafeCSS } from "lit";
 import { keyed } from "lit/directives/keyed.js";
+import type { PluginId } from "@hawkeye-hub/plugin-format";
 import {
   ASSISTANT_PANEL_WIDTH_PX,
+  HEADER_STRIP_HEIGHT_PX,
   SWITCHER_WIDTH_PX,
   type HubChromeApi,
   type HubChromeSnapshot,
+  type SwitcherPlugin,
 } from "../shared/hub-chrome-ipc";
 import "./assistant-panel";
 import "./hub-dialog";
 import "./hub-settings";
 import "./plugin-catalogue";
 import "./plugin-switcher";
+import { icon } from "./icons";
 import { STRINGS, type Strings } from "./strings";
 import { native } from "./theme";
+
+/** Hands the icon URL to the mask, through the CSSOM: the CSP refuses a `style` attribute. */
+function iconStyle({ iconUrl }: SwitcherPlugin): string {
+  return `--icon: url("${iconUrl}")`;
+}
 
 const IS_OVERLAY = location.hash === "#dialog";
 
@@ -28,9 +38,11 @@ export class HubChrome extends LitElement {
       :host {
         display: grid;
         grid-template-columns: ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr;
+        grid-template-rows: ${unsafeCSS(HEADER_STRIP_HEIGHT_PX)}px 1fr;
         height: 100vh;
       }
       aside {
+        grid-row: 1 / -1;
         display: flex;
         flex-direction: column;
         border-right: 1px solid var(--hub-color-line);
@@ -59,7 +71,62 @@ export class HubChrome extends LitElement {
           ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr
           ${unsafeCSS(ASSISTANT_PANEL_WIDTH_PX)}px;
       }
-      main {
+      /* Over the content area and the Assistant Panel. #153 puts the Switcher's collapse toggle
+         first in this row, at its left. */
+      header {
+        grid-column: 2 / -1;
+        display: flex;
+        align-items: center;
+        gap: var(--hub-space-2);
+        padding-inline: var(--hub-space-3) var(--hub-space-2);
+        min-width: 0;
+      }
+      .title {
+        display: flex;
+        align-items: center;
+        gap: var(--hub-space-2);
+        min-width: 0;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      /* The Plugin's icon.svg as a mask over the accent, as in the Plugin Switcher. */
+      .plugin-icon {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        background-color: var(--hub-color-accent);
+        mask: var(--icon) center / contain no-repeat;
+      }
+      .assistant {
+        margin-inline-start: auto;
+        display: flex;
+        align-items: center;
+        gap: var(--hub-space-1);
+        min-height: 28px;
+        padding-block: 0;
+        border: none;
+        border-radius: var(--hub-radius-1);
+        background: none;
+        box-shadow: none;
+      }
+      .assistant .icon {
+        width: 16px;
+        height: 16px;
+        color: var(--hub-color-accent);
+      }
+      .assistant[aria-pressed="true"] {
+        background: color-mix(
+          in srgb,
+          var(--hub-color-accent) 15%,
+          transparent
+        );
+        color: var(--hub-color-accent);
+      }
+      main,
+      assistant-panel {
+        grid-row: 2;
         min-height: 0;
       }
       .empty {
@@ -119,19 +186,6 @@ export class HubChrome extends LitElement {
           .hub=${window.hubChrome}
         ></plugin-switcher>
         ${
-          front === null || panel.kind === "none"
-            ? nothing
-            : html`<button
-                class="gear"
-                aria-pressed=${panel.kind === "open" ? "true" : "false"}
-                @click=${() => {
-                  window.hubChrome.toggleAssistant(front);
-                }}
-              >
-                ${strings.assistant}
-              </button>`
-        }
-        ${
           // Dev mode has no Catalogue (PLUGIN_STANDARD §9.4).
           this.snapshot.catalogue.kind === "off"
             ? nothing
@@ -155,6 +209,32 @@ export class HubChrome extends LitElement {
           <span aria-hidden="true">⚙</span> ${strings.settings}
         </button>
       </aside>
+      <header>
+        ${
+          front === null
+            ? html`<span class="title">${this.screenTitle(strings)}</span>`
+            : html`<span class="title">
+                <span
+                  class="plugin-icon"
+                  .style=${iconStyle(this.frontPlugin(front))}
+                ></span>
+                ${this.frontPlugin(front).name}
+              </span>`
+        }
+        ${
+          front === null || panel.kind === "none"
+            ? nothing
+            : html`<button
+                class="assistant"
+                aria-pressed=${panel.kind === "open" ? "true" : "false"}
+                @click=${() => {
+                  window.hubChrome.toggleAssistant(front);
+                }}
+              >
+                ${icon("sparkles")} ${strings.assistant}
+              </button>`
+        }
+      </header>
       <main>${this.renderContent(strings)}</main>
       ${
         front === null || panel.kind !== "open"
@@ -173,6 +253,31 @@ export class HubChrome extends LitElement {
               ></assistant-panel>`,
             )
       }`;
+  }
+
+  /** The front Plugin's Switcher entry: main only ever puts an installed Plugin in front. */
+  private frontPlugin(id: PluginId): SwitcherPlugin {
+    const plugin = this.snapshot?.plugins.find((each) => each.id === id);
+    if (plugin === undefined) {
+      throw new Error(`Plugin ${id} is in front but not installed`);
+    }
+    return plugin;
+  }
+
+  /** The header strip's title with no Plugin in front. */
+  private screenTitle(strings: Strings): string {
+    if (this.snapshot === null) throw new Error("No snapshot to title");
+    const { content } = this.snapshot;
+    switch (content.kind) {
+      case "settings":
+        return strings.settings;
+      case "catalogue":
+        return strings.catalogue;
+      case "plugin":
+        return strings.hubName;
+      default:
+        return content satisfies never;
+    }
   }
 
   // The front Plugin's UI is a view main lays over the content area, so with one in front this

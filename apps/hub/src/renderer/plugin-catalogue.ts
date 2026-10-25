@@ -31,10 +31,6 @@ export class PluginCatalogue extends LitElement {
         padding: var(--hub-space-5);
         box-sizing: border-box;
       }
-      h2 {
-        margin: 0 0 var(--hub-space-4);
-        font-size: var(--hub-text-xl);
-      }
       svg.icon {
         flex: none;
         width: 14px;
@@ -196,12 +192,8 @@ export class PluginCatalogue extends LitElement {
   declare catalogue: Catalogue;
   declare hub: HubChromeApi;
 
+  // The header strip shows the title.
   override render() {
-    return html`<h2>${this.strings.catalogue}</h2>
-      ${this.renderBody()}`;
-  }
-
-  private renderBody() {
     const { strings, catalogue } = this;
     switch (catalogue.kind) {
       case "off":
