@@ -1,6 +1,7 @@
 import {
   parseManifest,
   PluginId,
+  PluginVersion,
   type Manifest,
 } from "@hawkeye-hub/plugin-format";
 import { expect, test, vi } from "vitest";
@@ -1693,6 +1694,7 @@ test("a check lists each Plugin by name, description and Registry icon in the Di
         name: "計時器",
         description: "為課堂計時。",
         iconUrl: "hawkeye-icon://class-timer/registry.svg",
+        version: "1.0.0",
         access: { kind: "installable" },
         installed: { kind: "installed", version: "1.0.0" },
         job: { kind: "none" },
@@ -1702,11 +1704,29 @@ test("a check lists each Plugin by name, description and Registry icon in the Di
         name: "點名",
         description: "Takes the register.",
         iconUrl: "hawkeye-icon://attendance/registry.svg",
+        version: "1.0.0",
         access: { kind: "blocked", reason: "not-for-this-computer" },
         installed: { kind: "installed", version: "1.0.0" },
         job: { kind: "none" },
       },
     ],
+  });
+});
+
+test("each entry carries the version Install would install, not only the installed one", () => {
+  const { lifecycle } = withRegistry("en-HK");
+  const [timer] = OFFERED;
+  if (timer === undefined) throw new Error("no Timer offered");
+  const newer = {
+    ...timer,
+    manifest: { ...timer.manifest, version: PluginVersion.parse("1.1.0") },
+  };
+
+  lifecycle.registryChecked({ kind: "listed", plugins: [newer] });
+
+  expect(entryOf(lifecycle, "class-timer")).toMatchObject({
+    version: "1.1.0",
+    installed: { kind: "installed", version: "1.0.0" },
   });
 });
 
