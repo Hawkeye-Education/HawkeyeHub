@@ -21,6 +21,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # Each Plugin's built UI passes what its release checks (PLUGIN_STANDARD.md §9.3).
+      - run: pnpm --filter pdf-watermark-eraser build
+      - run: pnpm plugin-format check plugins/pdf-watermark-eraser
 
   smoke:
     strategy:
@@ -80,6 +83,27 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           working-directory: python/hawkeye-hub
+      - run: uv sync --locked
+      - run: uv run pytest
+      - run: uv run pyright
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+
+  # A Plugin's Backend on each of its Supported Platforms (PLUGIN_STANDARD.md §9.3).
+  pdf-watermark-eraser-backend:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: plugins/pdf-watermark-eraser/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          working-directory: plugins/pdf-watermark-eraser/backend
       - run: uv sync --locked
       - run: uv run pytest
       - run: uv run pyright
