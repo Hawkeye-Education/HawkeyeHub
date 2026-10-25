@@ -1,0 +1,588 @@
+<!doctype html>
+<!-- PROTOTYPE (#145), throwaway. Three Assistant Panel variants (?variant=A|B|C) beside a placeholder
+     Plugin UI, opened from the sparkles button in the header strip, plus the Settings Add-model row
+     (?view=settings). Uses the real hawkeye.css + native.css. Paste, drop or attach real files: they
+     become chips (nothing is sent anywhere; the reply is canned). The bottom bar flips variant,
+     Colour Scheme, view, and fills sample chips. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assistant Panel prototype</title>
+<link rel="stylesheet" href="../../apps/hub/src/hub-kit/hawkeye.css">
+<link rel="stylesheet" href="../../apps/hub/src/hub-kit/native.css">
+<style>
+  /* hawkeye.css loads fonts from hawkeye-hub-kit://, which only main serves; point at the files. */
+  @font-face { font-family: "Inter"; src: url("../../apps/hub/src/hub-kit/fonts/Inter.woff2") format("woff2"); font-weight: 100 900; }
+  @font-face { font-family: "Noto Sans TC"; src: url("../../apps/hub/src/hub-kit/fonts/NotoSansTC.woff2") format("woff2"); font-weight: 100 900; }
+
+  :root { --tint: linear-gradient(160deg, #f8f3ee, #ede5dd); --item-hover: color-mix(in srgb, var(--hub-color-accent) 9%, transparent);
+          --item-front: color-mix(in srgb, var(--hub-color-accent) 17%, transparent); }
+  :root[data-scheme="dark"] { --tint: linear-gradient(160deg, #26211e, #1b1816); }
+  html, body { height: 100%; }
+  body { background: var(--tint); overflow: hidden; }
+  svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .bare { border: 0; background: none; box-shadow: none; padding: 0; min-height: 0; color: inherit; }
+  .bare:hover:not(:disabled) { background-image: none; }
+
+  /* ---------- Window: header strip, Plugin UI, Panel ---------- */
+  .win { display: flex; flex-direction: column; height: 100vh; }
+  .strip { flex: none; height: 48px; display: flex; align-items: center; gap: var(--hub-space-2); padding: 0 var(--hub-space-2) 0 var(--hub-space-3); }
+  .strip .title { display: flex; align-items: center; gap: var(--hub-space-2); font-weight: 600; }
+  .strip .title svg { color: var(--hub-color-accent); }
+  .assist { margin-left: auto; display: flex; align-items: center; gap: 6px; border-radius: 999px; padding-inline: 12px 14px; }
+  .assist[aria-pressed="true"] { background: var(--item-front); border-color: color-mix(in srgb, var(--hub-color-accent) 45%, transparent); color: var(--hub-color-accent); }
+  .assist svg { color: var(--hub-color-accent); }
+  .body { flex: 1; display: flex; min-height: 0; gap: var(--hub-space-2); padding: 0 var(--hub-space-2) var(--hub-space-2); }
+  .view { flex: 1; overflow: auto; background: var(--hub-color-surface); border: 1px solid var(--hub-color-line);
+          border-radius: var(--hub-radius-3); padding: var(--hub-space-5); display: flex; flex-direction: column; gap: var(--hub-space-4); }
+  .view .form { display: grid; gap: var(--hub-space-3); max-width: 420px; }
+  .view .form label { display: grid; gap: var(--hub-space-1); }
+  .panel { flex: none; width: 380px; display: flex; flex-direction: column; min-height: 0; position: relative;
+           background: var(--hub-color-surface); border: 1px solid var(--hub-color-line); border-radius: var(--hub-radius-3); }
+  .phead { flex: none; display: flex; align-items: center; gap: var(--hub-space-2); padding: var(--hub-space-3) var(--hub-space-4) var(--hub-space-2); font-weight: 600; }
+  .phead svg { color: var(--hub-color-accent); }
+  .phead .grow { flex: 1; }
+  .ib { width: 30px; height: 30px; border-radius: var(--hub-radius-2); display: grid; place-items: center; color: var(--hub-color-fg-muted); }
+  .ib:hover:not(:disabled) { background: var(--item-hover); color: var(--hub-color-fg); }
+  .convo { flex: 1; overflow-y: auto; padding: var(--hub-space-2) var(--hub-space-4); display: flex; flex-direction: column; gap: var(--hub-space-4); list-style: none; margin: 0; }
+  .hello { margin: auto 0; text-align: center; color: var(--hub-color-fg-muted); display: grid; gap: var(--hub-space-2); justify-items: center; }
+  .hello svg { width: 28px; height: 28px; color: var(--hub-color-accent); }
+  .hello b { color: var(--hub-color-fg); font-size: var(--hub-text-lg); }
+
+  /* Reply Markdown */
+  .reply { line-height: 1.55; }
+  .reply > :first-child { margin-top: 0; } .reply > :last-child { margin-bottom: 0; }
+  .reply p, .reply ul, .reply ol { margin: 0 0 var(--hub-space-2); }
+  .reply ul, .reply ol { padding-left: 1.3em; }
+  .reply h3 { font-size: var(--hub-text-md); margin: var(--hub-space-3) 0 var(--hub-space-1); }
+  .reply code { font-family: var(--hub-font-mono); font-size: 0.92em; padding: 1px 5px; border-radius: 4px; background: var(--hub-color-surface-raised); }
+  .reply pre { margin: 0 0 var(--hub-space-2); padding: var(--hub-space-3); border-radius: var(--hub-radius-2); background: var(--hub-color-surface-raised);
+               border: 1px solid var(--hub-color-line); overflow-x: auto; }
+  .reply pre code { padding: 0; background: none; }
+  .reply[aria-busy="true"]::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%;
+                                    background: var(--hub-color-accent); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  .stopped { font-size: var(--hub-text-sm); color: var(--hub-color-fg-muted); }
+
+  /* Chips, shared */
+  .chips { display: flex; flex-wrap: wrap; gap: var(--hub-space-2); }
+  .chip { position: relative; display: flex; align-items: center; gap: var(--hub-space-2); min-width: 0; max-width: 220px; padding: 6px 28px 6px 6px;
+          border-radius: var(--hub-radius-2); background: var(--hub-color-surface-raised); border: 1px solid var(--hub-color-line); }
+  .chip .ft { flex: none; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; color: #fff; }
+  .ft.document { background: #d4493b; } .ft.audio { background: #7a5af5; } .ft.text { background: #3b82c4; } .ft.image { background: #3f8f5f; }
+  .chip .meta { display: grid; min-width: 0; line-height: 1.25; }
+  .chip .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--hub-text-sm); font-weight: 600; }
+  .chip .sz { font-size: 11px; color: var(--hub-color-fg-muted); }
+  .thumb { position: relative; flex: none; width: 64px; height: 64px; border-radius: var(--hub-radius-2); overflow: hidden; border: 1px solid var(--hub-color-line); }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .rm { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+        background: rgb(0 0 0 / .62); color: #fff; }
+  .rm svg { width: 12px; height: 12px; stroke-width: 2.6; }
+  .chip .rm { top: 50%; transform: translateY(-50%); background: none; color: var(--hub-color-fg-muted); }
+  .chip .rm:hover { color: var(--hub-color-fg); background: var(--item-hover); }
+  .bad.chip, .bad.thumb { border-color: var(--hub-color-warning); box-shadow: 0 0 0 1px var(--hub-color-warning); }
+  .bad .sz { color: var(--hub-color-warning); }
+  .bad.thumb img { opacity: .4; }
+  .bad.thumb::after { content: "Not for this model"; position: absolute; inset: auto 0 0; padding: 2px; font-size: 9.5px; text-align: center; line-height: 1.2;
+                      background: var(--hub-color-warning); color: #000; }
+  .sent .chip { padding-right: 8px; cursor: default; } .sent .thumb { width: 52px; height: 52px; }
+  .refusal { display: flex; gap: 6px; align-items: flex-start; font-size: var(--hub-text-sm); color: var(--hub-color-warning); line-height: 1.35; }
+  .refusal svg { width: 14px; height: 14px; margin-top: 1px; }
+  .dropping .composer { outline: 2px dashed var(--hub-color-accent); outline-offset: 2px; }
+
+  /* Composer, shared */
+  .foot { flex: none; padding: var(--hub-space-2) var(--hub-space-3) var(--hub-space-3); display: grid; gap: var(--hub-space-2); }
+  .composer textarea { field-sizing: content; min-height: 0; max-height: 200px; resize: none; width: 100%; box-sizing: border-box;
+                       border: 0; background: none; box-shadow: none; padding: 4px 6px; outline: none; line-height: 1.45; }
+  .composer textarea:focus-visible { outline: none; box-shadow: none; }
+  .tools { display: flex; align-items: center; gap: var(--hub-space-1); }
+  .tools .grow { flex: 1; }
+  .send { width: 32px; height: 32px; min-height: 0; padding: 0; border-radius: 50%; display: grid; place-items: center; border: 0;
+          background: var(--hub-color-accent); color: var(--hub-color-on-accent); }
+  .send:disabled { background: var(--hub-color-line); color: var(--hub-color-fg-muted); opacity: 1; }
+  .send svg { width: 16px; height: 16px; stroke-width: 2.4; }
+  .send.stop svg { fill: currentColor; width: 12px; height: 12px; }
+  .pill { display: flex; align-items: center; gap: 4px; height: 30px; min-height: 0; padding: 0 8px 0 12px; border-radius: 999px; font-size: var(--hub-text-sm);
+          border: 1px solid var(--hub-color-line); background: none; box-shadow: none; color: var(--hub-color-fg-muted); max-width: 170px; }
+  .pill:hover:not(:disabled) { background: var(--item-hover); background-image: none; color: var(--hub-color-fg); }
+  .pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pill svg { width: 14px; height: 14px; }
+  .pill .caps { display: flex; gap: 2px; } .pill .caps svg { width: 12px; height: 12px; }
+  .tpls { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tpl { border-radius: 999px; min-height: 0; padding: 5px 12px; font-size: var(--hub-text-sm); }
+
+  /* Model menu */
+  .menu { position: absolute; z-index: 5; right: var(--hub-space-3); min-width: 250px; padding: 6px; border-radius: var(--hub-radius-2);
+          background: var(--hub-color-surface-raised); border: 1px solid var(--hub-color-line); box-shadow: var(--hub-shadow-2);
+          backdrop-filter: blur(var(--hub-glass-blur)); }
+  .menu .grp { padding: 6px 8px 2px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--hub-color-fg-muted); }
+  .menu button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: var(--hub-radius-1); text-align: start; }
+  .menu button:hover { background: var(--item-hover); }
+  .menu .mn { flex: 1; } .menu .ck { width: 16px; height: 16px; color: var(--hub-color-accent); }
+  .menu .caps { display: flex; gap: 4px; color: var(--hub-color-fg-muted); } .menu .caps svg { width: 13px; height: 13px; }
+  .menu .def { font-size: 11px; color: var(--hub-color-fg-muted); }
+
+  /* ---------- A: Card composer, bubbles ---------- */
+  .vA .composer { padding: var(--hub-space-2); border-radius: var(--hub-radius-3); background: var(--hub-color-surface-raised);
+                  border: 1px solid var(--hub-color-line); box-shadow: var(--hub-shadow-1); display: grid; gap: var(--hub-space-2); }
+  .vA .composer:focus-within { border-color: color-mix(in srgb, var(--hub-color-accent) 50%, var(--hub-color-line)); }
+  .vA .composer textarea { min-height: 44px; }
+  .vA .chip { background: var(--hub-color-surface); }
+  .vA .user { align-self: flex-end; max-width: 85%; display: grid; gap: 6px; justify-items: end; }
+  .vA .user .bubble { padding: 8px 12px; border-radius: 16px 16px 4px 16px; background: var(--item-front); white-space: pre-wrap; }
+  .vA .user .chips { justify-content: flex-end; }
+
+  /* ---------- B: Capsule, tray above, labelled turns ---------- */
+  .vB .tray { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+  .vB .tray .chip { flex: none; padding: 4px 26px 4px 4px; max-width: 180px; border-radius: 999px; }
+  .vB .tray .chip .ft { width: 26px; height: 26px; border-radius: 50%; } .vB .tray .chip .ft svg { width: 14px; height: 14px; }
+  .vB .tray .thumb { width: 44px; height: 44px; }
+  .vB .tray .bad.thumb::after { content: "!"; font-weight: 700; }
+  .vB .composer { display: flex; align-items: flex-end; gap: 4px; padding: 5px; border-radius: 22px; background: var(--hub-color-surface-raised);
+                  border: 1px solid var(--hub-color-line); }
+  .vB .composer textarea { flex: 1; padding: 6px 4px; }
+  .vB .composer .ib { border-radius: 50%; }
+  .vB .pill { border: 0; padding-inline: 8px 4px; }
+  .vB .tpls { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .vB .tpl { flex: none; }
+  .vB .turn { display: grid; gap: 4px; }
+  .vB .who { font-size: 11.5px; font-weight: 600; color: var(--hub-color-fg-muted); display: flex; gap: 6px; align-items: center; }
+  .vB .who svg { width: 13px; height: 13px; color: var(--hub-color-accent); }
+  .vB .user { padding-left: 10px; border-left: 2px solid var(--hub-color-accent); }
+  .vB .user .text { white-space: pre-wrap; }
+
+  /* ---------- C: Docked composer, file rows ---------- */
+  .vC .foot { padding: 0; gap: 0; border-top: 1px solid var(--hub-color-line); }
+  .vC .foot > * { padding-inline: var(--hub-space-3); }
+  .vC .foot > :first-child { padding-top: var(--hub-space-3); }
+  .vC .files { display: grid; gap: 2px; padding-top: var(--hub-space-2); }
+  .vC .frow { position: relative; display: flex; align-items: center; gap: 10px; padding: 4px 32px 4px 4px; border-radius: var(--hub-radius-1); }
+  .vC .frow:hover { background: var(--item-hover); }
+  .vC .frow .ft, .vC .frow .sq { width: 32px; height: 32px; flex: none; border-radius: 6px; overflow: hidden; }
+  .vC .frow .ft svg { width: 16px; height: 16px; }
+  .vC .frow .sq img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .vC .frow .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--hub-text-sm); }
+  .vC .frow .sz { font-size: 11px; color: var(--hub-color-fg-muted); }
+  .vC .frow .rm { top: 50%; transform: translateY(-50%); background: none; color: var(--hub-color-fg-muted); }
+  .vC .frow.bad { background: color-mix(in srgb, var(--hub-color-warning) 14%, transparent); }
+  .vC .frow.bad .sz { color: var(--hub-color-warning); font-weight: 600; }
+  .vC .composer textarea { padding: var(--hub-space-3) 0 var(--hub-space-2); min-height: 52px; }
+  .vC .tools { padding-bottom: var(--hub-space-2); }
+  .vC .send { width: auto; border-radius: var(--hub-radius-1); padding: 0 12px; height: 30px; display: flex; gap: 6px; font-size: var(--hub-text-sm); font-weight: 600; }
+  .vC .send.stop { background: var(--hub-color-fg); color: var(--hub-color-surface-raised); }
+  .vC .pill { border-radius: var(--hub-radius-1); border: 0; padding-left: 8px; }
+  .vC .kbd { font-size: 11px; color: var(--hub-color-fg-muted); margin-right: 6px; }
+  .vC .refusal { padding-bottom: var(--hub-space-2); }
+  .vC .tpls { padding-top: var(--hub-space-3); }
+  .vC .tpl { border-radius: var(--hub-radius-1); background: none; box-shadow: none; border-style: dashed; }
+  .vC .user { padding: 10px 12px; border-radius: var(--hub-radius-2); background: var(--hub-color-surface-raised); border: 1px solid var(--hub-color-line); display: grid; gap: 8px; }
+  .vC .user .text { white-space: pre-wrap; }
+  .vC .user .files { padding: 0; }
+  .vC .user .frow { padding-right: 4px; } .vC .user .frow:hover { background: none; }
+
+  /* ---------- Settings: AI Providers ---------- */
+  .settings { max-width: 640px; }
+  .prov { display: grid; gap: var(--hub-space-3); padding: var(--hub-space-4); border: 1px solid var(--hub-color-line); border-radius: var(--hub-radius-2);
+          background: var(--hub-color-surface-raised); }
+  .prov .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--hub-space-3); }
+  .prov label.f { display: grid; gap: 4px; font-size: var(--hub-text-sm); }
+  .mrow { display: flex; align-items: center; gap: var(--hub-space-3); flex-wrap: wrap; }
+  .mrow input[type="text"] { flex: 1; min-width: 180px; }
+  .mrow .ins { display: flex; gap: var(--hub-space-3); }
+  .mrow .ins label { display: flex; align-items: center; gap: 6px; font-size: var(--hub-text-sm); }
+  .sB .ins { gap: 4px; }
+  .tog { display: flex; align-items: center; gap: 5px; min-height: 0; height: 30px; padding: 0 10px; border-radius: 999px; font-size: var(--hub-text-sm); }
+  .tog svg { width: 14px; height: 14px; }
+  .tog[aria-pressed="true"] { background: var(--item-front); border-color: color-mix(in srgb, var(--hub-color-accent) 45%, transparent); color: var(--hub-color-accent); }
+  .mtable { width: 100%; border-collapse: collapse; font-size: var(--hub-text-sm); }
+  .mtable th { text-align: center; font-weight: 600; color: var(--hub-color-fg-muted); padding: 0 6px 6px; }
+  .mtable th:first-child { text-align: start; }
+  .mtable td { padding: 4px 6px; text-align: center; } .mtable td:first-child { width: 100%; } .mtable td input[type="text"] { width: 100%; }
+  .note { font-size: var(--hub-text-sm); color: var(--hub-color-fg-muted); }
+
+  /* ---------- Prototype bar (not part of the design) ---------- */
+  .pbar { position: fixed; z-index: 20; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; align-items: center;
+          padding: 6px; border-radius: 999px; background: #111; color: #fff; box-shadow: 0 6px 24px rgb(0 0 0 / .45);
+          font: 12px/1 system-ui, sans-serif; color-scheme: dark; white-space: nowrap; }
+  .pbar button { all: unset; cursor: pointer; padding: 7px 12px; border-radius: 999px; background: #2a2a2a; }
+  .pbar button:hover { background: #3a3a3a; }
+  .pbar .lbl { padding: 0 6px; min-width: 150px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="pbar">
+  <button data-p="prev">‹</button><span class="lbl" id="vlabel"></span><button data-p="next">›</button>
+  <button data-p="scheme" id="pscheme"></button>
+  <button data-p="view" id="pview"></button>
+  <button data-p="samples">Sample files</button>
+  <button data-p="reset">Reset chat</button>
+</div>
+<script>
+// Lucide icons (ISC), inline.
+const I = {
+  sparkles: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+  eraser: '<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  paperclip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  stop: '<rect width="14" height="14" x="5" y="5" rx="2"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  chev: '<path d="m6 9 6 6 6-6"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  image: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+  document: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  audio: '<path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/>',
+  text: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  panelClose: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/><path d="m8 9 3 3-3 3"/>',
+};
+const ico = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+const INPUT_NAME = { image: 'images', document: 'PDFs', audio: 'audio' };
+const CAP = 20 * 1024 * 1024;
+
+// Fake Hub Settings: providers and their models' accepted inputs. Text is always accepted.
+const PROVIDERS = [
+  { label: 'Anthropic', kind: 'anthropic', models: [
+    { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', inputs: ['image', 'document'] },
+    { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', inputs: ['image'] } ] },
+  { label: 'School server', kind: 'openai-compatible', url: 'http://ai.school.local/v1', models: [
+    { id: 'gpt-4o-mini', name: 'gpt-4o-mini', inputs: ['image', 'audio'] },
+    { id: 'llama-3.1-8b', name: 'llama-3.1-8b', inputs: [] } ] },
+];
+const MODELS = PROVIDERS.flatMap((p) => p.models.map((m) => ({ ...m, provider: p.label })));
+const TEMPLATES = ['Explain this watermark pattern', 'Write a regex for it', 'Why did my last run fail?', 'Summarise this PDF'];
+
+const q = new URLSearchParams(location.search);
+const VARIANTS = { A: 'Card composer', B: 'Capsule + tray', C: 'Docked + file rows' };
+const S = {
+  variant: VARIANTS[q.get('variant')] ? q.get('variant') : 'A',
+  scheme: q.get('scheme') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+  view: q.get('view') === 'settings' ? 'settings' : 'plugin',
+  panel: true,
+  model: 'claude-sonnet-5-5',
+  menu: false,
+  draft: '',
+  chips: [],     // { id, name, size, kind, url? }
+  refusal: '',
+  turns: [],     // { role: 'user', text, chips } | { role: 'reply', text, stopped? }
+  streaming: null,
+};
+let nextId = 1;
+const model = () => MODELS.find((m) => m.id === S.model);
+const accepts = (kind) => kind === 'text' || model().inputs.includes(kind);
+const badChips = () => S.chips.filter((c) => !accepts(c.kind));
+const canSend = () => !S.streaming && (S.draft.trim() || S.chips.length) && badChips().length === 0;
+
+function kindOf(f) {
+  const ext = f.name.toLowerCase().split('.').pop();
+  if (/^image\/(png|jpeg|gif|webp)$/.test(f.type)) return 'image';
+  if (f.type === 'application/pdf' || ext === 'pdf') return 'document';
+  if (['wav', 'mp3'].includes(ext)) return 'audio';
+  if (['txt', 'md', 'csv', 'json'].includes(ext)) return 'text';
+  return null;
+}
+const size = (b) => b < 1024 ? `${b} B` : b < 1048576 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toFixed(1)} MB`;
+function acceptList(m = model()) {
+  const words = ['text files', ...m.inputs.map((i) => INPUT_NAME[i])];
+  return words.length === 1 ? words[0] : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
+}
+const pickerAccept = () => [...(accepts('image') ? ['image/png,image/jpeg,image/gif,image/webp'] : []),
+  ...(accepts('document') ? ['.pdf'] : []), ...(accepts('audio') ? ['.wav,.mp3'] : []), '.txt,.md,.csv,.json'].join(',');
+
+function attach(files) {
+  const refused = [];
+  for (const f of files) {
+    const kind = kindOf(f);
+    if (!kind) refused.push(`“${f.name}” can't be attached. ${model().name} takes ${acceptList()}.`);
+    else if (f.size > CAP) refused.push(`“${f.name}” is ${size(f.size)}; the limit is 20 MB.`);
+    else if (!accepts(kind)) refused.push(`${model().name} can't read ${INPUT_NAME[kind]}, so “${f.name}” wasn't attached.`);
+    else S.chips.push({ id: nextId++, name: f.name, size: f.size, kind, url: kind === 'image' && f instanceof Blob ? URL.createObjectURL(f) : f.url });
+  }
+  S.refusal = refused.join(' ');
+  render();
+}
+
+// ---------- Pieces ----------
+const caps = (m) => `<span class="caps">${m.inputs.map((i) => ico(i)).join('')}</span>`;
+const pill = (withCaps) => `<button type="button" class="pill" data-act="menu" aria-haspopup="menu" aria-expanded="${S.menu}" title="Model">
+  <span>${esc(model().name)}</span>${withCaps ? caps(model()) : ''}${ico('chev')}</button>`;
+function menu() {
+  if (!S.menu) return '';
+  return `<div class="menu" role="menu" style="bottom:${document.querySelector('.foot')?.offsetHeight + 4 || 120}px">
+    ${PROVIDERS.map((p) => `<div class="grp">${esc(p.label)}</div>${p.models.map((m) => `
+      <button class="bare" role="menuitemradio" aria-checked="${m.id === S.model}" data-act="model" data-id="${m.id}">
+        <span class="ck">${m.id === S.model ? ico('check') : ''}</span><span class="mn">${esc(m.name)}</span>
+        ${m.inputs.length ? caps({ ...m }) : '<span class="def">text only</span>'}</button>`).join('')}`).join('')}
+  </div>`;
+}
+function chip(c, sent) {
+  const bad = !sent && !accepts(c.kind);
+  const rm = sent ? '' : `<button type="button" class="bare rm" data-act="rm" data-id="${c.id}" aria-label="Remove ${esc(c.name)}">${ico('x')}</button>`;
+  if (c.kind === 'image' && c.url) return `<div class="thumb ${bad ? 'bad' : ''}" title="${esc(c.name)}"><img src="${c.url}" alt="${esc(c.name)}">${rm}</div>`;
+  return `<div class="chip ${bad ? 'bad' : ''}" title="${esc(c.name)}"><span class="ft ${c.kind}">${ico(c.kind)}</span>
+    <span class="meta"><span class="nm">${esc(c.name)}</span><span class="sz">${bad ? 'Not for this model' : `${c.kind === 'document' ? 'PDF' : c.kind === 'text' ? 'Text' : c.kind === 'audio' ? 'Audio' : 'Image'} · ${size(c.size)}`}</span></span>${rm}</div>`;
+}
+function frow(c, sent) {
+  const bad = !sent && !accepts(c.kind);
+  const lead = c.kind === 'image' && c.url ? `<span class="sq"><img src="${c.url}" alt=""></span>` : `<span class="ft ${c.kind}">${ico(c.kind)}</span>`;
+  return `<div class="frow ${bad ? 'bad' : ''}">${lead}<span class="nm">${esc(c.name)}</span>
+    <span class="sz">${bad ? `${model().name} can't read ${INPUT_NAME[c.kind]}` : size(c.size)}</span>
+    ${sent ? '' : `<button type="button" class="bare rm" data-act="rm" data-id="${c.id}" aria-label="Remove ${esc(c.name)}">${ico('x')}</button>`}</div>`;
+}
+function refusalLine() {
+  const bad = badChips();
+  const text = bad.length ? `${model().name} can't read ${[...new Set(bad.map((c) => INPUT_NAME[c.kind]))].join(' or ')}. Remove ${bad.length > 1 ? 'those files' : 'it'} or pick another model.` : S.refusal;
+  return text ? `<div class="refusal" role="status">${ico('alert')}<span>${esc(text)}</span></div>` : '';
+}
+const empty = () => S.turns.length === 0 && !S.streaming;
+const tpls = () => empty() ? `<div class="tpls" role="group" aria-label="Prompt Templates">${TEMPLATES.map((t) => `<button type="button" class="tpl" data-act="tpl">${esc(t)}</button>`).join('')}</div>` : '';
+const sendBtn = (label) => S.streaming
+  ? `<button type="button" class="send stop" data-act="stop" aria-label="Stop">${ico('stop')}${label ? 'Stop' : ''}</button>`
+  : `<button type="submit" class="send" ${canSend() ? '' : 'disabled'} aria-label="Send">${label ? 'Send' : ''}${ico('up')}</button>`;
+const textarea = (ph) => `<textarea id="msg" rows="1" aria-label="Message" placeholder="${ph}">${esc(S.draft)}</textarea>`;
+const fileInput = `<input type="file" id="pick" multiple hidden accept="${pickerAccept()}">`;
+
+function md(src) {
+  // Enough Markdown for a canned reply: fences, ###, lists, **bold**, `code`, paragraphs.
+  const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+  const out = []; let list = null, fence = null;
+  const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  for (const line of src.split('\n')) {
+    if (fence !== null) { if (line.startsWith('```')) { out.push(`<pre><code>${esc(fence)}</code></pre>`); fence = null; } else fence += (fence ? '\n' : '') + line; continue; }
+    if (line.startsWith('```')) { close(); fence = ''; continue; }
+    const li = line.match(/^(\d+\.|-) (.*)/);
+    if (li) { const t = li[1] === '-' ? 'ul' : 'ol'; if (list !== t) { close(); out.push(`<${t}>`); list = t; } out.push(`<li>${inline(li[2])}</li>`); continue; }
+    close();
+    if (line.startsWith('### ')) out.push(`<h3>${inline(line.slice(4))}</h3>`);
+    else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+  }
+  if (fence !== null) out.push(`<pre><code>${esc(fence)}</code></pre>`);
+  close();
+  return out.join('');
+}
+
+function turnHtml(t, i) {
+  const v = S.variant;
+  if (t.role === 'user') {
+    const files = t.chips.length ? (v === 'C' ? `<div class="files">${t.chips.map((c) => frow(c, true)).join('')}</div>` : `<div class="chips sent">${t.chips.map((c) => chip(c, true)).join('')}</div>`) : '';
+    if (v === 'A') return `<li class="user">${files}${t.text ? `<div class="bubble">${esc(t.text)}</div>` : ''}</li>`;
+    if (v === 'B') return `<li class="turn user"><span class="who">You</span>${files}${t.text ? `<div class="text">${esc(t.text)}</div>` : ''}</li>`;
+    return `<li class="user">${t.text ? `<div class="text">${esc(t.text)}</div>` : ''}${files}</li>`;
+  }
+  const live = S.streaming && i === S.turns.length - 1;
+  const body = `<div class="reply" ${live ? 'aria-busy="true"' : ''}>${md(t.text)}</div>${t.stopped ? '<div class="stopped">Stopped</div>' : ''}`;
+  return v === 'B' ? `<li class="turn"><span class="who">${ico('sparkles')}Assistant</span>${body}</li>` : `<li>${body}</li>`;
+}
+
+function composer() {
+  const v = S.variant;
+  if (v === 'A') return `<div class="foot">${tpls()}
+    <form class="composer" id="form">${S.chips.length ? `<div class="chips">${S.chips.map((c) => chip(c)).join('')}</div>` : ''}
+      ${textarea('Ask the Assistant…')}
+      <div class="tools"><button type="button" class="bare ib" data-act="pick" aria-label="Attach files" title="Attach ${acceptList()}">${ico('paperclip')}</button>
+        <span class="grow"></span>${pill(false)}${sendBtn(false)}</div>${fileInput}</form>${refusalLine()}</div>`;
+  if (v === 'B') return `<div class="foot">${tpls()}${S.chips.length ? `<div class="tray">${S.chips.map((c) => chip(c)).join('')}</div>` : ''}
+    <form class="composer" id="form"><button type="button" class="bare ib" data-act="pick" aria-label="Attach files" title="Attach ${acceptList()}">${ico('plus')}</button>
+      ${textarea('Message')}${pill(false)}${sendBtn(false)}${fileInput}</form>${refusalLine()}</div>`;
+  return `<div class="foot">${tpls()}${S.chips.length ? `<div class="files">${S.chips.map((c) => frow(c)).join('')}</div>` : ''}
+    <form class="composer" id="form">${textarea('Ask about this Plugin, or drop files here')}
+      <div class="tools"><button type="button" class="bare ib" data-act="pick" aria-label="Attach files" title="Attach ${acceptList()}">${ico('paperclip')}</button>
+        ${pill(true)}<span class="grow"></span><span class="kbd">Shift+Enter for a new line</span>${sendBtn(true)}</div>${fileInput}</form>${refusalLine()}</div>`;
+}
+
+function panel() {
+  return `<aside class="panel v${S.variant}" aria-label="Assistant">
+    <div class="phead">${ico('sparkles')}<span class="grow">Assistant</span>
+      ${S.turns.length ? `<button class="bare ib" data-p="reset" title="New conversation">${ico('trash')}</button>` : ''}
+      <button class="bare ib" data-act="panel" title="Close">${ico('panelClose')}</button></div>
+    <ol class="convo" id="convo">${empty() ? `<li class="hello">${ico('sparkles')}<b>How can I help?</b><span>Ask about PDF Watermark Eraser, or attach ${acceptList()}.</span></li>` : S.turns.map(turnHtml).join('')}</ol>
+    ${composer()}${menu()}</aside>`;
+}
+
+function pluginUi() {
+  return `<section class="view"><h2 style="margin:0">PDF Watermark Eraser</h2>
+    <p style="margin:0;color:var(--hub-color-fg-muted)">Placeholder Plugin UI. The Assistant Panel sits to its right.</p>
+    <div class="form"><label>Drive folder<input type="text" value="Worksheets / 2026 Term 1"></label>
+      <label>Watermark text<input type="text" value="SAMPLE · DO NOT COPY"></label>
+      <div style="display:flex;gap:8px"><button class="primary" data-variant="primary">Erase</button><button>Preview</button></div></div></section>`;
+}
+
+function settings() {
+  const v = S.variant;
+  const inputsOf = (p) => ['image', 'document', ...(p.kind === 'anthropic' ? [] : ['audio'])];
+  const label = { image: 'Image', document: 'Document (PDF)', audio: 'Audio' };
+  const modelRow = (p, pi, m, mi) => {
+    const k = `data-pi="${pi}" data-mi="${mi}"`;
+    const rm = `<button class="bare ib" title="Remove model">${ico('trash')}</button>`;
+    if (v === 'B') return `<div class="mrow"><input type="text" value="${m.id}" aria-label="Model"><div class="ins">${inputsOf(p).map((i) =>
+      `<button type="button" class="tog" data-act="inp" data-i="${i}" ${k} aria-pressed="${m.inputs.includes(i)}">${ico(i)}${label[i].replace(' (PDF)', '')}</button>`).join('')}</div>${rm}</div>`;
+    if (v === 'C') return `<tr><td><input type="text" value="${m.id}" aria-label="Model"></td>${inputsOf(p).map((i) =>
+      `<td><input type="checkbox" data-act="inp" data-i="${i}" ${k} ${m.inputs.includes(i) ? 'checked' : ''} aria-label="${label[i]}"></td>`).join('')}<td>${rm}</td></tr>`;
+    return `<div class="mrow"><input type="text" value="${m.id}" aria-label="Model"><div class="ins">${inputsOf(p).map((i) =>
+      `<label><input type="checkbox" data-act="inp" data-i="${i}" ${k} ${m.inputs.includes(i) ? 'checked' : ''}>${label[i]}</label>`).join('')}</div>${rm}</div>`;
+  };
+  const models = (p, pi) => v === 'C'
+    ? `<table class="mtable"><thead><tr><th>Model</th>${inputsOf(p).map((i) => `<th>${label[i]}</th>`).join('')}<th></th></tr></thead>
+       <tbody>${p.models.map((m, mi) => modelRow(p, pi, m, mi)).join('')}</tbody></table>`
+    : p.models.map((m, mi) => modelRow(p, pi, m, mi)).join('');
+  return `<section class="view"><div class="settings" style="display:grid;gap:var(--hub-space-4)"><h2 style="margin:0">Settings</h2><h3 style="margin:0">AI Providers</h3>
+    ${PROVIDERS.map((p, pi) => `<div class="prov s${v}">
+      <div class="two"><label class="f">Label<input type="text" value="${p.label}"></label>
+        <label class="f">Kind<select data-act="kind" data-pi="${pi}"><option value="anthropic" ${p.kind === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+          <option value="openai-compatible" ${p.kind !== 'anthropic' ? 'selected' : ''}>OpenAI-compatible</option></select></label></div>
+      ${p.kind === 'anthropic' ? '' : `<label class="f">Base URL<input type="text" value="${p.url ?? ''}"></label>`}
+      <div style="display:grid;gap:var(--hub-space-2)"><span class="f" style="font-size:var(--hub-text-sm)">Models, and what each accepts besides text</span>${models(p, pi)}</div>
+      <div><button type="button" data-act="addModel" data-pi="${pi}">${ico('plus')} Add model</button></div>
+      ${p.kind === 'anthropic' ? '<span class="note">Audio isn\'t offered: the Anthropic library can\'t send it.</span>' : ''}
+    </div>`).join('')}
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button>Cancel</button><button class="primary" data-variant="primary">Save</button></div></div></section>`;
+}
+
+function render() {
+  const ta = document.getElementById('msg'), focused = document.activeElement === ta, caret = ta?.selectionStart;
+  const convo = document.getElementById('convo'), atBottom = !convo || convo.scrollHeight - convo.scrollTop - convo.clientHeight < 40;
+  document.getElementById('app').innerHTML = `<div class="win">
+    <header class="strip">${S.view === 'settings' ? `<span class="title">${ico('settings')}Settings</span>`
+      : `<span class="title">${ico('eraser')}PDF Watermark Eraser</span>
+         <button class="assist" data-act="panel" aria-pressed="${S.panel}">${ico('sparkles')}Assistant</button>`}</header>
+    <div class="body">${S.view === 'settings' ? settings() : pluginUi() + (S.panel ? panel() : '')}</div></div>`;
+  const nta = document.getElementById('msg');
+  if (nta && focused) { nta.focus(); nta.setSelectionRange(caret, caret); }
+  const nc = document.getElementById('convo');
+  if (nc && atBottom) nc.scrollTop = nc.scrollHeight;
+  document.getElementById('vlabel').textContent = `${S.variant} (${VARIANTS[S.variant]})`;
+  document.getElementById('pscheme').textContent = S.scheme === 'dark' ? 'Dark' : 'Light';
+  document.getElementById('pview').textContent = S.view === 'settings' ? 'Settings' : 'Panel';
+  const u = new URL(location); u.searchParams.set('variant', S.variant); u.searchParams.set('scheme', S.scheme); u.searchParams.set('view', S.view);
+  history.replaceState(null, '', u);
+}
+
+// Force hawkeye.css's dark block on or off, whatever the OS says.
+function applyScheme() {
+  for (const sheet of document.styleSheets) for (const rule of sheet.cssRules)
+    if (rule instanceof CSSMediaRule && rule.conditionText.includes('prefers-color-scheme'))
+      rule.media.mediaText = S.scheme === 'dark' ? 'all' : 'not all';
+  document.documentElement.dataset.scheme = S.scheme;
+  document.documentElement.style.colorScheme = S.scheme;
+}
+
+const REPLY = `Looking at what you sent, the watermark is a **diagonal text stamp** repeated on every page, so a pattern match works better than a fixed position.
+
+### Try this
+
+1. Set **Watermark text** to a regex instead of the literal text.
+2. Use \`SAMPLE\\s*·\\s*DO NOT COPY\` so the spacing can vary.
+3. Run **Preview** on one page before erasing the whole folder.
+
+\`\`\`
+SAMPLE\\s*·\\s*DO NOT COPY
+\`\`\`
+
+- Scanned pages won't match: the stamp is part of the image there.
+- If a page still shows it, attach that page and I'll take another look.`;
+
+function send() {
+  if (!canSend()) return;
+  S.turns.push({ role: 'user', text: S.draft.trim(), chips: S.chips });
+  Object.assign(S, { draft: '', chips: [], refusal: '', menu: false });
+  const reply = { role: 'reply', text: '' };
+  S.turns.push(reply);
+  let i = 0;
+  S.streaming = setInterval(() => {
+    i += 4; reply.text = REPLY.slice(0, i);
+    if (i >= REPLY.length) { clearInterval(S.streaming); S.streaming = null; }
+    render();
+  }, 30);
+  render();
+}
+
+async function samples() {
+  const c = Object.assign(document.createElement('canvas'), { width: 320, height: 240 }), g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 320, 240); g.fillStyle = '#ccc';
+  for (let y = 30; y < 240; y += 22) g.fillRect(24, y, 230 - (y % 50), 8);
+  g.save(); g.translate(160, 120); g.rotate(-0.5); g.fillStyle = 'rgb(220 60 40 / .35)'; g.font = 'bold 30px sans-serif'; g.textAlign = 'center'; g.fillText('SAMPLE · DO NOT COPY', 0, 10); g.restore();
+  const png = await new Promise((r) => c.toBlob(r, 'image/png'));
+  attach([new File([png], 'page-3-scan.png', { type: 'image/png' }),
+    { name: 'Worksheet 3B.pdf', type: 'application/pdf', size: 1_240_000 },
+    { name: 'Oral practice.mp3', type: 'audio/mpeg', size: 3_400_000 },
+    { name: 'marks.csv', type: 'text/csv', size: 4_100 },
+    { name: 'Lesson recording.wav', type: 'audio/wav', size: 48_000_000 },
+    { name: 'Notes.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 82_000 }]);
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act], [data-p]');
+  if (S.menu && !e.target.closest('.menu, [data-act="menu"]')) { S.menu = false; if (!b) return render(); }
+  if (!b || b.disabled) return;
+  const keys = Object.keys(VARIANTS);
+  switch (b.dataset.act ?? b.dataset.p) {
+    case 'panel': S.panel = !S.panel; S.menu = false; break;
+    case 'menu': S.menu = !S.menu; break;
+    case 'model': S.model = b.dataset.id; S.menu = false; S.refusal = ''; break;
+    case 'pick': return document.getElementById('pick').click();
+    case 'rm': S.chips = S.chips.filter((c) => String(c.id) !== b.dataset.id); S.refusal = ''; break;
+    case 'tpl': S.draft = b.textContent; render(); document.getElementById('msg').focus(); return;
+    case 'stop': clearInterval(S.streaming); S.streaming = null; S.turns.at(-1).stopped = true; break;
+    case 'inp': {
+      if (b.tagName === 'INPUT') return; // checkboxes handled on change
+      const m = PROVIDERS[b.dataset.pi].models[b.dataset.mi], i = b.dataset.i;
+      m.inputs = m.inputs.includes(i) ? m.inputs.filter((x) => x !== i) : [...m.inputs, i]; break;
+    }
+    case 'addModel': PROVIDERS[b.dataset.pi].models.push({ id: '', name: '(new model)', inputs: [] }); break;
+    case 'prev': case 'next': S.variant = keys[(keys.indexOf(S.variant) + (b.dataset.p === 'next' ? 1 : -1) + keys.length) % keys.length]; S.menu = false; break;
+    case 'scheme': S.scheme = S.scheme === 'dark' ? 'light' : 'dark'; applyScheme(); break;
+    case 'view': S.view = S.view === 'settings' ? 'plugin' : 'settings'; break;
+    case 'samples': S.view = 'plugin'; S.panel = true; return samples();
+    case 'reset': clearInterval(S.streaming); Object.assign(S, { streaming: null, turns: [], chips: [], refusal: '', draft: '' }); break;
+    default: return;
+  }
+  render();
+});
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.id === 'pick') { attach([...t.files]); return; }
+  if (t.dataset.act === 'inp') {
+    const m = PROVIDERS[t.dataset.pi].models[t.dataset.mi], i = t.dataset.i;
+    m.inputs = t.checked ? [...m.inputs, i] : m.inputs.filter((x) => x !== i); render();
+  }
+  if (t.dataset.act === 'kind') {
+    const p = PROVIDERS[t.dataset.pi]; p.kind = t.value;
+    if (p.kind === 'anthropic') p.models.forEach((m) => { m.inputs = m.inputs.filter((x) => x !== 'audio'); });
+    render();
+  }
+});
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'msg') return;
+  S.draft = e.target.value;
+  const s = document.querySelector('.send:not(.stop)'); if (s) s.disabled = !canSend();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.target.id === 'msg' && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); return; }
+  if (e.key === 'Escape' && S.menu) { S.menu = false; render(); return; }
+  if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') document.querySelector(`[data-p="${e.key === 'ArrowLeft' ? 'prev' : 'next'}"]`).click();
+});
+document.addEventListener('submit', (e) => { e.preventDefault(); send(); });
+document.addEventListener('paste', (e) => {
+  if (!e.target.closest?.('.panel')) return;
+  const files = [...e.clipboardData.files];
+  if (files.length) { e.preventDefault(); attach(files); }
+});
+document.addEventListener('dragover', (e) => { if (e.target.closest?.('.panel')) { e.preventDefault(); document.querySelector('.panel').classList.add('dropping'); } });
+document.addEventListener('dragleave', (e) => { if (!e.relatedTarget?.closest?.('.panel')) document.querySelector('.panel')?.classList.remove('dropping'); });
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  document.querySelector('.panel')?.classList.remove('dropping');
+  if (e.target.closest?.('.panel')) attach([...e.dataTransfer.files]);
+});
+
+addEventListener('load', () => { applyScheme(); render(); });
+</script>
+</body>
+</html>
