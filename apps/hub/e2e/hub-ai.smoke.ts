@@ -62,6 +62,8 @@ test("a Plugin UI lists providers, streams, cancels and is cancelled by closing;
     deltas: ["Hello", " there"],
   });
   const models = [{ id: "fake-model", inputs: [] }];
+  // `hub.ai` is unchanged by model inputs: Plugins see `acceptsImages`, not `inputs`.
+  const listed = [{ id: "fake-model", acceptsImages: false }];
   writeAiProviders(dataDir, [
     { label: "Fake", baseUrl: fake.baseUrl, models },
     {
@@ -80,8 +82,8 @@ test("a Plugin UI lists providers, streams, cancels and is cancelled by closing;
     const page = await pluginPage(() => hub.windows(), "attendance");
 
     expect(await page.evaluate(() => window.hub.ai.providers())).toEqual([
-      { label: "Fake", kind: "openai-compatible", models },
-      { label: "Offline", kind: "openai-compatible", models },
+      { label: "Fake", kind: "openai-compatible", models: listed },
+      { label: "Offline", kind: "openai-compatible", models: listed },
     ]);
 
     expect(
