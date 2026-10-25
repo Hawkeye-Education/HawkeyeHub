@@ -28,36 +28,58 @@ export const AiModelChoiceSchema = z.discriminatedUnion("kind", [
 ]);
 export type AiModelChoice = z.infer<typeof AiModelChoiceSchema>;
 
-/** One message's content: text, and images for a model that accepts them. */
+// Not z.instanceof, which infers Uint8Array<ArrayBuffer>: the page may pass any.
+const BYTES = z.custom<Uint8Array>((value) => value instanceof Uint8Array);
+const TEXT_PART = z.strictObject({ type: z.literal("text"), text: z.string() });
+const IMAGE_PART = z.strictObject({
+  type: z.literal("image"),
+  image: BYTES,
+  mediaType: z.string(),
+});
+
+/**
+ * One message's content: text, and each other part (its `type` a `ModelInput`) only for a model
+ * that accepts it.
+ */
 export const AiContentSchema = z.array(
   z.discriminatedUnion("type", [
-    z.strictObject({ type: z.literal("text"), text: z.string() }),
+    TEXT_PART,
+    IMAGE_PART,
     z.strictObject({
-      type: z.literal("image"),
-      // Not z.instanceof, which infers Uint8Array<ArrayBuffer>: the page may pass any.
-      image: z.custom<Uint8Array>((value) => value instanceof Uint8Array),
-      mediaType: z.string(),
+      type: z.literal("document"),
+      data: BYTES,
+      mediaType: z.literal("application/pdf"),
+    }),
+    z.strictObject({
+      type: z.literal("audio"),
+      data: BYTES,
+      mediaType: z.enum(["audio/wav", "audio/mpeg"]),
     }),
   ]),
 );
 export type AiContent = z.infer<typeof AiContentSchema>;
 
-export const AiChatRequestSchema = z.strictObject({
-  model: AiModelChoiceSchema,
-  system: z.string(),
-  messages: z.array(
-    z.strictObject({
-      role: z.enum(["user", "assistant"]),
-      content: AiContentSchema,
-    }),
-  ),
-});
+const chatRequestSchema = <Content extends z.ZodType>(content: Content) =>
+  z.strictObject({
+    model: AiModelChoiceSchema,
+    system: z.string(),
+    messages: z.array(
+      z.strictObject({ role: z.enum(["user", "assistant"]), content }),
+    ),
+  });
+
+export const AiChatRequestSchema = chatRequestSchema(AiContentSchema);
 export type AiChatRequest = z.infer<typeof AiChatRequestSchema>;
 export type AiMessage = AiChatRequest["messages"][number];
 
-/** The preload's call on `AI_CHAT`: the request, under the id main tags its stream events with. */
+/**
+ * The preload's call on `AI_CHAT`: the request, under the id main tags its stream events with.
+ * `hub.ai` sends only text and images (spec #142), so a document or audio part is refused here.
+ */
 export const AiChatCallSchema = z.strictObject({
   id: z.int(),
-  request: AiChatRequestSchema,
+  request: chatRequestSchema(
+    z.array(z.discriminatedUnion("type", [TEXT_PART, IMAGE_PART])),
+  ),
 });
 export type AiChatCall = z.infer<typeof AiChatCallSchema>;

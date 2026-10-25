@@ -1,6 +1,7 @@
 import {
   parseManifest,
   PluginId,
+  PluginVersion,
   type Manifest,
 } from "@hawkeye-hub/plugin-format";
 import { expect, test, vi } from "vitest";
@@ -431,7 +432,7 @@ const OLLAMA: AiProviderDraft = {
   was: { kind: "added" },
   label: "Ollama",
   endpoint: { kind: "openai-compatible", baseUrl: "http://localhost:11434/v1" },
-  models: [{ id: "llama4", acceptsImages: false }],
+  models: [{ id: "llama4", inputs: [] }],
 };
 const WITH_CLAUDE: HubSettings = {
   ...FIRST_LAUNCH_SETTINGS,
@@ -439,7 +440,7 @@ const WITH_CLAUDE: HubSettings = {
     {
       label: label("Claude"),
       endpoint: { kind: "anthropic" },
-      models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
+      models: [{ id: parseModelId("claude-opus-5-5"), inputs: ["image"] }],
     },
   ],
   defaultAiProvider: {
@@ -531,7 +532,7 @@ test("removing the default's model sets the default back to none", () => {
     ...form,
     aiProviders: form.aiProviders.map((each) => ({
       ...each,
-      models: [{ id: "claude-sonnet-5", acceptsImages: true }],
+      models: [{ id: "claude-sonnet-5", inputs: ["image"] }],
     })),
   });
   expect(lifecycle.snapshot().content).toMatchObject({
@@ -1527,12 +1528,12 @@ test("the system description holds what is stored and drawn, and the installed P
           kind: "openai-compatible",
           baseUrl: "https://school.openai.azure.com/openai/v1",
         },
-        models: [{ id: parseModelId("gpt-5"), acceptsImages: true }],
+        models: [{ id: parseModelId("gpt-5"), inputs: ["image"] }],
       },
       {
         label: parseAiProviderLabel("Claude"),
         endpoint: { kind: "anthropic" },
-        models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
+        models: [{ id: parseModelId("claude-opus-5-5"), inputs: ["image"] }],
       },
     ],
   };
@@ -1693,6 +1694,7 @@ test("a check lists each Plugin by name, description and Registry icon in the Di
         name: "計時器",
         description: "為課堂計時。",
         iconUrl: "hawkeye-icon://class-timer/registry.svg",
+        version: "1.0.0",
         access: { kind: "installable" },
         installed: { kind: "installed", version: "1.0.0" },
         job: { kind: "none" },
@@ -1702,11 +1704,29 @@ test("a check lists each Plugin by name, description and Registry icon in the Di
         name: "點名",
         description: "Takes the register.",
         iconUrl: "hawkeye-icon://attendance/registry.svg",
+        version: "1.0.0",
         access: { kind: "blocked", reason: "not-for-this-computer" },
         installed: { kind: "installed", version: "1.0.0" },
         job: { kind: "none" },
       },
     ],
+  });
+});
+
+test("each entry carries the version Install would install, not only the installed one", () => {
+  const { lifecycle } = withRegistry("en-HK");
+  const [timer] = OFFERED;
+  if (timer === undefined) throw new Error("no Timer offered");
+  const newer = {
+    ...timer,
+    manifest: { ...timer.manifest, version: PluginVersion.parse("1.1.0") },
+  };
+
+  lifecycle.registryChecked({ kind: "listed", plugins: [newer] });
+
+  expect(entryOf(lifecycle, "class-timer")).toMatchObject({
+    version: "1.1.0",
+    installed: { kind: "installed", version: "1.0.0" },
   });
 });
 
@@ -2202,7 +2222,7 @@ test("the open Panel's current model is the Default AI Provider's, with whether 
       kind: "chosen",
       provider: "Claude",
       model: "claude-opus-5-5",
-      acceptsImages: true,
+      inputs: ["image"],
     },
   });
 });
@@ -2362,7 +2382,7 @@ test("the model picker saves its choice at once, for its Plugin only, and later 
       {
         label: local,
         endpoint: { kind: "openai-compatible", baseUrl: "http://localhost:1" },
-        models: [{ id: parseModelId("big-model"), acceptsImages: true }],
+        models: [{ id: parseModelId("big-model"), inputs: ["image"] }],
       },
     ],
   };
@@ -2378,7 +2398,7 @@ test("the model picker saves its choice at once, for its Plugin only, and later 
     providers: [
       {
         label: "Local",
-        models: [{ id: "big-model", acceptsImages: true }],
+        models: [{ id: "big-model", inputs: ["image"] }],
       },
     ],
   });
@@ -2396,7 +2416,7 @@ test("the model picker saves its choice at once, for its Plugin only, and later 
       kind: "chosen",
       provider: "Local",
       model: "big-model",
-      acceptsImages: true,
+      inputs: ["image"],
     },
   });
   lifecycle.sendToAssistant(HELPER, said("Hi"));

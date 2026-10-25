@@ -61,7 +61,7 @@ test("a Plugin UI lists providers, streams, cancels and is cancelled by closing;
     kind: "reply",
     deltas: ["Hello", " there"],
   });
-  const models = [{ id: "fake-model", acceptsImages: false }];
+  const models = [{ id: "fake-model", inputs: [] }];
   writeAiProviders(dataDir, [
     { label: "Fake", baseUrl: fake.baseUrl, models },
     {

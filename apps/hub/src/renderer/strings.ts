@@ -7,6 +7,7 @@ import type {
   CrashCause,
   DisplayLanguage,
   InstallFailureCause,
+  ModelInput,
 } from "../shared/hub-chrome-ipc";
 
 export const STRINGS = {
@@ -62,7 +63,12 @@ export const STRINGS = {
     keySet: "Key set",
     noKey: "No key",
     model: "Model",
-    acceptsImages: "Accepts images",
+    modelInputs: {
+      image: "Image",
+      document: "Document (PDF)",
+      audio: "Audio",
+    } satisfies Record<ModelInput, string>,
+    noAudioForAnthropic: "Anthropic's library can't send audio.",
     addModel: "Add model",
     removeModel: "Remove model",
     defaultAiProvider: "Default AI Provider",
@@ -88,7 +94,7 @@ export const STRINGS = {
     uninstallQuestion: (name: string) => `Uninstall ${name}?`,
     keepInstalled: "Keep installed",
     alsoDeleteData: "Also delete my data",
-    installedVersion: (version: string) => `Installed: version ${version}`,
+    installed: "Installed",
     installFailed: {
       download: "Install failed: the download did not finish",
       checksum: "Install failed: the download was damaged",
@@ -170,7 +176,12 @@ export const STRINGS = {
     keySet: "已設定金鑰",
     noKey: "未設定金鑰",
     model: "模型",
-    acceptsImages: "接受圖片",
+    modelInputs: {
+      image: "圖片",
+      document: "文件 (PDF)",
+      audio: "音訊",
+    } satisfies Record<ModelInput, string>,
+    noAudioForAnthropic: "Anthropic 的程式庫無法傳送音訊。",
     addModel: "新增模型",
     removeModel: "移除模型",
     defaultAiProvider: "預設 AI 供應商",
@@ -196,7 +207,7 @@ export const STRINGS = {
     uninstallQuestion: (name: string) => `解除安裝 ${name}？`,
     keepInstalled: "保留",
     alsoDeleteData: "同時刪除我的資料",
-    installedVersion: (version: string) => `已安裝：版本 ${version}`,
+    installed: "已安裝",
     installFailed: {
       download: "安裝失敗：下載未能完成",
       checksum: "安裝失敗：下載的檔案已損壞",
