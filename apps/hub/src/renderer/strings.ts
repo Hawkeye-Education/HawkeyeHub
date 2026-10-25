@@ -87,7 +87,7 @@ export const STRINGS = {
     uninstallQuestion: (name: string) => `Uninstall ${name}?`,
     keepInstalled: "Keep installed",
     alsoDeleteData: "Also delete my data",
-    installedVersion: (version: string) => `Installed: version ${version}`,
+    installed: "Installed",
     installFailed: {
       download: "Install failed: the download did not finish",
       checksum: "Install failed: the download was damaged",
@@ -194,7 +194,7 @@ export const STRINGS = {
     uninstallQuestion: (name: string) => `解除安裝 ${name}？`,
     keepInstalled: "保留",
     alsoDeleteData: "同時刪除我的資料",
-    installedVersion: (version: string) => `已安裝：版本 ${version}`,
+    installed: "已安裝",
     installFailed: {
       download: "安裝失敗：下載未能完成",
       checksum: "安裝失敗：下載的檔案已損壞",

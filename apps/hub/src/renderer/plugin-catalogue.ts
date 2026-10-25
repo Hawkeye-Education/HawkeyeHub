@@ -1,21 +1,24 @@
 // The Plugin Catalogue, drawn in the content area while the open Plugins run hidden behind them:
-// every Plugin the Registry offers, with its name, description and icon, its installed version, and
-// **Install**, *Installing…*, an install's failure, **Uninstall**, *Uninstalling…*, or why it
-// cannot be installed (spec #91).
+// every Plugin the Registry offers as a tile, with its icon, name, the version Install would
+// install and description, and **Install**, *Installing…*, an install's failure with **Retry**,
+// **Uninstall**, *Uninstalling…*, or why it cannot be installed (spec #91; tiles, #142 variant A).
 
-import { LitElement, css, html, nothing } from "lit";
+import { LitElement, css, html } from "lit";
 import type {
   Catalogue,
   CataloguePlugin,
   HubChromeApi,
 } from "../shared/hub-chrome-ipc";
+import { icon } from "./icons";
 import type { Strings } from "./strings";
 import { native } from "./theme";
 
-/** As in the Plugin Switcher: the icon URL for the `li::before` mask, set through the CSSOM. */
+/** As in the Plugin Switcher: the icon URL for the tile's mask, set through the CSSOM. */
 function iconStyle({ iconUrl }: CataloguePlugin): string {
   return `--icon: url("${iconUrl}")`;
 }
+
+const spinner = html`<span class="spinner" aria-hidden="true"></span>`;
 
 export class PluginCatalogue extends LitElement {
   static override styles = [
@@ -32,45 +35,153 @@ export class PluginCatalogue extends LitElement {
         margin: 0 0 var(--hub-space-4);
         font-size: var(--hub-text-xl);
       }
+      svg.icon {
+        flex: none;
+        width: 14px;
+        height: 14px;
+      }
+      .spinner {
+        flex: none;
+        width: 12px;
+        height: 12px;
+        box-sizing: border-box;
+        border-radius: 50%;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
       ul {
         list-style: none;
         margin: 0;
         padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+        gap: var(--hub-space-3);
       }
       li {
+        min-width: 0;
         display: flex;
+        flex-direction: column;
+        gap: var(--hub-space-2);
+        padding: var(--hub-space-4);
+        background: var(--hub-color-surface-raised);
+        border: 1px solid var(--hub-color-line);
+        border-radius: var(--hub-radius-2);
+      }
+      .top {
+        display: flex;
+        align-items: center;
         gap: var(--hub-space-3);
-        padding: var(--hub-space-2) 0;
+        min-width: 0;
+      }
+      .top > div {
+        min-width: 0;
+        display: grid;
+      }
+      /* The Registry's icon.svg as a 22px mask in the accent, on a 40px tile. */
+      .tile {
+        flex: none;
+        width: 40px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        border-radius: var(--hub-radius-2);
+        background: color-mix(
+          in srgb,
+          var(--hub-color-accent) 12%,
+          transparent
+        );
+      }
+      .tile::before {
+        content: "";
+        width: 22px;
+        height: 22px;
+        background-color: var(--hub-color-accent);
+        mask: var(--icon) center / contain no-repeat;
       }
       h3 {
         margin: 0;
-        font-size: var(--hub-text-lg);
-        font-weight: var(--hub-weight-strong);
+        font-size: 14px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
-      p {
-        margin: var(--hub-space-1) 0 0;
+      .version {
+        font-size: 11px;
+        color: var(--hub-color-fg-muted);
       }
-      .reason {
+      .description {
+        margin: 0;
+        color: var(--hub-color-fg-muted);
+        line-height: 1.4;
+        min-height: 2.8em;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+      }
+      .blocked .tile,
+      .blocked h3 {
+        opacity: 0.5;
+      }
+      .foot {
+        margin-top: auto;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: var(--hub-space-2);
+        min-height: 28px;
+      }
+      .status {
+        margin-right: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
         font-size: var(--hub-text-sm);
+        color: var(--hub-color-fg-muted);
       }
-      .entry {
-        flex: 1;
+      .status.ok {
+        color: var(--hub-color-success);
       }
-      .action {
-        flex: none;
-        align-self: start;
+      .status.warn {
+        color: var(--hub-color-warning);
       }
-      /* The Registry's icon.svg as a mask over currentColor, as in the Plugin Switcher. */
-      li::before {
-        content: "";
-        flex: none;
+      .status.err {
+        color: var(--hub-color-danger);
+      }
+      /* Export diagnostics reads as a link, but is a button: it acts, it goes nowhere. */
+      .link {
+        border: 0;
+        background: none;
+        box-shadow: none;
+        padding: 0;
+        min-height: 0;
+        color: var(--hub-color-accent);
+        font-size: var(--hub-text-sm);
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      .notice {
+        display: grid;
+        justify-items: center;
+        gap: var(--hub-space-3);
+        text-align: center;
+        color: var(--hub-color-fg-muted);
+        padding: 80px 0;
+      }
+      .notice svg.icon,
+      .notice .spinner {
         width: 32px;
         height: 32px;
-        background-color: currentColor;
-        mask-size: contain;
-        mask-repeat: no-repeat;
-        mask-position: center;
-        mask-image: var(--icon);
+      }
+      .notice .spinner {
+        border-width: 3px;
       }
     `,
   ];
@@ -97,101 +208,118 @@ export class PluginCatalogue extends LitElement {
         // The Hub Chrome draws no way here in dev mode.
         throw new Error("Dev mode has no Plugin Catalogue");
       case "checking":
-        return html`<p role="status">${strings.checkingRegistry}</p>`;
+        return html`<div class="notice">
+          ${spinner}
+          <span role="status">${strings.checkingRegistry}</span>
+        </div>`;
       case "unreachable":
-        return html`<p role="alert">${strings.registryUnreachable}</p>
+        return html`<div class="notice">
+          ${icon("cloud-off")}
+          <span role="alert">${strings.registryUnreachable}</span>
           <button
             @click=${() => {
               this.hub.retryRegistry();
             }}
           >
             ${strings.retry}
-          </button>`;
+          </button>
+        </div>`;
       case "listed":
         return catalogue.plugins.length === 0
-          ? html`<p>${strings.noPluginsOffered}</p>`
+          ? html`<div class="notice">
+              ${icon("package")}
+              <span>${strings.noPluginsOffered}</span>
+            </div>`
           : html`<ul>
-              ${catalogue.plugins.map(
-                (plugin) =>
-                  html`<li .style=${iconStyle(plugin)}>
-                    <div class="entry">
-                      <h3>${plugin.name}</h3>
-                      <p>${plugin.description}</p>
-                      ${
-                        plugin.installed.kind === "installed"
-                          ? html`<p class="reason">
-                              ${strings.installedVersion(
-                                plugin.installed.version,
-                              )}
-                            </p>`
-                          : nothing
-                      }
-                      ${
-                        plugin.access.kind === "blocked"
-                          ? html`<p class="reason">
-                              ${strings.blocked[plugin.access.reason]}
-                            </p>`
-                          : nothing
-                      }
-                      ${this.renderJob(plugin)}
-                    </div>
-                    ${this.renderAction(plugin)}
-                  </li>`,
-              )}
+              ${catalogue.plugins.map((plugin) => this.renderTile(plugin))}
             </ul>`;
       default:
         return catalogue satisfies never;
     }
   }
 
-  private renderJob({ job }: CataloguePlugin) {
-    const { strings } = this;
+  private renderTile(plugin: CataloguePlugin) {
+    const blocked =
+      plugin.access.kind === "blocked" &&
+      plugin.installed.kind === "not-installed";
+    return html`<li class=${blocked ? "blocked" : ""}>
+      <div class="top">
+        <span class="tile" .style=${iconStyle(plugin)}></span>
+        <div>
+          <h3 title=${plugin.name}>${plugin.name}</h3>
+          <span class="version">v${plugin.version}</span>
+        </div>
+      </div>
+      <p class="description">${plugin.description}</p>
+      <div class="foot">${this.renderFoot(plugin)}</div>
+    </li>`;
+  }
+
+  // The status on the left and the one action on the right. A job comes first; then an installed
+  // Plugin is **Uninstall**, whatever its access; then a blocked one says why; else **Install**.
+  private renderFoot({ id, access, installed, job }: CataloguePlugin) {
+    const { strings, hub } = this;
     switch (job.kind) {
-      case "none":
-        return nothing;
       case "installing":
-        return html`<p role="status">${strings.installing}</p>`;
       case "uninstalling":
-        return html`<p role="status">${strings.uninstalling}</p>`;
+        return html`<span class="status" role="status"
+          >${spinner}${
+            job.kind === "installing"
+              ? strings.installing
+              : strings.uninstalling
+          }</span
+        >`;
       case "install-failed":
-        return html`<p role="alert">${strings.installFailed[job.cause]}</p>
+        return html`<span class="status err"
+            >${icon("alert-triangle")}
+            <span
+              ><span role="alert">${strings.installFailed[job.cause]}</span> ·
+              <button
+                class="link"
+                @click=${() => {
+                  hub.exportDiagnostics();
+                }}
+              >
+                ${strings.exportDiagnostics}
+              </button></span
+            ></span
+          >
           <button
             @click=${() => {
-              this.hub.exportDiagnostics();
+              hub.install(id);
             }}
           >
-            ${strings.exportDiagnostics}
+            ${strings.retry}
           </button>`;
+      case "none":
+        break;
       default:
         return job satisfies never;
     }
-  }
-
-  // **Uninstall** for an installed Plugin with no job; **Install** for an installable Plugin not
-  // installed and not installing.
-  private renderAction({ id, access, installed, job }: CataloguePlugin) {
     if (installed.kind === "installed") {
-      return job.kind === "none"
-        ? html`<button
-            class="action"
-            @click=${() => {
-              this.hub.uninstall(id);
-            }}
-          >
-            ${this.strings.uninstall}
-          </button>`
-        : nothing;
+      return html`<span class="status ok"
+          >${icon("check")}${strings.installed}</span
+        >
+        <button
+          @click=${() => {
+            hub.uninstall(id);
+          }}
+        >
+          ${strings.uninstall}
+        </button>`;
     }
-    if (access.kind === "blocked" || job.kind === "installing") {
-      return nothing;
+    if (access.kind === "blocked") {
+      return html`<span class="status warn"
+        >${icon("lock")}${strings.blocked[access.reason]}</span
+      >`;
     }
     return html`<button
-      class="action"
+      data-variant="primary"
       @click=${() => {
-        this.hub.install(id);
+        hub.install(id);
       }}
     >
-      ${this.strings.install}
+      ${strings.install}
     </button>`;
   }
 }

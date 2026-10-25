@@ -422,6 +422,7 @@ export function createLifecycle({
             name: displayTextIn(manifest.name, language),
             description: displayTextIn(manifest.description, language),
             iconUrl: registryIconUrl(manifest.id),
+            version: manifest.version,
             access,
             installed:
               installedVersion === undefined

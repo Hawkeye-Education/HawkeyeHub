@@ -83,6 +83,8 @@ export interface CataloguePlugin {
   description: string;
   /** The Registry's icon, served through the icon scheme as the Switcher's are. */
   iconUrl: IconUrl;
+  /** The version Install would install: the newest installable, else the newest offered. */
+  version: PluginVersion;
   access: CatalogueAccess;
   installed: CatalogueInstalled;
   job: CatalogueJob;
