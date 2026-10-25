@@ -19,6 +19,13 @@
   :root { --tint: linear-gradient(160deg, #f8f3ee, #ede5dd); --item-hover: color-mix(in srgb, var(--hub-color-accent) 9%, transparent);
           --item-front: color-mix(in srgb, var(--hub-color-accent) 17%, transparent); }
   :root[data-scheme="dark"] { --tint: linear-gradient(160deg, #26211e, #1b1816); }
+  /* Dark background candidates (?bg=): the window tint, and the surfaces over it to match. */
+  :root[data-scheme="dark"][data-bg="neutral"] { --tint: linear-gradient(160deg, #212121, #181818);
+    --hub-color-surface: rgb(255 255 255 / 0.045); --hub-color-surface-raised: #2a2a2a; --hub-color-fg-muted: #a8a8a8; }
+  :root[data-scheme="dark"][data-bg="slate"] { --tint: linear-gradient(160deg, #1c2028, #13161b);
+    --hub-color-surface: rgb(255 255 255 / 0.045); --hub-color-surface-raised: #262b34; --hub-color-fg: #eef0f3; --hub-color-fg-muted: #a3a9b4; }
+  :root[data-scheme="dark"][data-bg="black"] { --tint: #0c0c0c;
+    --hub-color-surface: #161616; --hub-color-surface-raised: #202020; --hub-color-fg-muted: #a0a0a0; --hub-color-line: rgb(255 255 255 / 0.1); }
   html, body { height: 100%; }
   body { background: var(--tint); overflow: hidden; }
   svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -215,6 +222,7 @@
 <div class="pbar">
   <button data-p="prev">‹</button><span class="lbl" id="vlabel"></span><button data-p="next">›</button>
   <button data-p="scheme" id="pscheme"></button>
+  <button data-p="bg" id="pbg"></button>
   <button data-p="view" id="pview"></button>
   <button data-p="samples">Sample files</button>
   <button data-p="reset">Reset chat</button>
@@ -260,8 +268,10 @@ const TEMPLATES = ['Explain this watermark pattern', 'Write a regex for it', 'Wh
 
 const q = new URLSearchParams(location.search);
 const VARIANTS = { A: 'Card composer', B: 'Capsule + tray', C: 'Docked + file rows' };
+const BGS = { warm: 'Warm', neutral: 'Neutral grey', slate: 'Cool slate', black: 'Near-black' };
 const S = {
   variant: VARIANTS[q.get('variant')] ? q.get('variant') : 'A',
+  bg: BGS[q.get('bg')] ? q.get('bg') : 'warm',
   scheme: q.get('scheme') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
   view: q.get('view') === 'settings' ? 'settings' : 'plugin',
   panel: true,
@@ -458,8 +468,10 @@ function render() {
   if (nc && atBottom) nc.scrollTop = nc.scrollHeight;
   document.getElementById('vlabel').textContent = `${S.variant} (${VARIANTS[S.variant]})`;
   document.getElementById('pscheme').textContent = S.scheme === 'dark' ? 'Dark' : 'Light';
+  document.getElementById('pbg').textContent = `Dark bg: ${BGS[S.bg]}`;
+  document.documentElement.dataset.bg = S.bg;
   document.getElementById('pview').textContent = S.view === 'settings' ? 'Settings' : 'Panel';
-  const u = new URL(location); u.searchParams.set('variant', S.variant); u.searchParams.set('scheme', S.scheme); u.searchParams.set('view', S.view);
+  const u = new URL(location); u.searchParams.set('variant', S.variant); u.searchParams.set('scheme', S.scheme); u.searchParams.set('view', S.view); u.searchParams.set('bg', S.bg);
   history.replaceState(null, '', u);
 }
 
@@ -537,6 +549,7 @@ document.addEventListener('click', (e) => {
     case 'addModel': PROVIDERS[b.dataset.pi].models.push({ id: '', name: '(new model)', inputs: [] }); break;
     case 'prev': case 'next': S.variant = keys[(keys.indexOf(S.variant) + (b.dataset.p === 'next' ? 1 : -1) + keys.length) % keys.length]; S.menu = false; break;
     case 'scheme': S.scheme = S.scheme === 'dark' ? 'light' : 'dark'; applyScheme(); break;
+    case 'bg': { const k = Object.keys(BGS); S.bg = k[(k.indexOf(S.bg) + 1) % k.length]; if (S.scheme !== 'dark') { S.scheme = 'dark'; applyScheme(); } break; }
     case 'view': S.view = S.view === 'settings' ? 'plugin' : 'settings'; break;
     case 'samples': S.view = 'plugin'; S.panel = true; return samples();
     case 'reset': clearInterval(S.streaming); Object.assign(S, { streaming: null, turns: [], chips: [], refusal: '', draft: '' }); break;
