@@ -111,8 +111,11 @@ class HubLog extends LitElement implements HubLogElement {
       border-radius: var(--hub-radius-2);
       font-family: var(--hub-font-mono);
       font-size: var(--hub-text-sm);
-      white-space: pre-wrap;
       overflow-wrap: anywhere;
+    }
+    /* On the lines only: the template's own whitespace must not render as blank lines. */
+    [data-tone] {
+      white-space: pre-wrap;
     }
     [data-tone="info"] {
       color: var(--hub-color-fg);

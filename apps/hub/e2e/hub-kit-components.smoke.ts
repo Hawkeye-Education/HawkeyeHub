@@ -35,6 +35,9 @@ declare const document: {
   createElement(tag: "span"): Styled;
   body: { append(node: object): void };
 };
+interface Measured {
+  getBoundingClientRect(): { height: number };
+}
 declare const getComputedStyle: (element: object) => { color: string };
 declare const window: {
   changes: FolderFieldValue[];
@@ -182,6 +185,16 @@ test("<hub-log> colours each tone from its token, keeps the newest line in view,
       window.log.clear();
     });
     await expect(log.getByText("line 40", { exact: true })).toHaveCount(0);
+
+    // One line fills the log exactly: no blank line from the template's whitespace above or below it.
+    await timer.evaluate(() => {
+      window.log.append({ tone: "info", text: "only line" });
+    });
+    const height = (element: object): number =>
+      (element as Measured).getBoundingClientRect().height;
+    expect(await log.getByRole("log").evaluate(height)).toBe(
+      await log.getByText("only line", { exact: true }).evaluate(height),
+    );
   } finally {
     await hub.close();
   }
