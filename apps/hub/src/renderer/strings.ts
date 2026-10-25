@@ -9,6 +9,25 @@ import type {
   InstallFailureCause,
   ModelInput,
 } from "../shared/hub-chrome-ipc";
+import { sizeText, type Refusal } from "./composer-files";
+
+const INPUT_NAMES_EN = {
+  image: "images",
+  document: "PDFs",
+  audio: "audio",
+} satisfies Record<ModelInput, string>;
+const INPUT_NAMES_ZH = {
+  image: "圖片",
+  document: "PDF",
+  audio: "音訊",
+} satisfies Record<ModelInput, string>;
+
+/** "a", "a and b", "a, b and c". */
+function andList(words: string[]): string {
+  return words.length < 2
+    ? words.join("")
+    : `${words.slice(0, -1).join(", ")} and ${words.slice(-1).join("")}`;
+}
 
 export const STRINGS = {
   "en-HK": {
@@ -120,8 +139,35 @@ export const STRINGS = {
     promptTemplates: "Prompt Templates",
     pastedImage: "Pasted image",
     pastedText: "Pasted text",
-    remove: "Remove",
-    attachImage: "Attach an image",
+    remove: (name: string) => `Remove ${name}`,
+    closePanel: "Close",
+    askAssistant: "Ask the Assistant…",
+    howCanIHelp: "How can I help?",
+    attachFiles: "Attach files",
+    textOnly: "text only",
+    canAttach: (inputs: ModelInput[]) =>
+      `You can attach ${andList(["text files", ...inputs.map((input) => INPUT_NAMES_EN[input])])}.`,
+    fileKinds: {
+      image: "Image",
+      document: "PDF",
+      audio: "Audio",
+      text: "Text",
+    } satisfies Record<ModelInput | "text", string>,
+    notForThisModel: "Not for this model",
+    refused: (refusal: Refusal, model: string) => {
+      switch (refusal.kind) {
+        case "unknown-type":
+          return `“${refusal.name}” can't be attached.`;
+        case "too-big":
+          return `“${refusal.name}” is ${sizeText(refusal.bytes)}; the limit is 20 MB.`;
+        case "not-for-model":
+          return `${model} can't read ${INPUT_NAMES_EN[refusal.input]}, so “${refusal.name}” wasn't attached.`;
+        default:
+          return refusal satisfies never;
+      }
+    },
+    cantRead: (model: string, inputs: ModelInput[]) =>
+      `${model} can't read ${inputs.map((input) => INPUT_NAMES_EN[input]).join(" or ")}. Remove what it can't read, or pick another model.`,
     noProvider: "No AI Provider is set up.",
     openSettings: "Set one up in Settings",
     providerMissing:
@@ -240,8 +286,35 @@ export const STRINGS = {
     promptTemplates: "提示範本",
     pastedImage: "已貼上的圖片",
     pastedText: "已貼上的文字",
-    remove: "移除",
-    attachImage: "附加圖片",
+    remove: (name: string) => `移除 ${name}`,
+    closePanel: "關閉",
+    askAssistant: "向助理發問…",
+    howCanIHelp: "有甚麼可以幫你？",
+    attachFiles: "附加檔案",
+    textOnly: "只限文字",
+    canAttach: (inputs: ModelInput[]) =>
+      `你可以附加${["文字檔", ...inputs.map((input) => INPUT_NAMES_ZH[input])].join("、")}。`,
+    fileKinds: {
+      image: "圖片",
+      document: "PDF",
+      audio: "音訊",
+      text: "文字",
+    } satisfies Record<ModelInput | "text", string>,
+    notForThisModel: "此模型不適用",
+    refused: (refusal: Refusal, model: string) => {
+      switch (refusal.kind) {
+        case "unknown-type":
+          return `無法附加「${refusal.name}」。`;
+        case "too-big":
+          return `「${refusal.name}」有 ${sizeText(refusal.bytes)}，上限為 20 MB。`;
+        case "not-for-model":
+          return `${model} 無法讀取${INPUT_NAMES_ZH[refusal.input]}，所以未有附加「${refusal.name}」。`;
+        default:
+          return refusal satisfies never;
+      }
+    },
+    cantRead: (model: string, inputs: ModelInput[]) =>
+      `${model} 無法讀取${inputs.map((input) => INPUT_NAMES_ZH[input]).join("或")}。請移除它無法讀取的檔案，或選擇其他模型。`,
     noProvider: "未設定任何 AI 供應商。",
     openSettings: "前往設定",
     providerMissing: "此助理所選的 AI 供應商或模型已不再設定。",

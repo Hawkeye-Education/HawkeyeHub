@@ -37,27 +37,51 @@ const IMAGE_PART = z.strictObject({
   mediaType: z.string(),
 });
 
+const AI_PART = z.discriminatedUnion("type", [
+  TEXT_PART,
+  IMAGE_PART,
+  z.strictObject({
+    type: z.literal("document"),
+    data: BYTES,
+    mediaType: z.literal("application/pdf"),
+  }),
+  z.strictObject({
+    type: z.literal("audio"),
+    data: BYTES,
+    mediaType: z.enum(["audio/wav", "audio/mpeg"]),
+  }),
+]);
+
 /**
  * One message's content: text, and each other part (its `type` a `ModelInput`) only for a model
  * that accepts it.
  */
-export const AiContentSchema = z.array(
-  z.discriminatedUnion("type", [
-    TEXT_PART,
-    IMAGE_PART,
+export const AiContentSchema = z.array(AI_PART);
+export type AiContent = z.infer<typeof AiContentSchema>;
+
+/**
+ * What staff send the Assistant from the Hub Chrome: what they typed, and each file or long paste
+ * they attached, under the name the Assistant Panel shows it by. The model gets only the parts.
+ */
+export const SentPartsSchema = z.array(
+  z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("typed"), text: z.string() }),
     z.strictObject({
-      type: z.literal("document"),
-      data: BYTES,
-      mediaType: z.literal("application/pdf"),
-    }),
-    z.strictObject({
-      type: z.literal("audio"),
-      data: BYTES,
-      mediaType: z.enum(["audio/wav", "audio/mpeg"]),
+      kind: z.literal("attached"),
+      name: z.string(),
+      part: AI_PART,
     }),
   ]),
 );
-export type AiContent = z.infer<typeof AiContentSchema>;
+export type SentPart = z.infer<typeof SentPartsSchema>[number];
+export type Attachment = Extract<SentPart, { kind: "attached" }>;
+
+/** The content the model gets for what staff sent. */
+export function contentOf(parts: SentPart[]): AiContent {
+  return parts.map((sent) =>
+    sent.kind === "typed" ? { type: "text", text: sent.text } : sent.part,
+  );
+}
 
 const chatRequestSchema = <Content extends z.ZodType>(content: Content) =>
   z.strictObject({
