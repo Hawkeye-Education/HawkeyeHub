@@ -43,9 +43,10 @@ const STRINGS = {
     install: "Install",
     timer: "Timer",
     attendance: "Attendance",
-    installed: "Installed: version 1.0.0",
+    installed: "Installed",
     checksumFailed: "Install failed: the download was damaged",
     exportDiagnostics: "Export diagnostics",
+    retry: "Retry",
     uninstall: "Uninstall",
     alsoDeleteData: "Also delete my data",
   },
@@ -54,9 +55,10 @@ const STRINGS = {
     install: "安裝",
     timer: "計時器",
     attendance: "點名",
-    installed: "已安裝：版本 1.0.0",
+    installed: "已安裝",
     checksumFailed: "安裝失敗：下載的檔案已損壞",
     exportDiagnostics: "匯出診斷資料",
+    retry: "重試",
     uninstall: "解除安裝",
     alsoDeleteData: "同時刪除我的資料",
   },
@@ -278,9 +280,9 @@ test("a package that fails its checksum shows why with Export diagnostics, logs 
     await expect(
       attendance.getByRole("button", { name: strings.exportDiagnostics }),
     ).toBeVisible();
-    // Install can be tried again.
+    // Install can be tried again, as Retry.
     await expect(
-      attendance.getByRole("button", { name: strings.install }),
+      attendance.getByRole("button", { name: strings.retry }),
     ).toBeVisible();
     expect(hubLogMessages(dataDir)).toContain(
       "Plugin install failed: checksum",

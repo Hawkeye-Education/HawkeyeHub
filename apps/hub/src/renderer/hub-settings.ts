@@ -5,6 +5,8 @@ import { LitElement, css, html, nothing } from "lit";
 import {
   COLOUR_SCHEMES,
   DISPLAY_LANGUAGES,
+  MODEL_INPUTS,
+  inputsFor,
   type DisplayLanguage,
   type AiProviderRow,
   type HubChromeApi,
@@ -98,6 +100,7 @@ export class HubSettings extends LitElement {
       }
       .model {
         display: flex;
+        align-items: center;
         gap: var(--hub-space-2);
       }
       .actions {
@@ -185,13 +188,24 @@ export class HubSettings extends LitElement {
               ${strings.providerKind}
               <select
                 @change=${(event: Event) => {
-                  const kind = valueOf(event);
+                  const kind =
+                    valueOf(event) === "anthropic"
+                      ? "anthropic"
+                      : "openai-compatible";
+                  // An input the new kind cannot send (audio, for Anthropic) is dropped.
+                  const offered = inputsFor(kind);
                   this.editProvider(index, (each) => ({
                     ...each,
                     endpoint:
                       kind === "anthropic"
                         ? { kind: "anthropic" }
                         : { kind: "openai-compatible", baseUrl: "" },
+                    models: each.models.map((model) => ({
+                      ...model,
+                      inputs: model.inputs.filter((input) =>
+                        offered.includes(input),
+                      ),
+                    })),
                   }));
                 }}
               >
@@ -261,24 +275,39 @@ export class HubSettings extends LitElement {
                       }}
                     />
                   </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      .checked=${model.acceptsImages}
-                      @change=${(event: Event) => {
-                        const { checked } = inputOf(event);
-                        this.editProvider(index, (each) => ({
-                          ...each,
-                          models: each.models.map((other, at) =>
-                            at === modelIndex
-                              ? { ...other, acceptsImages: checked }
-                              : other,
-                          ),
-                        }));
-                      }}
-                    />
-                    ${strings.acceptsImages}
-                  </label>
+                  ${inputsFor(provider.endpoint.kind).map(
+                    (input) =>
+                      html`<label>
+                        <input
+                          type="checkbox"
+                          .checked=${model.inputs.includes(input)}
+                          @change=${(event: Event) => {
+                            const { checked } = inputOf(event);
+                            this.editProvider(index, (each) => ({
+                              ...each,
+                              models: each.models.map((other, at) =>
+                                at === modelIndex
+                                  ? {
+                                      ...other,
+                                      inputs: MODEL_INPUTS.filter((kept) =>
+                                        kept === input
+                                          ? checked
+                                          : other.inputs.includes(kept),
+                                      ),
+                                    }
+                                  : other,
+                              ),
+                            }));
+                          }}
+                        />
+                        ${strings.modelInputs[input]}
+                      </label>`,
+                  )}
+                  ${
+                    provider.endpoint.kind === "anthropic"
+                      ? html`<span>${strings.noAudioForAnthropic}</span>`
+                      : nothing
+                  }
                   <button
                     @click=${() => {
                       this.editProvider(index, (each) => ({
@@ -297,7 +326,7 @@ export class HubSettings extends LitElement {
               @click=${() => {
                 this.editProvider(index, (each) => ({
                   ...each,
-                  models: [...each.models, { id: "", acceptsImages: false }],
+                  models: [...each.models, { id: "", inputs: [] }],
                 }));
               }}
             >
@@ -327,7 +356,7 @@ export class HubSettings extends LitElement {
                 was: { kind: "added" },
                 label: "",
                 endpoint: { kind: "openai-compatible", baseUrl: "" },
-                models: [{ id: "", acceptsImages: false }],
+                models: [{ id: "", inputs: [] }],
               },
             ],
           });

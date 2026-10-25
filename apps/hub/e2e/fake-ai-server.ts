@@ -93,7 +93,7 @@ export async function startFakeAiServer(
 export interface FakeProvider {
   label: string;
   baseUrl: string;
-  models: { id: string; acceptsImages: boolean }[];
+  models: { id: string; inputs: ("image" | "document" | "audio")[] }[];
 }
 
 /**

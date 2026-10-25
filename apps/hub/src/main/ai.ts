@@ -65,9 +65,14 @@ export function labelAndModels({
 
 /** What `hub.ai.providers()` lists: no key, no Base URL. */
 export function aiProvidersOf({ aiProviders }: HubSettings): AiProviderInfo[] {
-  return aiProviders.map((provider) => ({
-    ...labelAndModels(provider),
-    kind: provider.endpoint.kind,
+  // `hub.ai` is unchanged by model inputs (spec #142): text and images only.
+  return aiProviders.map(({ label, endpoint, models }) => ({
+    label,
+    kind: endpoint.kind,
+    models: models.map(({ id, inputs }) => ({
+      id,
+      acceptsImages: inputs.includes("image"),
+    })),
   }));
 }
 
@@ -99,16 +104,20 @@ export function targetOf(settings: HubSettings, model: AiModelChoice): Target {
 
 /**
  * Starts one chat. Every failure, including no provider set up, arrives through `done` and
- * `text`. An image part for a model that does not accept images throws here, before any call:
- * `hub.ai.providers()` says which models do.
+ * `text`. A part of an input the model does not accept throws here, before any call: the model's
+ * `inputs` (and `hub.ai.providers()`) say which it does.
  */
 export function startAiChat(deps: AiCallDeps, request: AiChatRequest): AiChat {
   const target = targetOf(deps.settings, request.model);
-  const hasImage = request.messages.some(({ content }) =>
-    content.some(({ type }) => type === "image"),
-  );
-  if (target.kind === "found" && hasImage && !target.model.acceptsImages) {
-    throw new Error(`${target.model.id} does not accept images`);
+  if (target.kind === "found") {
+    const { id, inputs } = target.model;
+    for (const { content } of request.messages) {
+      for (const { type } of content) {
+        if (type !== "text" && !inputs.includes(type)) {
+          throw new Error(`${id} does not accept ${type} parts`);
+        }
+      }
+    }
   }
   const abort = new AbortController();
   // Two readers of one stream: `done` reads the whole reply even if nobody reads `text`.
@@ -143,18 +152,30 @@ async function* deltasOf(
   const result = streamText({
     model: languageModelOf(provider, model.id, keys.get(provider.label), fetch),
     system,
-    // An image goes as a file part, which both roles may hold.
+    // An image, a document or audio goes as a file part, which both roles may hold.
     messages: messages.map(({ role, content }) => ({
       role,
-      content: content.map((part) =>
-        part.type === "text"
-          ? part
-          : {
+      content: content.map((part) => {
+        switch (part.type) {
+          case "text":
+            return part;
+          case "image":
+            return {
               type: "file" as const,
               data: part.image,
               mediaType: part.mediaType,
-            },
-      ),
+            };
+          case "document":
+          case "audio":
+            return {
+              type: "file" as const,
+              data: part.data,
+              mediaType: part.mediaType,
+            };
+          default:
+            return part satisfies never;
+        }
+      }),
     })),
     // One call, so one hub.log line per failure, and staff see it at once.
     maxRetries: 0,

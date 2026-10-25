@@ -12,7 +12,7 @@ import type {
   HubChromeContent,
   SwitcherPlugin,
 } from "../shared/hub-chrome-ipc";
-import { icon, iconStyles } from "./icons";
+import { icon } from "./icons";
 import logoMark from "./logo-mark.png";
 import type { Strings } from "./strings";
 import { native } from "./theme";
@@ -28,7 +28,6 @@ function iconStyle({ iconUrl }: SwitcherPlugin): string {
 export class PluginSwitcher extends LitElement {
   static override styles = [
     native,
-    iconStyles,
     css`
       :host {
         --item-hover: color-mix(
@@ -218,6 +217,11 @@ export class PluginSwitcher extends LitElement {
       .mini:hover:not(:disabled) {
         background: var(--item-hover);
         color: var(--hub-color-fg);
+      }
+      svg.icon {
+        flex: none;
+        width: 16px;
+        height: 16px;
       }
       .mini svg.icon {
         width: 14px;

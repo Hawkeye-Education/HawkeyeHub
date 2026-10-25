@@ -82,7 +82,7 @@ test("the Assistant Panel streams a Markdown reply, stops one, and copies a code
     {
       label: "Fake",
       baseUrl: fake.baseUrl,
-      models: [{ id: "fake-model", acceptsImages: false }],
+      models: [{ id: "fake-model", inputs: [] }],
     },
   ]);
   installFixturePlugins(dataDir, [fixtureInstall("regex-helper")]);
@@ -196,7 +196,7 @@ test("the composer sends a Prompt Template, then a pasted image and a long paste
     {
       label: "Fake",
       baseUrl: fake.baseUrl,
-      models: [{ id: "fake-vision", acceptsImages: true }],
+      models: [{ id: "fake-vision", inputs: ["image"] }],
     },
   ]);
   installFixturePlugins(dataDir, [fixtureInstall("regex-helper")]);
