@@ -109,7 +109,7 @@ export class AssistantPanel extends LitElement {
         font-size: inherit;
         font-weight: 600;
       }
-      .ib {
+      .icon-button {
         width: 30px;
         height: 30px;
         border-radius: var(--hub-radius-2);
@@ -117,7 +117,7 @@ export class AssistantPanel extends LitElement {
         place-items: center;
         color: var(--hub-color-fg-muted);
       }
-      .ib:hover:not(:disabled) {
+      .icon-button:hover:not(:disabled) {
         background: var(--hover);
         color: var(--hub-color-fg);
       }
@@ -297,25 +297,25 @@ export class AssistantPanel extends LitElement {
         color: var(--hub-color-fg);
         background: var(--hover);
       }
-      .bad {
+      .not-for-model {
         border-color: var(--hub-color-warning);
         box-shadow: 0 0 0 1px var(--hub-color-warning);
       }
-      .bad .size {
+      .not-for-model .size {
         color: var(--hub-color-warning);
       }
-      .bad.thumb img {
+      .not-for-model.thumb img {
         opacity: 0.4;
       }
       .band {
         position: absolute;
         inset: auto 0 0;
         padding: 2px;
-        font-size: 9.5px;
+        font-size: var(--hub-text-sm);
         line-height: 1.2;
         text-align: center;
         background: var(--hub-color-warning);
-        color: #000;
+        color: var(--hub-color-on-accent);
       }
       .sent .chip {
         padding-right: var(--hub-space-2);
@@ -683,7 +683,7 @@ export class AssistantPanel extends LitElement {
     const { strings } = this;
     const { name, part } = attachment;
     // A sent attachment went to the model it was sent to.
-    const bad = remove !== null && !takes(this.inputs(), attachment);
+    const notForModel = remove !== null && !takes(this.inputs(), attachment);
     const removeButton =
       remove === null
         ? nothing
@@ -696,22 +696,28 @@ export class AssistantPanel extends LitElement {
             ${icon("x")}
           </button>`;
     if (part.type === "image") {
-      return html`<div class="thumb ${bad ? "bad" : ""}" title=${name}>
+      return html`<div
+        class="thumb ${notForModel ? "not-for-model" : ""}"
+        title=${name}
+      >
         <img
           alt=${name}
           src=${this.thumbnail(key, part.image, part.mediaType)}
         />
-        ${bad ? html`<span class="band">${strings.notForThisModel}</span>` : nothing}
+        ${notForModel ? html`<span class="band">${strings.notForThisModel}</span>` : nothing}
         ${removeButton}
       </div>`;
     }
-    return html`<div class="chip ${bad ? "bad" : ""}" title=${name}>
+    return html`<div
+      class="chip ${notForModel ? "not-for-model" : ""}"
+      title=${name}
+    >
       <span class="tile ${part.type}">${icon(KIND_ICONS[part.type])}</span>
       <span class="meta">
         <span class="name">${name}</span>
         <span class="size">
           ${
-            bad
+            notForModel
               ? strings.notForThisModel
               : `${strings.fileKinds[part.type]} · ${sizeText(bytesOf(attachment))}`
           }
@@ -928,7 +934,7 @@ export class AssistantPanel extends LitElement {
             ? nothing
             : html`<button
                 type="button"
-                class="flat ib"
+                class="flat icon-button"
                 aria-label=${strings.newConversation}
                 title=${strings.newConversation}
                 @click=${() => {
@@ -940,7 +946,7 @@ export class AssistantPanel extends LitElement {
         }
         <button
           type="button"
-          class="flat ib"
+          class="flat icon-button"
           aria-label=${strings.closePanel}
           title=${strings.closePanel}
           @click=${() => {
@@ -1014,7 +1020,7 @@ export class AssistantPanel extends LitElement {
           <div class="tools">
             <button
               type="button"
-              class="flat ib"
+              class="flat icon-button"
               aria-label=${strings.attachFiles}
               title=${strings.attachFiles}
               @click=${() => {

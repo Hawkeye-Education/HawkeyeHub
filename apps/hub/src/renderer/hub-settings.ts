@@ -43,6 +43,18 @@ function kindsOf(names: Record<AiProviderKind, string>): AiProviderKind[] {
   return Object.keys(names) as AiProviderKind[];
 }
 
+/** The kind the select chose: one of its own options, so anything else is a bug. */
+function chosenKind(
+  event: Event,
+  names: Record<AiProviderKind, string>,
+): AiProviderKind {
+  const value = valueOf(event);
+  const kind = kindsOf(names).find((each) => each === value);
+  if (kind === undefined)
+    throw new Error(`No AI Provider kind is called ${value}`);
+  return kind;
+}
+
 function themeLabel(name: ThemeName): string {
   const label = THEME_LABELS.get(name);
   if (label === undefined) throw new Error(`No label for the Theme ${name}`);
@@ -188,10 +200,7 @@ export class HubSettings extends LitElement {
               ${strings.providerKind}
               <select
                 @change=${(event: Event) => {
-                  const kind =
-                    valueOf(event) === "anthropic"
-                      ? "anthropic"
-                      : "openai-compatible";
+                  const kind = chosenKind(event, strings.providerKinds);
                   // An input the new kind cannot send (audio, for Anthropic) is dropped.
                   const offered = inputsFor(kind);
                   this.editProvider(index, (each) => ({
@@ -303,11 +312,6 @@ export class HubSettings extends LitElement {
                         ${strings.modelInputs[input]}
                       </label>`,
                   )}
-                  ${
-                    provider.endpoint.kind === "anthropic"
-                      ? html`<span>${strings.noAudioForAnthropic}</span>`
-                      : nothing
-                  }
                   <button
                     @click=${() => {
                       this.editProvider(index, (each) => ({
@@ -322,6 +326,12 @@ export class HubSettings extends LitElement {
                   </button>
                 </div>`,
             )}
+            ${
+              provider.endpoint.kind === "anthropic" &&
+              provider.models.length > 0
+                ? html`<span>${strings.noAudioForAnthropic}</span>`
+                : nothing
+            }
             <button
               @click=${() => {
                 this.editProvider(index, (each) => ({

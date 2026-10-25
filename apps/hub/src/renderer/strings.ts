@@ -9,7 +9,13 @@ import type {
   InstallFailureCause,
   ModelInput,
 } from "../shared/hub-chrome-ipc";
-import { sizeText, type Refusal } from "./composer-files";
+import { MAX_ATTACHMENT_BYTES, sizeText, type Refusal } from "./composer-files";
+
+/** The Hub's name, untranslated: the Switcher draws the product part muted. */
+const WORDMARK = { name: "Hawkeye", product: "Hub" };
+
+/** The attachment cap in whole MB, as staff read it. */
+const ATTACHMENT_LIMIT = `${String(MAX_ATTACHMENT_BYTES / (1024 * 1024))} MB`;
 
 const INPUT_NAMES_EN = {
   image: "images",
@@ -40,7 +46,8 @@ export const STRINGS = {
     hideSwitcher: "Hide Plugin Switcher",
     showSwitcher: "Show Plugin Switcher",
     noPluginOpen: "No Plugin is open",
-    hubName: "Hawkeye Hub",
+    wordmark: WORDMARK,
+    hubName: `${WORDMARK.name} ${WORDMARK.product}`,
     close: (name: string) => `Close ${name}`,
     closing: "Closing…",
     closeQuestion: (name: string) => `Close ${name}?`,
@@ -159,7 +166,7 @@ export const STRINGS = {
         case "unknown-type":
           return `“${refusal.name}” can't be attached.`;
         case "too-big":
-          return `“${refusal.name}” is ${sizeText(refusal.bytes)}; the limit is 20 MB.`;
+          return `“${refusal.name}” is ${sizeText(refusal.bytes)}; the limit is ${ATTACHMENT_LIMIT}.`;
         case "not-for-model":
           return `${model} can't read ${INPUT_NAMES_EN[refusal.input]}, so “${refusal.name}” wasn't attached.`;
         default:
@@ -187,7 +194,8 @@ export const STRINGS = {
     hideSwitcher: "隱藏外掛程式切換器",
     showSwitcher: "顯示外掛程式切換器",
     noPluginOpen: "未有開啟任何外掛程式",
-    hubName: "Hawkeye Hub",
+    wordmark: WORDMARK,
+    hubName: `${WORDMARK.name} ${WORDMARK.product}`,
     close: (name: string) => `關閉 ${name}`,
     closing: "正在關閉…",
     closeQuestion: (name: string) => `關閉 ${name}？`,
@@ -306,7 +314,7 @@ export const STRINGS = {
         case "unknown-type":
           return `無法附加「${refusal.name}」。`;
         case "too-big":
-          return `「${refusal.name}」有 ${sizeText(refusal.bytes)}，上限為 20 MB。`;
+          return `「${refusal.name}」有 ${sizeText(refusal.bytes)}，上限為 ${ATTACHMENT_LIMIT}。`;
         case "not-for-model":
           return `${model} 無法讀取${INPUT_NAMES_ZH[refusal.input]}，所以未有附加「${refusal.name}」。`;
         default:

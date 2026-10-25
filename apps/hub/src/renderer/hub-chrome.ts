@@ -21,14 +21,9 @@ import "./hub-dialog";
 import "./hub-settings";
 import "./plugin-catalogue";
 import "./plugin-switcher";
-import { icon } from "./icons";
+import { icon, pluginIconMask, pluginIconStyle } from "./icons";
 import { STRINGS, type Strings } from "./strings";
 import { native } from "./theme";
-
-/** Hands the icon URL to the mask, through the CSSOM: the CSP refuses a `style` attribute. */
-function iconStyle({ iconUrl }: SwitcherPlugin): string {
-  return `--icon: url("${iconUrl}")`;
-}
 
 const IS_OVERLAY = location.hash === "#dialog";
 
@@ -108,7 +103,7 @@ export class HubChrome extends LitElement {
         width: 16px;
         height: 16px;
         background-color: var(--hub-color-accent);
-        mask: var(--icon) center / contain no-repeat;
+        ${pluginIconMask}
       }
       .assistant {
         margin-inline-start: auto;
@@ -221,7 +216,7 @@ export class HubChrome extends LitElement {
             : html`<span class="title">
                 <span
                   class="plugin-icon"
-                  .style=${iconStyle(this.frontPlugin(front))}
+                  .style=${pluginIconStyle(this.frontPlugin(front))}
                 ></span>
                 ${this.frontPlugin(front).name}
               </span>`

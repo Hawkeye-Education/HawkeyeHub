@@ -2,12 +2,16 @@
 // accepts, or a text file, which every model takes as text; up to 20 MB each.
 
 import type { Attachment } from "../shared/ai-call";
-import type { ModelInput } from "../shared/hub-chrome-ipc";
+import {
+  AUDIO_MEDIA_TYPES,
+  type AudioMediaType,
+  type ModelInput,
+} from "../shared/hub-chrome-ipc";
 
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-const AUDIO_TYPES = { wav: "audio/wav", mp3: "audio/mpeg" } as const;
+const AUDIO_BY_EXTENSION = new Map(Object.entries(AUDIO_MEDIA_TYPES));
 const TEXT_EXTENSIONS = ["txt", "md", "csv", "json"];
 
 /** Why a file was not attached. */
@@ -20,14 +24,21 @@ export type Picked =
   | { kind: "attached"; attachment: Attachment }
   | { kind: "refused"; refusal: Refusal };
 
-/** The file's kind: a model input, `text`, or null for one the composer does not know. */
-function kindOf(file: File): ModelInput | "text" | null {
+/** A file's kind: a model input (audio with its media type), or `text`. */
+type FileKind =
+  | { input: Exclude<ModelInput, "audio"> | "text" }
+  | { input: "audio"; mediaType: AudioMediaType };
+
+/** The file's kind, or null for one the composer does not know. */
+function kindOf(file: File): FileKind | null {
   const extension = file.name.toLowerCase().split(".").pop();
-  if (IMAGE_TYPES.includes(file.type)) return "image";
-  if (file.type === "application/pdf" || extension === "pdf") return "document";
-  if (extension === "wav" || extension === "mp3") return "audio";
-  if (extension !== undefined && TEXT_EXTENSIONS.includes(extension))
-    return "text";
+  if (IMAGE_TYPES.includes(file.type)) return { input: "image" };
+  if (file.type === "application/pdf" || extension === "pdf")
+    return { input: "document" };
+  if (extension === undefined) return null;
+  const mediaType = AUDIO_BY_EXTENSION.get(extension);
+  if (mediaType !== undefined) return { input: "audio", mediaType };
+  if (TEXT_EXTENSIONS.includes(extension)) return { input: "text" };
   return null;
 }
 
@@ -42,13 +53,13 @@ export async function attach(
   if (kind === null) return refused({ kind: "unknown-type", name });
   if (file.size > MAX_ATTACHMENT_BYTES)
     return refused({ kind: "too-big", name, bytes: file.size });
-  if (kind !== "text" && !inputs.includes(kind))
-    return refused({ kind: "not-for-model", name, input: kind });
+  if (kind.input !== "text" && !inputs.includes(kind.input))
+    return refused({ kind: "not-for-model", name, input: kind.input });
   const attached = (part: Attachment["part"]): Picked => ({
     kind: "attached",
     attachment: { kind: "attached", name, part },
   });
-  switch (kind) {
+  switch (kind.input) {
     case "text":
       return attached({ type: "text", text: await file.text() });
     case "image":
@@ -67,9 +78,7 @@ export async function attach(
       return attached({
         type: "audio",
         data: new Uint8Array(await file.arrayBuffer()),
-        mediaType: name.toLowerCase().endsWith(".wav")
-          ? AUDIO_TYPES.wav
-          : AUDIO_TYPES.mp3,
+        mediaType: kind.mediaType,
       });
     default:
       return kind satisfies never;
@@ -81,7 +90,7 @@ export function pickerAccept(inputs: readonly ModelInput[]): string {
   const accepts = {
     image: IMAGE_TYPES,
     document: [".pdf"],
-    audio: Object.keys(AUDIO_TYPES).map((extension) => `.${extension}`),
+    audio: Object.keys(AUDIO_MEDIA_TYPES).map((extension) => `.${extension}`),
   } satisfies Record<ModelInput, string[]>;
   return [
     ...(["image", "document", "audio"] as const).flatMap((input) =>
