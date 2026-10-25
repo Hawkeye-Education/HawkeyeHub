@@ -148,9 +148,10 @@ export function installFakeHub(options: {
       openFolder: (path: string) => {
         opened.push(path);
         const failure = openFailures.shift();
+        if (failure === undefined) return Promise.resolve();
         // A HubError is a plain object by contract (hub-api).
         // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-        return failure === undefined ? Promise.resolve() : Promise.reject(failure);
+        return Promise.reject(failure);
       },
     }),
     ai: Object.freeze({

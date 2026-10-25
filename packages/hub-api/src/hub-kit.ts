@@ -3,10 +3,12 @@
 // does not have, hence their own entry, `@hawkeye-hub/hub-api/hub-kit`. Importing from it also types
 // `document.createElement("hub-log")` and the like.
 
+import type { FolderPath } from "./index";
+
 /** A `<hub-folder-field>`'s folder: none until staff choose one. */
 export type FolderFieldValue =
   | { readonly kind: "none" }
-  | { readonly kind: "chosen"; readonly path: string };
+  | { readonly kind: "chosen"; readonly path: FolderPath };
 
 /**
  * `<hub-folder-field>`: a label, the chosen path and a Hub-translated **Browse…** button that calls

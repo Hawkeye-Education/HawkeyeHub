@@ -86,9 +86,16 @@ export interface HubStores {
   ): Promise<() => void>;
 }
 
+declare const folderPath: unique symbol;
+/**
+ * An absolute folder path on staff's machine, in the OS's own form. Only the Hub's folder dialog
+ * makes one; a Plugin keeps it and passes it on.
+ */
+export type FolderPath = string & { readonly [folderPath]: "FolderPath" };
+
 /** What `hub.files.pickFolder` comes to: the folder staff chose, or a cancelled dialog. */
 export type PickFolderResult =
-  | { readonly kind: "chosen"; readonly path: string }
+  | { readonly kind: "chosen"; readonly path: FolderPath }
   | { readonly kind: "cancelled" };
 
 /** Folders on staff's machine (ADR 0009). The Backend does the I/O on a picked path. */

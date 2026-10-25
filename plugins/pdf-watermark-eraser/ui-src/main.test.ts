@@ -5,6 +5,7 @@ import {
   installFakeHub,
   type FakeHub,
 } from "@hawkeye-hub/fake-hub";
+import type { FolderPath } from "@hawkeye-hub/hub-api";
 import type { HubFolderFieldElement } from "@hawkeye-hub/hub-api/hub-kit";
 import { beforeEach, expect, test, vi } from "vitest";
 import manifest from "../manifest.json";
@@ -16,8 +17,8 @@ const html = page.slice(
   page.indexOf("<body>") + "<body>".length,
   page.indexOf("</body>"),
 );
-const IN = "C:\\pdfs";
-const OUT = "C:\\clean";
+const IN = "C:\\pdfs" as FolderPath;
+const OUT = "C:\\clean" as FolderPath;
 
 // The test names the element type it knows index.html gives that id.
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters

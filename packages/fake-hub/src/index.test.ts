@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import type { FolderPath } from "@hawkeye-hub/hub-api";
 import { backendError, installFakeHub } from "./index";
 
 const manifest = {
@@ -61,7 +62,7 @@ test("Busy is set with its reason and cleared", async () => {
 
 test("pickFolder answers with each queued pick in turn, and opened folders are recorded", async () => {
   const fake = installFakeHub({ manifest, displayLanguage: "en-HK" });
-  fake.files.queuePick({ kind: "chosen", path: "C:\\pdfs" });
+  fake.files.queuePick({ kind: "chosen", path: "C:\\pdfs" as FolderPath });
   fake.files.queuePick({ kind: "cancelled" });
 
   await expect(window.hub.files.pickFolder("Input folder")).resolves.toEqual({

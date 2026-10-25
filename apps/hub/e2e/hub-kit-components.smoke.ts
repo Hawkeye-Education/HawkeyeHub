@@ -42,7 +42,7 @@ declare const getComputedStyle: (element: object) => { color: string };
 declare const window: {
   changes: FolderFieldValue[];
   field: { value: FolderFieldValue };
-  log: { clear(): void };
+  log: { append(line: { tone: Tone; text: string }): void; clear(): void };
 };
 
 const WORDS = {

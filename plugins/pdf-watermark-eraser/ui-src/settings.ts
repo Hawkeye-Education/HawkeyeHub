@@ -1,11 +1,17 @@
 // Plugin Data (PLUGIN_STANDARD.md §4.8): the last folders and pattern, in the Plugin's own
 // localStorage, versioned and migrated forward at open.
 
+import type { FolderPath } from "@hawkeye-hub/hub-api";
 import { z } from "zod";
 
 const Folder = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("none") }),
-  z.strictObject({ kind: z.literal("chosen"), path: z.string() }),
+  z.strictObject({
+    kind: z.literal("chosen"),
+    // Saved from a `<hub-folder-field>`'s value in this Plugin's own Plugin Data, so the Hub made
+    // it; a brand is granted only by a cast. A folder gone since is the Backend's `folder-missing`.
+    path: z.string().transform((path) => path as FolderPath),
+  }),
 ]);
 const V1 = z.strictObject({
   v: z.literal(1),
