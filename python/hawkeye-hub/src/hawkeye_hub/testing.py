@@ -178,7 +178,11 @@ class RunningBackend:
         if self._stdin.closed:
             return
         # Like the Hub, keep stdin open after `shutdown`: the Backend must exit on `shutdown` alone.
-        if self._process.poll() is None:
+        # A closed stdout is a Backend already gone, as one that failed `initialize` is; writing
+        # to it would fail before the test sees why.
+        with self._changed:
+            gone = self._stdout_closed
+        if not gone and self._process.poll() is None:
             self.notify("shutdown", {})
         try:
             self._wait_exit("shutdown")

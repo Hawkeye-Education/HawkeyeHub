@@ -51,6 +51,11 @@ def fail(ctx: Context, p: Empty) -> Empty:
     raise RpcError("asked-to-fail", "Asked to fail")
 
 
+@app.request("failWithBadReason")
+def fail_with_bad_reason(ctx: Context, p: Empty) -> Empty:
+    raise RpcError("Asked To Fail", "Asked to fail")
+
+
 @app.request("crash")
 def crash(ctx: Context, p: Empty) -> Empty:
     raise ValueError("a bug in the handler")

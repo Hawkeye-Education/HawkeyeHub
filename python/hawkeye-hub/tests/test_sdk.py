@@ -71,6 +71,22 @@ def test_an_rpc_error_is_answered_with_its_reason_and_message(tmp_path: Path) ->
     assert (failed.value.reason, failed.value.message) == ("asked-to-fail", "Asked to fail")
 
 
+def test_an_rpc_error_whose_reason_is_not_kebab_case_is_answered_with_internal(
+    tmp_path: Path,
+) -> None:
+    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.3.0") as backend:
+        with pytest.raises(BackendFailed) as failed:
+            backend.request("failWithBadReason", {})
+    assert (failed.value.code, failed.value.reason) == (-32603, "internal")
+    assert "Asked To Fail" in failed.value.message
+
+
+def test_a_hub_api_that_is_not_a_semantic_version_stops_the_backend(tmp_path: Path) -> None:
+    with pytest.raises(AssertionError, match="exited before answering initialize"):
+        with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="latest"):
+            pass
+
+
 def test_an_uncaught_exception_is_answered_with_internal_and_logs_its_traceback(
     tmp_path: Path,
 ) -> None:
