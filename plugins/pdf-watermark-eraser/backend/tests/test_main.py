@@ -210,7 +210,7 @@ def test_page_text_gives_the_lines_and_those_repeated_on_most_pages(
         "pageText", {"folder": str(tmp_path / "in"), "file": "a.pdf", "page": 1}
     )
 
-    assert result == {"pageCount": 3, "lines": ["Page 1 body", WATERMARK], "repeated": [WATERMARK]}
+    assert result == {"lines": ["Page 1 body", WATERMARK], "repeated": [WATERMARK]}
 
 
 @pytest.mark.parametrize(("file", "page"), [("a.pdf", 1), ("../a.pdf", 0), ("b.pdf", 0)])

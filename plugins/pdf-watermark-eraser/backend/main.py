@@ -7,16 +7,26 @@ Its protocol's other half is ui-src/protocol.ts. Rejections carry a reason the P
 import re
 import threading
 from collections import Counter
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal
 
 from erase import PasswordProtected, open_pdf, page_lines, remove_watermark
 from hawkeye_hub import Backend, Context, Model, RpcError
-from pydantic import Field
+from pydantic import AfterValidator, Field
 
 app = Backend()
 cancelled = threading.Event()
 running = threading.Lock()
+
+
+def _relative(path: PurePosixPath) -> PurePosixPath:
+    if path.is_absolute():
+        raise ValueError(f"{path} is not a relative path")
+    return path
+
+
+# A file's path inside a chosen folder, with `/` separators on every platform.
+RelativePosixPath = Annotated[PurePosixPath, AfterValidator(_relative)]
 
 
 class Run(Model):
@@ -58,7 +68,7 @@ FileResult = Annotated[Cleaned | NoMatch | Password | Failed, Field(discriminato
 class Progress(Model):
     done: int
     total: int
-    file: str
+    file: RelativePosixPath
     result: FileResult
 
 
@@ -76,7 +86,7 @@ def _pdfs(folder: Path) -> list[Path]:
     return sorted(f for f in folder.rglob("*") if f.is_file() and f.suffix.lower() == ".pdf")
 
 
-def _erase(src: Path, dst: Path, rx: re.Pattern[str]) -> Cleaned | NoMatch | Password | Failed:
+def _erase(src: Path, dst: Path, rx: re.Pattern[str]) -> FileResult:
     dst.parent.mkdir(parents=True, exist_ok=True)
     try:
         removed = remove_watermark(src, dst, rx)
@@ -92,23 +102,24 @@ class ListPdfs(Model):
 
 
 class ListPdfsResult(Model):
-    files: list[str]
+    files: list[RelativePosixPath]
 
 
 @app.request("listPdfs")
 def list_pdfs(ctx: Context, p: ListPdfs) -> ListPdfsResult:
     folder = _folder(p.folder)
-    return ListPdfsResult(files=[f.relative_to(folder).as_posix() for f in _pdfs(folder)])
+    return ListPdfsResult(
+        files=[PurePosixPath(f.relative_to(folder).as_posix()) for f in _pdfs(folder)]
+    )
 
 
 class PageText(Model):
     folder: Path
-    file: str  # relative POSIX path, as listPdfs gave it
+    file: RelativePosixPath  # as listPdfs gave it
     page: int  # 0-based
 
 
 class PageTextResult(Model):
-    page_count: int
     lines: list[str]
     repeated: list[str]  # the page's lines found on most pages, usually the watermark
 
@@ -137,7 +148,7 @@ def page_text(ctx: Context, p: PageText) -> PageTextResult:
         repeated = [
             line for line in lines if len(sample) > 1 and seen[line] >= REPEAT_SHARE * len(sample)
         ]
-        return PageTextResult(page_count=doc.page_count, lines=lines, repeated=repeated)
+        return PageTextResult(lines=lines, repeated=repeated)
     finally:
         doc.close()
 
@@ -147,9 +158,10 @@ def run(ctx: Context, p: Run) -> RunResult:
     src = _folder(p.input)
     if not p.pattern.strip():
         raise RpcError("pattern-empty", "the pattern is empty")
-    if src.resolve() == p.output.resolve():
+    resolved, output = src.resolve(), p.output.resolve()
+    if resolved == output:
         raise RpcError("same-folder", "input and output are the same folder")
-    if src.resolve() in p.output.resolve().parents:
+    if resolved in output.parents:
         raise RpcError("output-inside-input", "the output folder is inside the input folder")
     try:
         rx = re.compile(
@@ -172,7 +184,9 @@ def run(ctx: Context, p: Run) -> RunResult:
             done += 1
             ctx.notify(
                 "progress",
-                Progress(done=done, total=len(files), file=rel.as_posix(), result=result),
+                Progress(
+                    done=done, total=len(files), file=PurePosixPath(rel.as_posix()), result=result
+                ),
             )
         return RunResult(
             cleaned=cleaned, failed=done - cleaned, total=len(files), cancelled=cancelled.is_set()

@@ -5,7 +5,6 @@ import {
   installFakeHub,
   type FakeHub,
 } from "@hawkeye-hub/fake-hub";
-import type { HubError } from "@hawkeye-hub/hub-api";
 import type { HubFolderFieldElement } from "@hawkeye-hub/hub-api/hub-kit";
 import { beforeEach, expect, test, vi } from "vitest";
 import manifest from "../manifest.json";
@@ -205,7 +204,6 @@ test("an unknown Display Language falls back to English, and a run needs both fo
 test("Show text shows a page's text and its repeated lines, and Copy copies it", async () => {
   const fake = await open();
   fake.backend.handle("pageText", () => ({
-    pageCount: 3,
     lines: ["Quarterly report", "Provided by dse.life"],
     repeated: ["Provided by dse.life"],
   }));
@@ -276,28 +274,12 @@ test("corrupt Plugin Data fails the open rather than being guessed at", async ()
 });
 
 test("an output folder the OS cannot open says why", async () => {
-  // fake-hub's openFolder always succeeds, so this open's hub.files is swapped for one that fails.
-  const fake = installFakeHub({ manifest, displayLanguage: "en-HK" });
-  fake.backend.handle("listPdfs", () => ({ files: ["a.pdf"] }));
-  const failing: HubError = {
+  const fake = await open();
+  fake.files.failNextOpen({
     code: "folder-not-opened",
     path: OUT,
     message: "Access denied",
-  };
-  Object.defineProperty(window, "hub", {
-    value: {
-      ...window.hub,
-      files: {
-        ...window.hub.files,
-        // A HubError is a plain object by contract (hub-api).
-        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-        openFolder: () => Promise.reject(failing),
-      },
-    },
-    configurable: true,
   });
-  document.body.innerHTML = html;
-  await import("./main");
   await fillIn(fake);
   fake.backend.handle("run", () => ({
     cleaned: 1,
