@@ -143,6 +143,8 @@ export function createPluginViews(
       },
     });
     lockDown(view, window, id);
+    // The window's material or tint shows through the Theme's transparent canvas (ADR 0006).
+    view.setBackgroundColor("#00000000");
     // The Hub has no menu to bind Toggle Developer Tools, so dev mode binds its shortcut itself.
     if (mode === "dev") {
       view.webContents.on("before-input-event", (event, input) => {

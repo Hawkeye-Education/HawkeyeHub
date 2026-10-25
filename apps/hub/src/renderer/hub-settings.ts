@@ -14,6 +14,7 @@ import {
 } from "../shared/hub-chrome-ipc";
 import type { AiProviderDraft, AiProviderKind } from "../shared/hub-settings";
 import type { Strings } from "./strings";
+import { native } from "./theme";
 
 // Each language in itself, whatever the Hub Chrome is drawn in, so staff find theirs (spec #71).
 const LANGUAGE_NAMES = {
@@ -47,56 +48,65 @@ function themeLabel(name: ThemeName): string {
 }
 
 export class HubSettings extends LitElement {
-  static override styles = css`
-    :host {
-      display: block;
-      height: 100%;
-      overflow-y: auto;
-      padding: 24px;
-      box-sizing: border-box;
-    }
-    h2 {
-      margin: 0 0 16px;
-      font-size: 20px;
-    }
-    h3 {
-      margin: 0 0 8px;
-      font-size: 16px;
-    }
-    dl {
-      display: flex;
-      gap: 8px;
-    }
-    dd {
-      margin: 0;
-    }
-    fieldset {
-      display: flex;
-      gap: 16px;
-      border: none;
-      padding: 0;
-      margin: 0;
-    }
-    legend {
-      padding: 0;
-      margin-bottom: 8px;
-    }
-    .provider {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-    .model {
-      display: flex;
-      gap: 8px;
-    }
-    .actions {
-      display: flex;
-      gap: 8px;
-      margin: 16px 0 32px;
-    }
-  `;
+  static override styles = [
+    native,
+    css`
+      :host {
+        display: block;
+        height: 100%;
+        overflow-y: auto;
+        padding: var(--hub-space-5);
+        box-sizing: border-box;
+      }
+      h2 {
+        margin: 0 0 var(--hub-space-4);
+        font-size: var(--hub-text-xl);
+      }
+      h3 {
+        margin: 0 0 var(--hub-space-2);
+        font-size: var(--hub-text-lg);
+        font-weight: var(--hub-weight-strong);
+      }
+      dl {
+        display: flex;
+        gap: var(--hub-space-2);
+      }
+      dd {
+        margin: 0;
+      }
+      fieldset {
+        display: flex;
+        gap: var(--hub-space-4);
+        border: none;
+        padding: 0;
+        margin: 0;
+      }
+      legend {
+        padding: 0;
+        margin-bottom: var(--hub-space-2);
+      }
+      label {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--hub-space-2);
+      }
+      .provider {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--hub-space-2);
+        margin-bottom: var(--hub-space-4);
+      }
+      .model {
+        display: flex;
+        gap: var(--hub-space-2);
+      }
+      .actions {
+        display: flex;
+        gap: var(--hub-space-2);
+        margin: var(--hub-space-4) 0 var(--hub-space-6);
+      }
+    `,
+  ];
 
   static override properties = {
     strings: { attribute: false },

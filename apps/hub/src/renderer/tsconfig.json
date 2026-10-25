@@ -1,8 +1,9 @@
 {
   "extends": "../../../../tsconfig.base.json",
+  // Vite's typings for the Theme's `?raw` CSS (theme.ts).
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": []
+    "types": ["vite/client"]
   },
   "include": ["."]
 }

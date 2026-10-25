@@ -8,6 +8,25 @@ import { errorCode } from "./error-code";
 
 const WINDOWS = process.platform === "win32";
 
+// Windows 11 22H2, the first with `backgroundMaterial`.
+const FIRST_ACRYLIC_BUILD = 22621;
+
+/**
+ * What the Hub window shows behind its views (ADR 0006): the OS material where there is one
+ * (`vibrancy` on macOS, `acrylic` on Windows 11 22H2+), else the Theme's solid tint. `osRelease`
+ * is `os.release()`, such as `10.0.19045` on Windows 10.
+ */
+export function windowBackdrop(
+  platform: NodeJS.Platform,
+  osRelease: string,
+): "vibrancy" | "acrylic" | "tint" {
+  if (platform === "darwin") return "vibrancy";
+  const build = Number(osRelease.split(".")[2]);
+  return platform === "win32" && build >= FIRST_ACRYLIC_BUILD
+    ? "acrylic"
+    : "tint";
+}
+
 /** The venv's Python, as install builds it. */
 export function venvPython(backendDir: string): string {
   return WINDOWS

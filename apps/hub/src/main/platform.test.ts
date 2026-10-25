@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { treeOf } from "./platform";
+import { treeOf, windowBackdrop } from "./platform";
 
 const root = { pid: 10, parent: 1, created: 100n };
 
@@ -29,4 +29,13 @@ test("a noted process that has exited still has the children that name it as the
 test("a process noted twice is in the tree once", () => {
   const child = { pid: 11, parent: 10, created: 110n };
   expect(treeOf([root, child], [root, child])).toEqual([root, child]);
+});
+
+test("the window gets the OS material on macOS and Windows 11 22H2+, and the Theme's tint on Windows 10", () => {
+  expect(windowBackdrop("darwin", "23.6.0")).toBe("vibrancy");
+  expect(windowBackdrop("win32", "10.0.22621")).toBe("acrylic");
+  expect(windowBackdrop("win32", "10.0.26100")).toBe("acrylic");
+  // Windows 11 21H2 has no backgroundMaterial.
+  expect(windowBackdrop("win32", "10.0.22000")).toBe("tint");
+  expect(windowBackdrop("win32", "10.0.19045")).toBe("tint");
 });

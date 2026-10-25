@@ -1,5 +1,5 @@
 // The Hub Chrome's root element: the Plugin Switcher down the side and the content area beside it.
-// It draws the latest snapshot of the lifecycle state held in main. No Theme yet (ADR 0006).
+// It draws the latest snapshot of the lifecycle state held in main, built from the Theme (ADR 0006).
 // Loaded with #dialog it is the dialog overlay instead, above every Plugin UI, and draws only the
 // pending dialog.
 
@@ -17,60 +17,60 @@ import "./hub-settings";
 import "./plugin-catalogue";
 import "./plugin-switcher";
 import { STRINGS, type Strings } from "./strings";
+import { native } from "./theme";
 
 const IS_OVERLAY = location.hash === "#dialog";
 
 export class HubChrome extends LitElement {
-  static override styles = css`
-    :host {
-      display: grid;
-      grid-template-columns: ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr;
-      height: 100vh;
-      font-family: system-ui, sans-serif;
-    }
-    aside {
-      display: flex;
-      flex-direction: column;
-      border-right: 1px solid #ccc;
-      min-height: 0;
-    }
-    plugin-switcher {
-      flex: 1;
-      overflow-y: auto;
-    }
-    h1 {
-      margin: 0;
-      padding: 16px;
-      font-size: 20px;
-    }
-    .gear {
-      font: inherit;
-      border: none;
-      border-top: 1px solid #ccc;
-      background: none;
-      padding: 12px 16px;
-      text-align: start;
-      cursor: pointer;
-    }
-    .gear[aria-current="page"] {
-      font-weight: bold;
-    }
-    :host([panel]) {
-      grid-template-columns:
-        ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr
-        ${unsafeCSS(ASSISTANT_PANEL_WIDTH_PX)}px;
-    }
-    main {
-      min-height: 0;
-    }
-    .empty {
-      display: grid;
-      place-items: center;
-      height: 100%;
-      margin: 0;
-      color: #666;
-    }
-  `;
+  static override styles = [
+    native,
+    css`
+      :host {
+        display: grid;
+        grid-template-columns: ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr;
+        height: 100vh;
+      }
+      aside {
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--hub-color-line);
+        min-height: 0;
+      }
+      plugin-switcher {
+        flex: 1;
+        overflow-y: auto;
+      }
+      h1 {
+        padding: var(--hub-space-4);
+      }
+      .gear {
+        border: none;
+        border-top: 1px solid var(--hub-color-line);
+        border-radius: 0;
+        background: none;
+        padding: var(--hub-space-3) var(--hub-space-4);
+        text-align: start;
+      }
+      .gear[aria-current="page"],
+      .gear[aria-pressed="true"] {
+        color: var(--hub-color-accent);
+        font-weight: var(--hub-weight-strong);
+      }
+      :host([panel]) {
+        grid-template-columns:
+          ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr
+          ${unsafeCSS(ASSISTANT_PANEL_WIDTH_PX)}px;
+      }
+      main {
+        min-height: 0;
+      }
+      .empty {
+        display: grid;
+        place-items: center;
+        height: 100%;
+      }
+    `,
+  ];
 
   static override properties = { snapshot: { state: true } };
   // Null until the preload delivers the first snapshot: a real state, drawn as nothing.

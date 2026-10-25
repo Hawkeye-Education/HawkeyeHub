@@ -16,8 +16,8 @@
 }
 
 :root {
-  /* With the canvas transparent, the page shows Chromium's own light or dark backdrop.
-     ponytail: until the Hub draws the window material or the Theme's solid tint behind views. */
+  /* The canvas is transparent: the window shows the OS material behind every view, or on Windows 10
+     the Theme's solid tint (HAWKEYE_TINT in src/main/hub-kit.ts). */
   color-scheme: light dark;
 
   --hub-font-body: "Inter", "Noto Sans TC", sans-serif;
@@ -69,11 +69,12 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --hub-color-canvas: transparent;
-    --hub-color-surface: rgb(52 46 42 / 0.55);
-    --hub-color-surface-raised: rgb(40 36 33 / 0.9);
+    /* "Near-black" (#145): solid neutral greys over the dark tint. */
+    --hub-color-surface: #161616;
+    --hub-color-surface-raised: #202020;
     --hub-color-fg: #f3eee9;
-    --hub-color-fg-muted: #b1a8a0;
-    --hub-color-line: rgb(255 255 255 / 0.12);
+    --hub-color-fg-muted: #a0a0a0;
+    --hub-color-line: rgb(255 255 255 / 0.1);
     --hub-color-accent: #ff8a5c;
     --hub-color-on-accent: #1a0a03;
     --hub-color-focus: #ff8a5c;
