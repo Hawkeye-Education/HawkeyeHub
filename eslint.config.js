@@ -3,7 +3,16 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   // Build and test output. ESLint does not read .gitignore.
-  { ignores: ["**/out/", "**/test-results/", "**/playwright-report/"] },
+  {
+    ignores: [
+      "**/out/",
+      "**/dist/",
+      "**/test-results/",
+      "**/playwright-report/",
+      // A Plugin UI's Vite build output.
+      "plugins/*/ui/",
+    ],
+  },
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,

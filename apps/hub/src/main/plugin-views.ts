@@ -31,11 +31,13 @@ import { serveAi, type AiCallDeps } from "./ai";
 import { startBackend } from "./backend";
 import type { Diagnostics, PluginCrash, NetErrorCode } from "./diagnostics";
 import { errorCode } from "./error-code";
+import { serveFiles } from "./files";
 import type { HubMode } from "./hub-mode";
 import type { AbsolutePath } from "./ids";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
+import { serveHubKit } from "./hub-kit";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
 import { serveStores } from "./stores";
 import { watchResponsiveness } from "./plugin-ui-responsiveness";
@@ -124,6 +126,7 @@ export function createPluginViews(
     // Keyed by id, never version, so web storage survives updates (ADR 0008).
     const partition = `persist:plugin-${id}`;
     servePluginUi(session.fromPartition(partition), id, join(folder, "ui"));
+    serveHubKit(session.fromPartition(partition));
     const view = new WebContentsView({
       webPreferences: {
         sandbox: true,
@@ -182,6 +185,8 @@ export function createPluginViews(
     if (manifest.stores.length > 0) {
       serveStores(view.webContents, hubDataDir, manifest.stores);
     }
+    // `hub.files`, for every Plugin.
+    serveFiles(view.webContents, window);
     // `hub.ai`, for every Plugin, with the Hub Settings and keys saved when each chat starts.
     serveAi(view.webContents, aiDepsNow);
     // A Plugin's beforeunload never holds a close (ADR 0009): Busy is how it asks to stay open.

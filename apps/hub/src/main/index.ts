@@ -56,6 +56,7 @@ import {
   type WebUrl,
 } from "./registry";
 import { PLUGIN_SCHEME } from "./plugin-scheme";
+import { HUB_KIT_SCHEME } from "./hub-kit";
 import { createUv } from "./uv";
 import type { PluginId } from "@hawkeye-hub/plugin-format";
 
@@ -137,6 +138,10 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: PLUGIN_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true },
+  },
+  {
+    scheme: HUB_KIT_SCHEME,
+    privileges: { standard: true, secure: true, corsEnabled: true },
   },
 ]);
 

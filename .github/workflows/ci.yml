@@ -16,9 +16,14 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # plugin-format's tests run skills-ref validate through uvx.
+      - uses: astral-sh/setup-uv@v6
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # Each Plugin's built UI passes what its release checks (PLUGIN_STANDARD.md §9.3).
+      - run: pnpm --filter pdf-watermark-eraser build
+      - run: pnpm plugin-format check plugins/pdf-watermark-eraser
 
   smoke:
     strategy:
@@ -46,6 +51,13 @@ jobs:
       - run: pnpm --filter @hawkeye-hub/hub exec vitest run src/main/uv.real.test.ts
         env:
           HAWKEYE_HUB_REAL_UV: "1"
+      # The NSIS installer and the unpacked build it holds, which packaged.smoke.ts then launches.
+      - if: runner.os == 'Windows'
+        run: pnpm --filter @hawkeye-hub/hub package
+      - if: runner.os == 'Windows'
+        run: pnpm --filter @hawkeye-hub/hub exec playwright test e2e/packaged.smoke.ts
+        env:
+          HAWKEYE_HUB_PACKAGED: "1"
       # A racy smoke test can pass one run. Repeat the smoke files this PR changes, and those that
       # import a changed file, on the build the step above made.
       - if: github.event_name == 'pull_request'
@@ -55,3 +67,45 @@ jobs:
         with:
           name: smoke-${{ matrix.os }}
           path: apps/hub/test-results
+
+  python-sdk:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: python/hawkeye-hub
+    steps:
+      - uses: actions/checkout@v4
+      # Picks the uv `required-version` in python/hawkeye-hub/pyproject.toml.
+      - uses: astral-sh/setup-uv@v6
+        with:
+          working-directory: python/hawkeye-hub
+      - run: uv sync --locked
+      - run: uv run pytest
+      - run: uv run pyright
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+
+  # A Plugin's Backend on each of its Supported Platforms (PLUGIN_STANDARD.md §9.3).
+  pdf-watermark-eraser-backend:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: plugins/pdf-watermark-eraser/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          working-directory: plugins/pdf-watermark-eraser/backend
+      - run: uv sync --locked
+      - run: uv run pytest
+      - run: uv run pyright
+      - run: uv run ruff check
+      - run: uv run ruff format --check

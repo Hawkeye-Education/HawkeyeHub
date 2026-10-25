@@ -31,7 +31,13 @@ export type HubError =
   /** `hub.ai`: the provider answered with this HTTP status, such as 401 for a bad key. */
   | { readonly code: "provider-rejected"; readonly status: number }
   /** `hub.ai`: the provider could not be reached. */
-  | { readonly code: "provider-unreachable" };
+  | { readonly code: "provider-unreachable" }
+  /** `hub.files.openFolder`: the OS could not open it; `message` is the OS's, in English. */
+  | {
+      readonly code: "folder-not-opened";
+      readonly path: string;
+      readonly message: string;
+    };
 
 export interface HubBackend {
   /** Queued until the Backend's `initialize` succeeds. Rejects with a `HubError`. */
@@ -78,6 +84,26 @@ export interface HubStores {
     store: string,
     handler: (change: StoreChange) => void,
   ): Promise<() => void>;
+}
+
+declare const folderPath: unique symbol;
+/**
+ * An absolute folder path on staff's machine, in the OS's own form. Only the Hub's folder dialog
+ * makes one; a Plugin keeps it and passes it on.
+ */
+export type FolderPath = string & { readonly [folderPath]: "FolderPath" };
+
+/** What `hub.files.pickFolder` comes to: the folder staff chose, or a cancelled dialog. */
+export type PickFolderResult =
+  | { readonly kind: "chosen"; readonly path: FolderPath }
+  | { readonly kind: "cancelled" };
+
+/** Folders on staff's machine (ADR 0009). The Backend does the I/O on a picked path. */
+export interface HubFiles {
+  /** Opens the OS folder dialog, modal to the Hub window, with `title` as its title. */
+  pickFolder(title: string): Promise<PickFolderResult>;
+  /** Reveals the folder in Explorer or Finder. Rejects with `folder-not-opened`. */
+  openFolder(path: string): Promise<void>;
 }
 
 /** Which model a chat uses: the Default AI Provider, or a provider and model by name. */
@@ -143,6 +169,7 @@ export interface Hub {
   readonly busy: HubBusy;
   /** Absent exactly when the Manifest's `stores` is empty. */
   readonly stores?: HubStores;
+  readonly files: HubFiles;
   readonly ai: HubAi;
 }
 

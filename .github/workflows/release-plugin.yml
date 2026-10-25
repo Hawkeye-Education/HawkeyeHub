@@ -1,0 +1,147 @@
+name: Release Plugin
+
+# On a `plugin/<id>@<version>` tag (ADR 0011, PLUGIN_STANDARD.md §10): build `ui/`, check, test on
+# one runner per Supported Platform, then pack once and create the release, then regenerate the
+# Registry. A push to main that changes the Company Configuration only regenerates the Registry.
+on:
+  push:
+    tags: ["plugin/*@*"]
+    branches: [main]
+    paths: [registry/company-config.json]
+
+jobs:
+  check:
+    if: startsWith(github.ref, 'refs/tags/plugin/')
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.tag.outputs.id }}
+      runners: ${{ steps.runners.outputs.runners }}
+    steps:
+      - id: tag
+        name: Read the Plugin id from the tag
+        run: |
+          id="${GITHUB_REF_NAME#plugin/}"
+          id="${id%@*}"
+          if ! [[ "$id" =~ ^[a-z][a-z0-9]*(-[a-z0-9]+)*$ ]]; then
+            echo "Tag $GITHUB_REF_NAME names no Plugin id" >&2
+            exit 1
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # check runs skills-ref validate through uvx.
+      - uses: astral-sh/setup-uv@v6
+      - run: pnpm --filter "${{ steps.tag.outputs.id }}" build
+      - run: pnpm plugin-format check "plugins/${{ steps.tag.outputs.id }}" --tag "$GITHUB_REF_NAME"
+      - id: runners
+        name: Pick a runner per Supported Platform
+        run: |
+          runners="$(jq -c '[.platforms[] | {"win32-x64": "windows-latest", "darwin-arm64": "macos-latest"}[.]]' "plugins/${{ steps.tag.outputs.id }}/manifest.json")"
+          echo "runners=$runners" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.check.outputs.runners) }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      PLUGIN: plugins/${{ needs.check.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter "${{ needs.check.outputs.id }}" test
+      - if: hashFiles(format('{0}/backend/pyproject.toml', env.PLUGIN)) != ''
+        uses: astral-sh/setup-uv@v6
+        with:
+          working-directory: ${{ env.PLUGIN }}/backend
+      - if: hashFiles(format('{0}/backend/pyproject.toml', env.PLUGIN)) != ''
+        working-directory: ${{ env.PLUGIN }}/backend
+        run: uv sync --locked && uv run pytest
+
+  # Packs once the tests pass, from the commit they ran on, then publishes the release.
+  release:
+    needs: [check, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PLUGIN: plugins/${{ needs.check.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter "${{ needs.check.outputs.id }}" build
+      - run: pnpm plugin-format pack "$PLUGIN"
+      # A rerun keeps a published release as it is: its zip and sha256 never change once listed.
+      # A draft is what a run that failed mid-upload leaves, so it is replaced.
+      - run: |
+          if draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$draft" = "false" ]; then
+              echo "$GITHUB_REF_NAME is already published"
+              exit 0
+            fi
+            gh release delete "$GITHUB_REF_NAME" --yes
+          fi
+          gh release create "$GITHUB_REF_NAME" out/*.zip "$PLUGIN/icon.svg" \
+            --title "$GITHUB_REF_NAME" --notes "" --latest=false --verify-tag
+
+  registry:
+    needs: release
+    # On main the plugin jobs are skipped, which must not skip this; on a tag any failure must.
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    # Every job that writes the `registry` release shares this group. A pending run that a newer one
+    # replaces is harmless: the newer run rebuilds index.json from every release, its own included.
+    concurrency:
+      group: registry
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # A bad release is left out with a warning. On a tag, --tag fails the run, before the upload,
+      # if the release it just published is one of them.
+      - if: startsWith(github.ref, 'refs/tags/plugin/')
+        run: pnpm plugin-format index index.json --tag "$GITHUB_REF_NAME"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - if: ${{ !startsWith(github.ref, 'refs/tags/plugin/') }}
+        run: pnpm plugin-format index index.json
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: |
+          if ! gh release view registry > /dev/null 2>&1; then
+            gh release create registry --title Registry --latest=false \
+              --notes "The Registry: index.json and company-config.json, rebuilt by release-plugin.yml."
+          fi
+          gh release upload registry index.json registry/company-config.json --clobber

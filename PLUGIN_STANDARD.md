@@ -113,7 +113,7 @@ export default defineConfig({
 });
 ```
 
-`package.json` scripts: `build` (`vite build`), `dev` (`vite build --watch`), `test` (`vitest run`) and `typecheck` (`tsc --noEmit`, extending the shared `tsconfig`). Lint and format run from the repo root. The types for `window.hub`, the Hub Kit elements and the `Manifest` come from the `@hawkeye-hub/hub-api` workspace package; add it as a devDependency.
+`package.json` scripts: `build` (`vite build`), `dev` (`vite build --watch`), `test` (`vitest run`) and `typecheck` (`tsc --noEmit`, extending the shared `tsconfig`). Lint and format run from the repo root. The types for `window.hub`, the Hub Kit elements and the `Manifest` come from the `@hawkeye-hub/hub-api` workspace package; add it as a devDependency. The Hub Kit elements' types are its `@hawkeye-hub/hub-api/hub-kit` entry, because they need the DOM.
 
 ### 4.2 What the page gets
 
@@ -578,18 +578,19 @@ Plugin UI tests run under happy-dom against a fake `window.hub`. `installFakeHub
 ```ts
 // ui-src/main.test.ts
 import { backendError, installFakeHub } from '@hawkeye-hub/fake-hub';
+import type { FolderPath } from '@hawkeye-hub/hub-api';
 import { expect, test } from 'vitest';
 import manifest from '../manifest.json';
 import html from './index.html?raw';
 
 test('a rejected run shows the translated reason and clears Busy', async () => {
-  const fake = installFakeHub({ manifest, displayLanguage: 'zh-HK', identity: { kind: 'none' } });
+  const fake = installFakeHub({ manifest, displayLanguage: 'zh-HK' });
   fake.backend.handle('listPdfs', () => ({ files: ['a.pdf'] }));
   fake.backend.handle('run', () => { throw backendError('same-folder', 'input and output are the same folder'); });
   document.body.innerHTML = html;
   await import('./main');
 
-  fake.files.queuePick({ kind: 'chosen', path: 'C:\\pdfs' });
+  fake.files.queuePick({ kind: 'chosen', path: 'C:\\pdfs' as FolderPath }); // only the Hub makes one
   // …pick both folders, enter a pattern, click Remove watermarks
   await fake.settle();
 
@@ -598,7 +599,7 @@ test('a rejected run shows the translated reason and clears Busy', async () => {
 });
 ```
 
-The fake's surface: `installFakeHub({manifest, displayLanguage, identity})`, where `identity` is `{kind: 'none'}` or `{kind: 'signed-in', identity}` and must match the Manifest. `fake.backend.handle(method, fn)`, `fake.backend.emit(method, params)` (a Backend notification), `fake.backend.requests` and `fake.backend.notifications` (what the UI sent). `fake.files.queuePick(result)` and `fake.files.opened`. `fake.stores.files(store)` (an in-memory `Map` of path to contents). `fake.ai.queueReply(text)` and `fake.ai.chats`. `fake.busy.state`. `fake.settle()` waits for pending Hub calls. `backendError(reason, message)` builds the `HubError` a Backend rejection becomes.
+The fake's surface: `installFakeHub({manifest, displayLanguage})`. It does not fake `hub.identity` or `hub.stores` yet, and refuses a Manifest that declares identity or a Shared Store; they join when a Plugin's tests need them. `fake.backend.handle(method, fn)`, `fake.backend.emit(method, params)` (a Backend notification), `fake.backend.requests` and `fake.backend.notifications` (what the UI sent). `fake.files.queuePick(result)`, `fake.files.failNextOpen(hubError)` and `fake.files.opened`. `fake.ai.queueReply(text)` and `fake.ai.chats`. `fake.busy.state`. `fake.settle()` waits for pending Hub calls. `backendError(reason, message)` builds the `HubError` a Backend rejection becomes.
 
 Test at least one path per `Reason` the UI can show, and the Plugin Data migration from every older version.
 

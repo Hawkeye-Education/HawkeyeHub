@@ -4,3 +4,7 @@ test-results/
 playwright-report/
 .hub-data/
 .venv/
+dist/
+__pycache__/
+# A Plugin UI's Vite build output (PLUGIN_STANDARD.md §2).
+plugins/*/ui/
