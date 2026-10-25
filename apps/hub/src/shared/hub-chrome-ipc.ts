@@ -8,6 +8,7 @@ import type { AiContent, AiFailure, AiModelChoice, SentPart } from "./ai-call";
 import type { Branded } from "./branded";
 import type {
   AiProvider,
+  AiProviderKind,
   AiProviderLabel,
   ModelId,
   AiProviderRow,
@@ -125,10 +126,16 @@ export type ColourScheme = (typeof COLOUR_SCHEMES)[number];
 export const MODEL_INPUTS = ["image", "document", "audio"] as const;
 export type ModelInput = (typeof MODEL_INPUTS)[number];
 
+/** The audio a model takes, by file extension, as its media type. */
+export const AUDIO_MEDIA_TYPES = {
+  wav: "audio/wav",
+  mp3: "audio/mpeg",
+} as const;
+export type AudioMediaType =
+  (typeof AUDIO_MEDIA_TYPES)[keyof typeof AUDIO_MEDIA_TYPES];
+
 /** The inputs a provider of `kind` can send: the Anthropic library sends no audio. */
-export function inputsFor(
-  kind: "openai-compatible" | "anthropic",
-): readonly ModelInput[] {
+export function inputsFor(kind: AiProviderKind): readonly ModelInput[] {
   switch (kind) {
     case "openai-compatible":
       return MODEL_INPUTS;

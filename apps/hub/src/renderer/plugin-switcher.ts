@@ -14,18 +14,10 @@ import type {
   HubChromeContent,
   SwitcherPlugin,
 } from "../shared/hub-chrome-ipc";
-import { icon } from "./icons";
+import { icon, pluginIconMask, pluginIconStyle } from "./icons";
 import logoMark from "./logo-mark.png";
 import type { Strings } from "./strings";
 import { native } from "./theme";
-
-/**
- * Hands the icon URL to the `.glyph` mask. Bound as the `.style` property, which sets it through
- * the CSSOM: the CSP refuses a `style` attribute, and Lit's styleMap writes one at first.
- */
-function iconStyle({ iconUrl }: SwitcherPlugin): string {
-  return `--icon: url("${iconUrl}")`;
-}
 
 export class PluginSwitcher extends LitElement {
   static override styles = [
@@ -48,7 +40,7 @@ export class PluginSwitcher extends LitElement {
         font-size: 13px;
       }
       /* Bare buttons: no native.css box. */
-      .bare {
+      .plain-button {
         border: 0;
         background: none;
         box-shadow: none;
@@ -57,10 +49,10 @@ export class PluginSwitcher extends LitElement {
         color: inherit;
         border-radius: var(--hub-radius-1);
       }
-      .bare:hover:not(:disabled) {
+      .plain-button:hover:not(:disabled) {
         background-image: none;
       }
-      .bare:active:not(:disabled) {
+      .plain-button:active:not(:disabled) {
         transform: none;
       }
       .brand {
@@ -102,18 +94,18 @@ export class PluginSwitcher extends LitElement {
         display: flex;
         gap: 2px;
       }
-      .ib {
+      .icon-button {
         width: 28px;
         height: 28px;
         display: grid;
         place-items: center;
         color: var(--hub-color-fg-muted);
       }
-      .ib:hover:not(:disabled) {
+      .icon-button:hover:not(:disabled) {
         background: var(--item-hover);
         color: var(--hub-color-fg);
       }
-      .ib[aria-current] {
+      .icon-button[aria-current] {
         background: var(--item-front);
         color: var(--hub-color-accent);
       }
@@ -169,17 +161,13 @@ export class PluginSwitcher extends LitElement {
         padding: 0 4px 0 8px;
         text-align: start;
       }
-      /* The Plugin's icon.svg as a mask over currentColor: the SVG is only ever an image, never
-         part of this page, so nothing in it runs, and it takes the text's colour. */
+      /* The Plugin's icon.svg over currentColor, so it takes the text's colour. */
       .glyph {
         flex: none;
         width: 16px;
         height: 16px;
         background-color: currentColor;
-        mask-size: contain;
-        mask-repeat: no-repeat;
-        mask-position: center;
-        mask-image: var(--icon);
+        ${pluginIconMask}
       }
       .name {
         flex: 1;
@@ -193,8 +181,8 @@ export class PluginSwitcher extends LitElement {
         font-size: 11px;
         color: var(--hub-color-fg-muted);
       }
-      .blocked .main,
-      .closing .main {
+      li.blocked,
+      li.closing {
         opacity: 0.5;
       }
       .blocked .tag {
@@ -207,7 +195,7 @@ export class PluginSwitcher extends LitElement {
         border-radius: 50%;
         background: var(--hub-color-success);
       }
-      .mini {
+      .row-action {
         flex: none;
         width: 22px;
         height: 22px;
@@ -216,7 +204,7 @@ export class PluginSwitcher extends LitElement {
         place-items: center;
         color: var(--hub-color-fg-muted);
       }
-      .mini:hover:not(:disabled) {
+      .row-action:hover:not(:disabled) {
         background: var(--item-hover);
         color: var(--hub-color-fg);
       }
@@ -225,7 +213,7 @@ export class PluginSwitcher extends LitElement {
         width: 16px;
         height: 16px;
       }
-      .mini svg.icon {
+      .row-action svg.icon {
         width: 14px;
         height: 14px;
       }
@@ -267,7 +255,7 @@ export class PluginSwitcher extends LitElement {
         border-top: 1px solid var(--hub-color-line);
         padding: var(--hub-space-1) 0;
       }
-      .ri {
+      .rail-item {
         position: relative;
         width: 32px;
         height: 32px;
@@ -276,18 +264,18 @@ export class PluginSwitcher extends LitElement {
         border-radius: var(--hub-radius-1);
         color: inherit;
       }
-      .ri:hover:not(:disabled) {
+      .rail-item:hover:not(:disabled) {
         background: var(--item-hover);
       }
-      .ri[aria-current] {
+      .rail-item[aria-current] {
         background: var(--item-front);
         color: var(--hub-color-accent);
       }
-      .ri.blocked,
-      .ri:disabled {
+      .rail-item.blocked,
+      .rail-item:disabled {
         opacity: 0.5;
       }
-      .ri .dot {
+      .rail-item .dot {
         position: absolute;
         right: 4px;
         bottom: 5px;
@@ -328,14 +316,16 @@ export class PluginSwitcher extends LitElement {
     const rest = this.plugins.filter(({ favourite }) => !favourite);
     this.toggleAttribute("collapsed", this.collapsed);
     if (this.collapsed) return this.renderRail(favourites, rest);
+    const { wordmark: word } = strings;
+    const wordmark = html`${word.name} <span>${word.product}</span>`;
     return html`<div class="brand">
         <span class="logo" aria-hidden="true"></span>
-        <h1 class="word">Hawkeye <span>Hub</span></h1>
+        <h1 class="word">${wordmark}</h1>
         <span class="acts">
           ${
             this.catalogueOn
               ? html`<button
-                  class="bare ib"
+                  class="plain-button icon-button"
                   aria-label=${strings.catalogue}
                   title=${strings.catalogue}
                   aria-current=${this.screen === "catalogue" ? "page" : nothing}
@@ -348,7 +338,7 @@ export class PluginSwitcher extends LitElement {
               : nothing
           }
           <button
-            class="bare ib"
+            class="plain-button icon-button"
             aria-label=${strings.settings}
             title=${strings.settings}
             aria-current=${this.screen === "settings" ? "page" : nothing}
@@ -369,10 +359,14 @@ export class PluginSwitcher extends LitElement {
                 ${favourites.map((plugin) => this.renderRow(plugin))}
               </ul>`
         }
-        <h2>${strings.plugins}</h2>
-        <ul>
-          ${rest.map((plugin) => this.renderRow(plugin))}
-        </ul>
+        ${
+          rest.length === 0
+            ? nothing
+            : html`<h2>${strings.plugins}</h2>
+                <ul>
+                  ${rest.map((plugin) => this.renderRow(plugin))}
+                </ul>`
+        }
       </nav>`;
   }
 
@@ -384,7 +378,7 @@ export class PluginSwitcher extends LitElement {
       show: () => void,
     ) =>
       html`<button
-        class="bare ri"
+        class="plain-button rail-item"
         aria-label=${label}
         title=${label}
         aria-current=${this.screen === screen ? "page" : nothing}
@@ -432,20 +426,20 @@ export class PluginSwitcher extends LitElement {
     // A Plugin the Hub cannot run is not a control, as in the list.
     return plugin.access.kind === "blocked"
       ? html`<span
-          class="ri blocked"
+          class="rail-item blocked"
           role="img"
           aria-label=${tip}
           title=${tip}
-          .style=${iconStyle(plugin)}
+          .style=${pluginIconStyle(plugin)}
           >${inner}</span
         >`
       : html`<button
-          class="bare ri"
+          class="plain-button rail-item"
           aria-label=${tip}
           title=${tip}
           aria-current=${plugin.id === this.foreground ? "page" : nothing}
           ?disabled=${closing}
-          .style=${iconStyle(plugin)}
+          .style=${pluginIconStyle(plugin)}
           @click=${() => {
             hub.open(plugin.id);
           }}
@@ -463,14 +457,14 @@ export class PluginSwitcher extends LitElement {
       <span class="name">${plugin.name}</span>`;
     return html`<li
       class=${blocked ? "blocked" : closing ? "closing" : ""}
-      .style=${iconStyle(plugin)}
+      .style=${pluginIconStyle(plugin)}
     >
       ${
         plugin.access.kind === "blocked"
           ? html`<span class="main">${name}</span>
               <span class="tag">${strings.blocked[plugin.access.reason]}</span>`
           : html`<button
-              class="bare main"
+              class="plain-button main"
               aria-current=${plugin.id === this.foreground ? "page" : nothing}
               ?disabled=${closing}
               @click=${() => {
@@ -492,7 +486,7 @@ export class PluginSwitcher extends LitElement {
           : nothing
       }
       <button
-        class="bare mini star"
+        class="plain-button row-action star"
         aria-pressed=${plugin.favourite ? "true" : "false"}
         aria-label=${
           plugin.favourite
@@ -513,7 +507,7 @@ export class PluginSwitcher extends LitElement {
       ${
         open
           ? html`<button
-              class="bare mini"
+              class="plain-button row-action"
               aria-label=${strings.close(plugin.name)}
               title=${strings.close(plugin.name)}
               @click=${() => {

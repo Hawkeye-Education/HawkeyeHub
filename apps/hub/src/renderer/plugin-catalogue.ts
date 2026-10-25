@@ -9,14 +9,9 @@ import type {
   CataloguePlugin,
   HubChromeApi,
 } from "../shared/hub-chrome-ipc";
-import { icon } from "./icons";
+import { icon, pluginIconMask, pluginIconStyle } from "./icons";
 import type { Strings } from "./strings";
 import { native } from "./theme";
-
-/** As in the Plugin Switcher: the icon URL for the tile's mask, set through the CSSOM. */
-function iconStyle({ iconUrl }: CataloguePlugin): string {
-  return `--icon: url("${iconUrl}")`;
-}
 
 const spinner = html`<span class="spinner" aria-hidden="true"></span>`;
 
@@ -98,12 +93,12 @@ export class PluginCatalogue extends LitElement {
         width: 22px;
         height: 22px;
         background-color: var(--hub-color-accent);
-        mask: var(--icon) center / contain no-repeat;
+        ${pluginIconMask}
       }
       h3 {
         margin: 0;
-        font-size: 14px;
-        font-weight: 600;
+        font-size: var(--hub-text-md);
+        font-weight: var(--hub-weight-strong);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -138,7 +133,7 @@ export class PluginCatalogue extends LitElement {
         margin-right: auto;
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: var(--hub-space-1);
         font-size: var(--hub-text-sm);
         color: var(--hub-color-fg-muted);
       }
@@ -169,7 +164,7 @@ export class PluginCatalogue extends LitElement {
         gap: var(--hub-space-3);
         text-align: center;
         color: var(--hub-color-fg-muted);
-        padding: 80px 0;
+        padding: var(--hub-space-6) 0;
       }
       .notice svg.icon,
       .notice .spinner {
@@ -236,7 +231,7 @@ export class PluginCatalogue extends LitElement {
       plugin.installed.kind === "not-installed";
     return html`<li class=${blocked ? "blocked" : ""}>
       <div class="top">
-        <span class="tile" .style=${iconStyle(plugin)}></span>
+        <span class="tile" .style=${pluginIconStyle(plugin)}></span>
         <div>
           <h3 title=${plugin.name}>${plugin.name}</h3>
           <span class="version">v${plugin.version}</span>

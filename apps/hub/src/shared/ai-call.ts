@@ -4,6 +4,7 @@
 
 import type { HubError } from "@hawkeye-hub/hub-api";
 import { z } from "zod";
+import { AUDIO_MEDIA_TYPES } from "./hub-chrome-ipc";
 import { AiProviderLabelSchema, ModelIdSchema } from "./hub-settings";
 
 /** Why a chat failed, as `hub.ai` rejects with it. There is no fallback to another provider. */
@@ -48,7 +49,7 @@ const AI_PART = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("audio"),
     data: BYTES,
-    mediaType: z.enum(["audio/wav", "audio/mpeg"]),
+    mediaType: z.enum(AUDIO_MEDIA_TYPES),
   }),
 ]);
 
