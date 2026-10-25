@@ -116,6 +116,36 @@ test("a pyproject.toml version disagreeing with the Manifest is refused", () => 
   );
 });
 
+function withLockedSource(source: string): PluginFiles {
+  return {
+    ...eraserPlugin(),
+    "backend/uv.lock": [
+      "version = 1",
+      "[[package]]",
+      'name = "hawkeye-hub"',
+      `source = ${source}`,
+    ].join("\n"),
+  };
+}
+
+test.each([
+  '{ directory = "../../../python/hawkeye-hub" }',
+  '{ editable = "../sdk" }',
+  '{ path = "../sdk/hawkeye_hub-1.0.0-py3-none-any.whl" }',
+  '{ git = "https://github.com/x/y" }',
+])("a uv.lock installing from %s is refused", (source) => {
+  expect(problemOf(withLockedSource(source))).toContain("hawkeye-hub");
+});
+
+test.each([
+  '{ registry = "https://pypi.org/simple" }',
+  '{ url = "https://files.example/hawkeye_hub-1.0.0-py3-none-any.whl" }',
+])("a uv.lock installing from %s passes", (source) => {
+  expect(checkPlugin(writePlugin(withLockedSource(source)), context)).toEqual(
+    [],
+  );
+});
+
 test("a tag disagreeing with the Manifest is refused", () => {
   const tag = {
     kind: "given",

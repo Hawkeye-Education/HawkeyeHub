@@ -53,13 +53,13 @@
     "markdown-it": "15.0.3",
     "semver": "7.8.5",
     "vite": "7.3.6",
-    "vitest": "5.0.5",
-    "zod": "4.6.7"
+    "vitest": "5.0.5"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.87",
     "@ai-sdk/openai-compatible": "3.0.77",
     "ai": "7.0.150",
-    "fflate": "0.8.2"
+    "fflate": "0.8.2",
+    "zod": "4.6.7"
   }
 }
