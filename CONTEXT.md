@@ -60,6 +60,10 @@ _Avoid_: Shell UI, frame, toolbar
 The part of the Hub Chrome that shows every installed Plugin and from which staff open, switch between and close them.
 _Avoid_: Launcher, dock, tab bar, home screen
 
+**Favourite**:
+An installed Plugin a staff member has starred so the Plugin Switcher shows it in its own section above the rest; belongs to the OS user, like Hub Settings, and never leaves the machine.
+_Avoid_: Pinned, bookmark, shortcut
+
 **Hub Kit**:
 The shared set of ready-styled interface pieces the Hub provides to every Plugin UI and builds its own Hub Chrome from; Plugins compose their screens from it rather than styling their own.
 _Avoid_: Component library, design system, widgets
