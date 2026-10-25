@@ -178,7 +178,7 @@ export class AssistantPanel extends LitElement {
   }
 
   private acceptsImages(): boolean {
-    return this.model.kind === "chosen" && this.model.acceptsImages;
+    return this.model.kind === "chosen" && this.model.inputs.includes("image");
   }
 
   /** Adds the images among `files` as chips, if the model accepts images. */
@@ -222,12 +222,21 @@ export class AssistantPanel extends LitElement {
   };
 
   private partOf(part: AiContent[number]) {
-    return part.type === "text"
-      ? html`<div>${part.text}</div>`
-      : html`<img
+    switch (part.type) {
+      case "text":
+        return html`<div>${part.text}</div>`;
+      case "image":
+        return html`<img
           alt=${this.strings.pastedImage}
           src=${dataUrlOf(part.image, part.mediaType)}
         />`;
+      // ponytail: the composer attaches no documents or audio yet; #154 draws their chips.
+      case "document":
+      case "audio":
+        return html`<div>${part.mediaType}</div>`;
+      default:
+        return part satisfies never;
+    }
   }
 
   private renderChips() {

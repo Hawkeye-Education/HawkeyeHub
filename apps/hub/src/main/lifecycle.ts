@@ -549,7 +549,7 @@ export function createLifecycle({
         kind: "chosen",
         provider: provider.label,
         model: model.id,
-        acceptsImages: model.acceptsImages,
+        inputs: model.inputs,
       };
     }
     switch (target.failure.code) {
