@@ -37,7 +37,7 @@ import type { AbsolutePath } from "./ids";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
-import { serveHubKit } from "./hub-kit";
+import { serveHubKit, TRANSPARENT } from "./hub-kit";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
 import { serveStores } from "./stores";
 import { watchResponsiveness } from "./plugin-ui-responsiveness";
@@ -144,7 +144,7 @@ export function createPluginViews(
     });
     lockDown(view, window, id);
     // The window's material or tint shows through the Theme's transparent canvas (ADR 0006).
-    view.setBackgroundColor("#00000000");
+    view.setBackgroundColor(TRANSPARENT);
     // The Hub has no menu to bind Toggle Developer Tools, so dev mode binds its shortcut itself.
     if (mode === "dev") {
       view.webContents.on("before-input-event", (event, input) => {

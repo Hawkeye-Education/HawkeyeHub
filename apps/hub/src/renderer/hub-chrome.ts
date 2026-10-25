@@ -51,9 +51,7 @@ export class HubChrome extends LitElement {
         padding: var(--hub-space-3) var(--hub-space-4);
         text-align: start;
       }
-      .gear[aria-current="page"],
-      .gear[aria-pressed="true"] {
-        color: var(--hub-color-accent);
+      .gear[aria-current="page"] {
         font-weight: var(--hub-weight-strong);
       }
       :host([panel]) {

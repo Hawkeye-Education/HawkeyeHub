@@ -43,7 +43,7 @@ import { AiContentSchema, AiModelChoiceSchema } from "../shared/ai-call";
 import { z } from "zod";
 import { bundleFileName, type Diagnostics } from "./diagnostics";
 import { errorCode } from "./error-code";
-import { HAWKEYE_TINT } from "./hub-kit";
+import { HAWKEYE_TINT, TRANSPARENT } from "./hub-kit";
 import {
   AiProviderRowSchema,
   HubSettingsFormSchema,
@@ -108,7 +108,7 @@ function hubChromeView(): WebContentsView {
     },
   });
   // So the window's material or tint shows through, and the overlay shows the views beneath.
-  view.setBackgroundColor("#00000000");
+  view.setBackgroundColor(TRANSPARENT);
   return view;
 }
 
@@ -127,6 +127,20 @@ function loadHubChrome(contents: WebContents, hash: "dialog" | null): void {
     // A load cut short is not a Hub crash, so it is swallowed. Rethrowing anything else, such as a
     // broken install's ERR_FILE_NOT_FOUND, makes it an unhandled rejection that crashes the Hub.
     if (!isCutShort(error)) throw error;
+  });
+}
+
+/** Paints the Theme's solid tint behind every view, following the Colour Scheme live. */
+function followTint(window: BaseWindow): void {
+  const paintTint = (): void => {
+    window.setBackgroundColor(
+      HAWKEYE_TINT[nativeTheme.shouldUseDarkColors ? "dark" : "light"],
+    );
+  };
+  paintTint();
+  nativeTheme.on("updated", paintTint);
+  window.on("closed", () => {
+    nativeTheme.off("updated", paintTint);
   });
 }
 
@@ -150,23 +164,21 @@ export function openHubWindow(
     center: true,
     // A BaseWindow does not take its title from the page.
     title: "Hawkeye Hub",
-    ...(backdrop === "vibrancy"
-      ? { vibrancy: "under-window", backgroundColor: "#00000000" }
-      : backdrop === "acrylic"
-        ? { backgroundMaterial: "acrylic", backgroundColor: "#00000000" }
-        : {}),
   });
-  if (backdrop === "tint") {
-    const paintTint = (): void => {
-      window.setBackgroundColor(
-        HAWKEYE_TINT[nativeTheme.shouldUseDarkColors ? "dark" : "light"],
-      );
-    };
-    paintTint();
-    nativeTheme.on("updated", paintTint);
-    window.on("closed", () => {
-      nativeTheme.off("updated", paintTint);
-    });
+  switch (backdrop) {
+    case "vibrancy":
+      window.setBackgroundColor(TRANSPARENT);
+      window.setVibrancy("under-window");
+      break;
+    case "acrylic":
+      window.setBackgroundColor(TRANSPARENT);
+      window.setBackgroundMaterial("acrylic");
+      break;
+    case "tint":
+      followTint(window);
+      break;
+    default:
+      backdrop satisfies never;
   }
 
   const hubChrome = hubChromeView();

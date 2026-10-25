@@ -156,7 +156,6 @@ button {
   box-sizing: border-box;
   min-height: 28px;
   font: inherit;
-  font-weight: 500;
   cursor: pointer;
   color: var(--hub-color-fg);
   background-color: var(--hub-color-surface-raised);

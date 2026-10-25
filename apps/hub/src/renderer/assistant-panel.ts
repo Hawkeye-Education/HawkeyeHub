@@ -71,11 +71,7 @@ export class AssistantPanel extends LitElement {
       }
       .user {
         white-space: pre-wrap;
-        background: color-mix(
-          in srgb,
-          var(--hub-color-accent) 17%,
-          transparent
-        );
+        background: var(--hub-color-surface-raised);
         padding: var(--hub-space-2);
         border-radius: var(--hub-radius-2);
       }

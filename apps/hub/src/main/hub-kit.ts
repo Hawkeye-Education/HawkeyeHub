@@ -9,6 +9,9 @@ import type { Session } from "electron";
 import inter from "../hub-kit/fonts/Inter.woff2?asset";
 import notoSansTc from "../hub-kit/fonts/NotoSansTC.woff2?asset";
 
+/** A view or window background that shows what is behind it. */
+export const TRANSPARENT = "#00000000";
+
 /**
  * The Hawkeye Theme's solid tint, which the window shows behind every view where the OS has no
  * material (ADR 0006). Main paints it, so it lives here rather than in hawkeye.css. Light is the

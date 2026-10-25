@@ -27,25 +27,13 @@ export class PluginSwitcher extends LitElement {
       ul {
         list-style: none;
         margin: 0;
-        padding: 0 var(--hub-space-2);
+        padding: 0;
       }
       li {
         display: flex;
         align-items: center;
         gap: var(--hub-space-1);
-        padding-inline-start: var(--hub-space-2);
-        border-radius: var(--hub-radius-1);
-      }
-      li:hover {
-        background: color-mix(in srgb, var(--hub-color-accent) 8%, transparent);
-      }
-      li:has([aria-current="page"]) {
-        background: color-mix(
-          in srgb,
-          var(--hub-color-accent) 15%,
-          transparent
-        );
-        color: var(--hub-color-accent);
+        padding-inline-start: var(--hub-space-4);
       }
       button {
         border: none;
@@ -53,9 +41,6 @@ export class PluginSwitcher extends LitElement {
         color: inherit;
         padding: var(--hub-space-2);
         text-align: start;
-      }
-      button:hover:not(:disabled) {
-        background-image: none;
       }
       .name {
         flex: 1;
@@ -82,8 +67,8 @@ export class PluginSwitcher extends LitElement {
       li::before {
         content: "";
         flex: none;
-        width: 16px;
-        height: 16px;
+        width: 24px;
+        height: 24px;
         background-color: currentColor;
         mask-size: contain;
         mask-repeat: no-repeat;

@@ -22,6 +22,9 @@ export function windowBackdrop(
 ): "vibrancy" | "acrylic" | "tint" {
   if (platform === "darwin") return "vibrancy";
   const build = Number(osRelease.split(".")[2]);
+  if (platform === "win32" && !Number.isInteger(build)) {
+    throw new Error(`Not a Windows release: ${osRelease}`);
+  }
   return platform === "win32" && build >= FIRST_ACRYLIC_BUILD
     ? "acrylic"
     : "tint";
