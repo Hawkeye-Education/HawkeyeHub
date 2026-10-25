@@ -61,3 +61,47 @@ test("the Plugin Switcher lists installed Plugins by name, leaving out and loggi
     lifecycleLine("Hub closing"),
   ]);
 });
+
+// Seating Plan's star, and the Switcher with it starred, in each Display Language: it moves up
+// from the middle in en-HK and from the bottom in zh-HK.
+const STARRED = {
+  "en-HK": {
+    star: "Add Seating Plan to Favourites",
+    names: ["Seating Plan", "Attendance", "Timer"],
+  },
+  "zh-HK": {
+    star: "把 Seating Plan 加入我的最愛",
+    names: ["Seating Plan", "計時器", "點名"],
+  },
+};
+
+test("a starred Plugin moves to the top as a Favourite, and stays one after a restart", async ({
+  dataDir,
+}) => {
+  installFixturePlugins(dataDir, [
+    fixtureInstall("class-timer"),
+    fixtureInstall("seating-plan"),
+    fixtureInstall("attendance"),
+  ]);
+
+  const hub = await launchHub(dataDir);
+  let starred: (typeof STARRED)[keyof typeof STARRED];
+  try {
+    const hubChrome = await hub.firstWindow();
+    starred = STARRED[await displayLanguageOf(hubChrome)];
+    await hubChrome
+      .getByRole("button", { name: starred.star, exact: true })
+      .click();
+    await expect.poll(() => switcherNames(hubChrome)).toEqual(starred.names);
+  } finally {
+    await hub.close();
+  }
+
+  const reopened = await launchHub(dataDir);
+  try {
+    const hubChrome = await reopened.firstWindow();
+    await expect.poll(() => switcherNames(hubChrome)).toEqual(starred.names);
+  } finally {
+    await reopened.close();
+  }
+});

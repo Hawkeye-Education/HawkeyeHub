@@ -36,6 +36,7 @@ import {
   STOP_ASSISTANT,
   NEW_CONVERSATION,
   CHOOSE_MODEL,
+  TOGGLE_FAVOURITE,
   type DisplayLanguage,
   type HubChromeDialog,
 } from "../shared/hub-chrome-ipc";
@@ -314,6 +315,10 @@ export function openHubWindow(
   ipcMain.handle(CHOOSE_MODEL, (event, id: unknown, model: unknown) => {
     fromHubChrome(CHOOSE_MODEL, event.sender);
     lifecycle.chooseModel(PluginId.parse(id), AiModelChoiceSchema.parse(model));
+  });
+  ipcMain.handle(TOGGLE_FAVOURITE, (event, id: unknown) => {
+    fromHubChrome(TOGGLE_FAVOURITE, event.sender);
+    lifecycle.toggleFavourite(PluginId.parse(id));
   });
   ipcMain.handle(EXPORT_DIAGNOSTICS, (event) => {
     fromHubChrome(EXPORT_DIAGNOSTICS, event.sender);

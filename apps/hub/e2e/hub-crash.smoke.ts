@@ -79,7 +79,7 @@ function hubChromeHeadings(hub: ElectronApplication): Promise<unknown[]> {
         .getAllWebContents()
         .map((contents): Promise<unknown> =>
           contents.executeJavaScript(
-            'document.querySelector("hub-chrome")?.shadowRoot?.querySelector("h1")?.textContent ?? null',
+            'document.querySelector("hub-chrome")?.shadowRoot?.querySelector("plugin-switcher")?.shadowRoot?.querySelector("h1")?.textContent ?? null',
           ),
         ),
     ),
