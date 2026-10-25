@@ -31,7 +31,6 @@ const LABELS = {
     stop: "Stop",
     copy: "Copy",
     model: "Model",
-    pastedImage: "Pasted image",
     pastedText: "Pasted text",
     remove: "Remove",
   },
@@ -43,7 +42,6 @@ const LABELS = {
     stop: "停止",
     copy: "複製",
     model: "模型",
-    pastedImage: "已貼上的圖片",
     pastedText: "已貼上的文字",
     remove: "移除",
   },
@@ -166,13 +164,12 @@ test("the Assistant Panel streams a Markdown reply, stops one, and copies a code
     await copy(hub, { text: "after" });
     await message.press("ControlOrMeta+V");
     await expect(message).toHaveValue("after");
-    await expect(
-      hubChrome.getByRole("img", { name: labels.pastedImage }),
-    ).toHaveCount(0);
+    await expect(hubChrome.locator("form").getByRole("img")).toHaveCount(0);
+    await expect(hubChrome.getByRole("status")).toBeVisible();
 
-    await hubChrome
-      .getByRole("combobox", { name: labels.model })
-      .selectOption({ label: "Fake · fake-model" });
+    // The model pill opens its menu, grouped by AI Provider.
+    await hubChrome.getByRole("button", { name: labels.model }).click();
+    await hubChrome.getByRole("menuitemradio", { name: "fake-model" }).click();
     await expect
       .poll((): unknown =>
         JSON.parse(
@@ -192,7 +189,7 @@ test("the Assistant Panel streams a Markdown reply, stops one, and copies a code
   }
 });
 
-test("the composer sends a Prompt Template, then a pasted image and a long paste as chips", async ({
+test("the composer sends a Prompt Template, then a pasted image, a long paste and a text file as chips", async ({
   dataDir,
 }) => {
   const fake = await startFakeAiServer({ kind: "reply", deltas: ["Done"] });
@@ -232,11 +229,13 @@ test("the composer sends a Prompt Template, then a pasted image and a long paste
       await message.press("ControlOrMeta+V");
     };
     const composer = hubChrome.locator("form");
-    const image = composer.getByRole("img", { name: labels.pastedImage });
+    const image = composer.getByRole("img");
     await paste("image");
     await expect(image).toBeVisible();
     // A chip comes off with its Remove button.
-    await composer.getByRole("button", { name: labels.remove }).click();
+    await composer
+      .getByRole("button", { name: new RegExp(`^${labels.remove}`) })
+      .click();
     await expect(image).toHaveCount(0);
     await paste("image");
     await expect(image).toBeVisible();
@@ -247,6 +246,13 @@ test("the composer sends a Prompt Template, then a pasted image and a long paste
     await expect(message).toHaveValue("");
     await paste({ text: "Short" });
     await expect(message).toHaveValue("Short");
+    // A text file from the paperclip picker goes as text, to any model.
+    await composer.locator('input[type="file"]').setInputFiles({
+      name: "marks.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("name,mark"),
+    });
+    await expect(composer.getByText("marks.csv")).toBeVisible();
 
     await message.press("Enter");
     await expect.poll(() => fake.requests.length).toBe(2);
@@ -267,16 +273,15 @@ test("the composer sends a Prompt Template, then a pasted image and a long paste
               },
             },
             { type: "text", text: long },
+            { type: "text", text: "name,mark" },
           ],
         },
       ],
     });
-    // The sent message shows its image, and the composer is empty again.
-    await expect(
-      hubChrome
-        .locator("li.user")
-        .getByRole("img", { name: labels.pastedImage }),
-    ).toBeVisible();
+    // The sent message shows its attachments, and the composer is empty again.
+    const sent = hubChrome.locator("li.user").last();
+    await expect(sent.getByRole("img")).toBeVisible();
+    await expect(sent.getByText("marks.csv")).toBeVisible();
     await expect(image).toHaveCount(0);
     await expect(composer.getByText(labels.pastedText)).toHaveCount(0);
   } finally {

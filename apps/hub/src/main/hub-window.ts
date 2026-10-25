@@ -40,7 +40,7 @@ import {
   type DisplayLanguage,
   type HubChromeDialog,
 } from "../shared/hub-chrome-ipc";
-import { AiContentSchema, AiModelChoiceSchema } from "../shared/ai-call";
+import { AiModelChoiceSchema, SentPartsSchema } from "../shared/ai-call";
 import { z } from "zod";
 import { bundleFileName, type Diagnostics } from "./diagnostics";
 import { errorCode } from "./error-code";
@@ -300,12 +300,9 @@ export function openHubWindow(
     fromHubChrome(TOGGLE_ASSISTANT, event.sender);
     lifecycle.toggleAssistant(PluginId.parse(id));
   });
-  ipcMain.handle(SEND_TO_ASSISTANT, (event, id: unknown, content: unknown) => {
+  ipcMain.handle(SEND_TO_ASSISTANT, (event, id: unknown, parts: unknown) => {
     fromHubChrome(SEND_TO_ASSISTANT, event.sender);
-    lifecycle.sendToAssistant(
-      PluginId.parse(id),
-      AiContentSchema.parse(content),
-    );
+    lifecycle.sendToAssistant(PluginId.parse(id), SentPartsSchema.parse(parts));
   });
   ipcMain.handle(STOP_ASSISTANT, (event, id: unknown) => {
     fromHubChrome(STOP_ASSISTANT, event.sender);

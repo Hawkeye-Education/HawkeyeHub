@@ -2166,6 +2166,7 @@ function withAssistant(
 }
 
 const said = (text: string) => [{ type: "text" as const, text }];
+const typed = (text: string) => [{ kind: "typed" as const, text }];
 
 test("a Plugin without an Assistant has no Panel, and toggling one throws, as for a Plugin not open", () => {
   const { lifecycle } = withAssistant();
@@ -2238,7 +2239,7 @@ test("the context's Display Language is the one at send, while its files are rea
   lifecycle.saveSettings();
   lifecycle.open(HELPER);
 
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(requests[0]?.system).toBe("Context of regex-helper in zh-HK");
   expect(read).toEqual(["regex-helper"]);
 });
@@ -2249,7 +2250,7 @@ test("a message streams a reply from the Default AI Provider, with the context r
   expect(read).toEqual(["regex-helper"]);
   lifecycle.toggleAssistant(HELPER);
 
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(requests).toEqual([
     {
       model: { kind: "default" },
@@ -2262,14 +2263,14 @@ test("a message streams a reply from the Default AI Provider, with the context r
   await vi.waitFor(() => {
     expect(lifecycle.snapshot().assistant).toMatchObject({
       conversation: {
-        messages: [{ role: "user", content: said("Hi") }],
+        messages: [{ role: "user", parts: typed("Hi") }],
         reply: { kind: "streaming", text: "Hello there" },
       },
     });
   });
   // One reply at a time.
   expect(() => {
-    lifecycle.sendToAssistant(HELPER, said("And?"));
+    lifecycle.sendToAssistant(HELPER, typed("And?"));
   }).toThrow();
 
   chat(0).finish();
@@ -2277,7 +2278,7 @@ test("a message streams a reply from the Default AI Provider, with the context r
     expect(lifecycle.snapshot().assistant).toMatchObject({
       conversation: {
         messages: [
-          { role: "user", content: said("Hi") },
+          { role: "user", parts: typed("Hi") },
           { role: "assistant", content: said("Hello there") },
         ],
         reply: { kind: "idle" },
@@ -2286,16 +2287,43 @@ test("a message streams a reply from the Default AI Provider, with the context r
   });
 
   // The next message carries the conversation so far; the context is not read again.
-  lifecycle.sendToAssistant(HELPER, said("Thanks"));
+  lifecycle.sendToAssistant(HELPER, typed("Thanks"));
   expect(requests[1]?.messages).toHaveLength(3);
   expect(read).toEqual(["regex-helper"]);
+});
+
+test("an attachment keeps its name in the conversation, while the model gets only its part", () => {
+  const { lifecycle, requests } = withAssistant();
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  const sent = [
+    { kind: "typed" as const, text: "Summarise these" },
+    {
+      kind: "attached" as const,
+      name: "marks.csv",
+      part: { type: "text" as const, text: "a,b" },
+    },
+  ];
+  lifecycle.sendToAssistant(HELPER, sent);
+  expect(requests[0]?.messages).toEqual([
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Summarise these" },
+        { type: "text", text: "a,b" },
+      ],
+    },
+  ]);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    conversation: { messages: [{ role: "user", parts: sent }] },
+  });
 });
 
 test("Stop keeps what had arrived, and New conversation starts again", async () => {
   const { lifecycle, chat } = withAssistant();
   lifecycle.open(HELPER);
   lifecycle.toggleAssistant(HELPER);
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   chat(0).delta("Partial");
   await vi.waitFor(() => {
     expect(lifecycle.snapshot().assistant).toMatchObject({
@@ -2309,7 +2337,7 @@ test("Stop keeps what had arrived, and New conversation starts again", async () 
     expect(lifecycle.snapshot().assistant).toMatchObject({
       conversation: {
         messages: [
-          { role: "user", content: said("Hi") },
+          { role: "user", parts: typed("Hi") },
           { role: "assistant", content: said("Partial") },
         ],
         reply: { kind: "idle" },
@@ -2319,7 +2347,7 @@ test("Stop keeps what had arrived, and New conversation starts again", async () 
   // Stopping with nothing streaming does nothing: staff may click as the reply ends.
   lifecycle.stopAssistant(HELPER);
 
-  lifecycle.sendToAssistant(HELPER, said("Again"));
+  lifecycle.sendToAssistant(HELPER, typed("Again"));
   lifecycle.newConversation(HELPER);
   expect(chat(1).cancelled).toBe(true);
   expect(lifecycle.snapshot().assistant).toMatchObject({
@@ -2331,12 +2359,12 @@ test("a failed reply shows its failure until the next message", async () => {
   const { lifecycle, chat } = withAssistant();
   lifecycle.open(HELPER);
   lifecycle.toggleAssistant(HELPER);
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   chat(0).fail({ code: "provider-rejected", status: 401 });
   await vi.waitFor(() => {
     expect(lifecycle.snapshot().assistant).toMatchObject({
       conversation: {
-        messages: [{ role: "user", content: said("Hi") }],
+        messages: [{ role: "user", parts: typed("Hi") }],
         reply: {
           kind: "failed",
           failure: { code: "provider-rejected", status: 401 },
@@ -2344,7 +2372,7 @@ test("a failed reply shows its failure until the next message", async () => {
       },
     });
   });
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(lifecycle.snapshot().assistant).toMatchObject({
     conversation: { reply: { kind: "streaming", text: "" } },
   });
@@ -2354,13 +2382,13 @@ test("closing the Plugin cancels its reply and drops its conversation", async ()
   const { lifecycle, chat } = withAssistant();
   lifecycle.open(HELPER);
   lifecycle.toggleAssistant(HELPER);
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   chat(0).delta("Partial");
 
   lifecycle.close(HELPER);
   expect(chat(0).cancelled).toBe(true);
   expect(() => {
-    lifecycle.sendToAssistant(HELPER, said("Hi"));
+    lifecycle.sendToAssistant(HELPER, typed("Hi"));
   }).toThrow();
   lifecycle.closed(HELPER);
   lifecycle.open(HELPER);
@@ -2422,13 +2450,13 @@ test("the model picker saves its choice at once, for its Plugin only, and later 
       inputs: ["image"],
     },
   });
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(requests[0]?.model).toEqual(big);
 
   // After a restart, the saved choice is the Plugin's.
   const restarted = withAssistant(stored, "en-HK", new Map(saved[0]));
   restarted.lifecycle.open(HELPER);
-  restarted.lifecycle.sendToAssistant(HELPER, said("Hi"));
+  restarted.lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(restarted.requests[0]?.model).toEqual(big);
 });
 
@@ -2449,7 +2477,7 @@ test("a chosen provider or model since removed is missing: it offers no images, 
     model: { choice: gone, kind: "missing" },
   });
   // The call module answers `provider-missing`: the choice goes to it as is, never the Default.
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(requests[0]?.model).toEqual(gone);
 });
 

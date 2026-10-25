@@ -29,10 +29,11 @@ import {
   type PluginAccess,
   type ThemeName,
 } from "../shared/hub-chrome-ipc";
-import type {
-  AiChatRequest,
-  AiContent,
-  AiModelChoice,
+import {
+  contentOf,
+  type AiChatRequest,
+  type AiModelChoice,
+  type SentPart,
 } from "../shared/ai-call";
 import type { AiProviderRow, HubSettingsForm } from "../shared/hub-settings";
 import { AiCallFailed, labelAndModels, targetOf, type AiChat } from "./ai";
@@ -179,7 +180,7 @@ export interface Lifecycle {
    * reply through the Plugin's model. Throws unless the Plugin is open with an Assistant and
    * no reply is streaming.
    */
-  sendToAssistant(id: PluginId, content: AiContent): void;
+  sendToAssistant(id: PluginId, parts: SentPart[]): void;
   /** Stops a streaming reply, keeping what has arrived. Does nothing when none is streaming. */
   stopAssistant(id: PluginId): void;
   /** Stops any reply and empties the conversation. */
@@ -985,19 +986,23 @@ export function createLifecycle({
       if (!panelsOpen.delete(id)) panelsOpen.add(id);
       changed();
     },
-    sendToAssistant: (id, content) => {
+    sendToAssistant: (id, parts) => {
       const talk = talkOf(id);
       if (talk.chat !== null) {
         throw new Error(`${id}'s Assistant is still replying`);
       }
       const messages = [
         ...talk.conversation.messages,
-        { role: "user" as const, content },
+        { role: "user" as const, parts },
       ];
       const chat = assistant.chat({
         model: modelOf(id),
         system: talk.system(listing.language),
-        messages,
+        messages: messages.map((message) =>
+          message.role === "user"
+            ? { role: "user", content: contentOf(message.parts) }
+            : message,
+        ),
       });
       talk.chat = chat;
       talk.conversation = { messages, reply: { kind: "streaming", text: "" } };
