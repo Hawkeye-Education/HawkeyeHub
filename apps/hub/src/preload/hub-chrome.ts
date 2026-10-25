@@ -23,6 +23,7 @@ import {
   STOP_ASSISTANT,
   NEW_CONVERSATION,
   CHOOSE_MODEL,
+  TOGGLE_FAVOURITE,
   type HubChromeApi,
   type HubChromeSnapshot,
 } from "../shared/hub-chrome-ipc";
@@ -94,6 +95,9 @@ const api: HubChromeApi = {
   },
   chooseModel(id, model) {
     void ipcRenderer.invoke(CHOOSE_MODEL, id, model);
+  },
+  toggleFavourite(id) {
+    void ipcRenderer.invoke(TOGGLE_FAVOURITE, id);
   },
 };
 

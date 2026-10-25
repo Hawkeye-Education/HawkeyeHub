@@ -23,7 +23,7 @@ const SORTED_IDS = {
 /** Each listed Plugin's icon mask, top to bottom, as the Hub Chrome computed it. */
 function iconMasks(hubChrome: Page): Promise<unknown> {
   return hubChrome.evaluate(
-    'Array.from(document.querySelector("hub-chrome").shadowRoot.querySelector("plugin-switcher").shadowRoot.querySelectorAll("li"), (li) => getComputedStyle(li, "::before").maskImage)',
+    'Array.from(document.querySelector("hub-chrome").shadowRoot.querySelector("plugin-switcher").shadowRoot.querySelectorAll(".glyph"), (glyph) => getComputedStyle(glyph).maskImage)',
   );
 }
 
@@ -68,8 +68,9 @@ test("each listed Plugin shows its icon.svg as a mask, and no Plugin SVG or scri
       expect(await loadsAsCorsImage(hubChrome, url)).toBe(true);
     }
 
-    // The locator pierces the shadow roots the Plugin Switcher lives in.
-    await expect(hubChrome.locator("svg")).toHaveCount(0);
+    // The locator pierces the shadow roots the Plugin Switcher lives in. Its own Lucide icons are
+    // the only SVG there.
+    await expect(hubChrome.locator("svg:not(.icon)")).toHaveCount(0);
     // The scripted-icon fixture's script would mark the Hub Chrome's body if it ever ran.
     await expect(hubChrome.locator("body")).not.toHaveAttribute(
       "data-icon-script",
