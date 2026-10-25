@@ -301,10 +301,7 @@ export function openHubWindow(
   });
   ipcMain.handle(SEND_TO_ASSISTANT, (event, id: unknown, parts: unknown) => {
     fromHubChrome(SEND_TO_ASSISTANT, event.sender);
-    lifecycle.sendToAssistant(
-      PluginId.parse(id),
-      SentPartsSchema.parse(parts),
-    );
+    lifecycle.sendToAssistant(PluginId.parse(id), SentPartsSchema.parse(parts));
   });
   ipcMain.handle(STOP_ASSISTANT, (event, id: unknown) => {
     fromHubChrome(STOP_ASSISTANT, event.sender);

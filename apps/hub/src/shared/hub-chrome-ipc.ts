@@ -4,12 +4,7 @@
 // Types and constants only: the preload is sandboxed and the Hub Chrome has no Node.
 
 import type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
-import type {
-  AiContent,
-  AiFailure,
-  AiModelChoice,
-  SentPart,
-} from "./ai-call";
+import type { AiContent, AiFailure, AiModelChoice, SentPart } from "./ai-call";
 import type { Branded } from "./branded";
 import type {
   AiProvider,

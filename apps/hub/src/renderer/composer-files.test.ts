@@ -1,8 +1,11 @@
 import { expect, test } from "vitest";
 import { attach, pickerAccept } from "./composer-files";
 
-const file = (name: string, type: string, body: string | Uint8Array = "x") =>
-  new File([body], name, { type });
+const file = (
+  name: string,
+  type: string,
+  body: string | Uint8Array<ArrayBuffer> = "x",
+) => new File([body], name, { type });
 
 test("a file of an accepted kind attaches under its name, as the part the model gets", async () => {
   const inputs = ["image", "document", "audio"] as const;
@@ -18,7 +21,9 @@ test("a file of an accepted kind attaches under its name, as the part the model 
       },
     },
   });
-  expect(await attach(file("Worksheet.pdf", "application/pdf"), inputs)).toMatchObject({
+  expect(
+    await attach(file("Worksheet.pdf", "application/pdf"), inputs),
+  ).toMatchObject({
     attachment: { part: { type: "document", mediaType: "application/pdf" } },
   });
   // Audio by its extension: browsers name a WAV's type several ways.
@@ -34,7 +39,11 @@ test("a text file attaches as text for any model, even one that takes nothing el
   for (const name of ["notes.txt", "plan.md", "marks.csv", "data.json"]) {
     expect(await attach(file(name, "", "a,b"), [])).toEqual({
       kind: "attached",
-      attachment: { kind: "attached", name, part: { type: "text", text: "a,b" } },
+      attachment: {
+        kind: "attached",
+        name,
+        part: { type: "text", text: "a,b" },
+      },
     });
   }
 });
@@ -52,7 +61,10 @@ test("a file the model cannot take is refused, naming what it needs", async () =
 
 test("a file of no kind the composer knows is refused, whatever the model takes", async () => {
   for (const unknown of [
-    file("Notes.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    file(
+      "Notes.docx",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ),
     file("clip.bmp", "image/bmp"),
     file("README", ""),
   ]) {

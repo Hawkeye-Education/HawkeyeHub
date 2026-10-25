@@ -99,6 +99,13 @@ export function takes(
   return part.type === "text" || inputs.includes(part.type);
 }
 
+/** A size as staff read it: "820 B", "4 KB", "1.2 MB". */
+export function sizeText(bytes: number): string {
+  if (bytes < 1024) return `${String(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${String(Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /** The bytes an attachment sends, for its chip. */
 export function bytesOf({ part }: Attachment): number {
   switch (part.type) {
