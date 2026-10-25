@@ -79,6 +79,9 @@ export function checkPlugin(dir: string, context: CheckContext): string[] {
       ) {
         problems.push(...checkPyproject(dir, version, backend.python));
       }
+      if (!absent.some((problem) => problem.startsWith("backend/uv.lock"))) {
+        problems.push(...checkLock(dir));
+      }
       break;
     }
     case "none":
@@ -183,6 +186,40 @@ function checkPyproject(
     );
   }
   return problems;
+}
+
+// The sources `uv sync --frozen` can install from on a staff machine, which has no repo and no git:
+// a package index, a URL, and the Backend itself (`virtual`, as `package = false` locks it).
+const PORTABLE_SOURCES = ["registry", "url", "virtual"];
+
+const Lock = z.object({
+  package: z.array(
+    z.object({ name: z.string(), source: z.record(z.string(), z.unknown()) }),
+  ),
+});
+
+function checkLock(dir: string): string[] {
+  let toml: unknown;
+  try {
+    toml = parseToml(readFileSync(join(dir, "backend/uv.lock"), "utf8"));
+  } catch (error) {
+    // smol-toml throws TomlError on malformed input, which is the problem to report.
+    return [`backend/uv.lock is not TOML: ${String(error)}`];
+  }
+  const parsed = Lock.safeParse(toml);
+  if (!parsed.success) {
+    return [
+      `backend/uv.lock needs its [[package]] entries:\n${z.prettifyError(parsed.error)}`,
+    ];
+  }
+  return parsed.data.package
+    .filter(({ source }) =>
+      Object.keys(source).some((kind) => !PORTABLE_SOURCES.includes(kind)),
+    )
+    .map(
+      ({ name, source }) =>
+        `backend/uv.lock installs ${name} from ${JSON.stringify(source)}, which a staff machine has no copy of: lock it from a package index.`,
+    );
 }
 
 const PEP440_CLAUSE = /^(~=|==|<=|>=|<|>)\s*(\d+(?:\.\d+){0,2})(\.\*)?$/;

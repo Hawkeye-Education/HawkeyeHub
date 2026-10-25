@@ -23,7 +23,12 @@ export function eraserPlugin(): PluginFiles {
       'version = "1.0.0"',
       'requires-python = ">=3.12"',
     ].join("\n"),
-    "backend/uv.lock": "version = 1",
+    "backend/uv.lock": [
+      "version = 1",
+      "[[package]]",
+      'name = "pdf-watermark-eraser-backend"',
+      'source = { virtual = "." }',
+    ].join("\n"),
     "backend/main.py": "print(1)",
     "backend/erase.py": "print(2)",
     "backend/tests/test_erase.py": "def test_x() -> None: ...",

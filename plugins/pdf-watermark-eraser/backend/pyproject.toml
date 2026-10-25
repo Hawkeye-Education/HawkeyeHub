@@ -1,6 +1,6 @@
 [project]
 name = "pdf-watermark-eraser-backend"
-version = "1.0.0"            # equals the Manifest version
+version = "1.0.1"            # equals the Manifest version
 requires-python = "==3.12.*" # agrees with the Manifest's backend.python
 dependencies = ["pymupdf>=1.24", "hawkeye-hub>=1.0,<2"]
 
@@ -10,11 +10,6 @@ dev = ["pytest>=8", "pyright>=1.1.400", "ruff>=0.12"] # never installed for staf
 [tool.uv]
 required-version = "==0.13.5" # the uv the Hub downloads (apps/hub/src/main/uv.ts)
 package = false               # a script the Hub runs, not a package to build
-
-# ponytail: the in-repo SDK until #124 publishes hawkeye-hub 1.0.0 to PyPI; then delete this table
-# and re-lock, or the Hub's `uv sync --frozen` on staff's machines finds no SDK at this path.
-[tool.uv.sources]
-hawkeye-hub = { path = "../../../python/hawkeye-hub" }
 
 [tool.pyright]
 typeCheckingMode = "strict"
