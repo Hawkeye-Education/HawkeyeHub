@@ -115,6 +115,10 @@ export const HubSettingsSchema = z
     // The default reads a file written before Favourites existed as having none (#149): a real
     // state, not missing data. An id no longer installed is left alone and simply not shown.
     favourites: z.array(PluginId).default([]),
+    // The Plugin Switcher collapsed to its icon rail (#153), saved on each toggle, outside the
+    // form's Save. The default reads a file written before the rail existed as expanded: a real
+    // state, not missing data.
+    switcherCollapsed: z.boolean().default(false),
   })
   .superRefine(({ aiProviders, defaultAiProvider }, context) => {
     for (const { label, endpoint, models } of aiProviders) {

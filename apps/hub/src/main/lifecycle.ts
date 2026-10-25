@@ -195,6 +195,11 @@ export interface Lifecycle {
    * stored Hub Settings, outside Save and Cancel. Throws unless the Plugin is installed.
    */
   toggleFavourite(id: PluginId): void;
+  /**
+   * Collapses the Plugin Switcher to its icon rail, or expands it: saved at once with the stored
+   * Hub Settings, outside Save and Cancel.
+   */
+  toggleSwitcher(): void;
 }
 
 export interface LifecycleDeps {
@@ -342,7 +347,8 @@ export function createLifecycle({
         return displayLanguage satisfies never;
     }
   };
-  // The Hub Settings as last saved. Favourites change here at once; the rest only through Save.
+  // The Hub Settings as last saved. Favourites and the Switcher's collapse change here at once; the
+  // rest only through Save.
   let stored = storedAtStart;
   // Grows as installs finish, and shrinks as uninstalls do.
   let installedPlugins = [...installed];
@@ -457,10 +463,10 @@ export function createLifecycle({
     form = formOf(stored);
     typedKeys = new Map();
   };
-  // Favourites save with what is stored, every key kept with its provider, as an unedited Save
-  // would.
-  const saveFavourites = (favourites: PluginId[]): void => {
-    stored = { ...stored, favourites };
+  // Favourites and the Switcher's collapse save with what is stored, every key kept with its
+  // provider, as an unedited Save would.
+  const saveOutsideForm = (next: HubSettings): void => {
+    stored = next;
     keyed = save(
       stored,
       stored.aiProviders.map(({ label }) => ({
@@ -695,8 +701,7 @@ export function createLifecycle({
               form,
               keysSet: rowsWithKey(form, typedKeys, keyed),
               savable:
-                settingsFrom(form, typedKeys, keyed, stored.favourites).kind ===
-                "valid",
+                settingsFrom(form, typedKeys, keyed, stored).kind === "valid",
             }
           : content,
       dialog: dialogOf(
@@ -708,6 +713,7 @@ export function createLifecycle({
       themes: [...THEMES],
       catalogue: catalogueIn(listing.language),
       assistant: open[0] === undefined ? { kind: "none" } : panelOf(open[0]),
+      switcherCollapsed: stored.switcherCollapsed,
     }),
     installed: (id) => installedPlugin(id).plugin,
     running,
@@ -895,7 +901,10 @@ export function createLifecycle({
       );
       listing = listingIn(listing.language);
       if (stored.favourites.includes(id)) {
-        saveFavourites(stored.favourites.filter((other) => other !== id));
+        saveOutsideForm({
+          ...stored,
+          favourites: stored.favourites.filter((other) => other !== id),
+        });
       }
       // A crash message names its Plugin when drawn, so one still up for it goes with it.
       crashMessages = crashMessages.filter((message) => message.id !== id);
@@ -938,7 +947,7 @@ export function createLifecycle({
     saveSettings: () => {
       const showing = settingsShowing("saveSettings");
       if (!edited()) return;
-      const valid = settingsFrom(form, typedKeys, keyed, stored.favourites);
+      const valid = settingsFrom(form, typedKeys, keyed, stored);
       if (valid.kind === "invalid") return;
       keyed = save(valid.settings, valid.keys);
       stored = valid.settings;
@@ -1021,11 +1030,19 @@ export function createLifecycle({
     },
     toggleFavourite: (id) => {
       installedPlugin(id);
-      saveFavourites(
-        stored.favourites.includes(id)
+      saveOutsideForm({
+        ...stored,
+        favourites: stored.favourites.includes(id)
           ? stored.favourites.filter((other) => other !== id)
           : [...stored.favourites, id],
-      );
+      });
+      changed();
+    },
+    toggleSwitcher: () => {
+      saveOutsideForm({
+        ...stored,
+        switcherCollapsed: !stored.switcherCollapsed,
+      });
       changed();
     },
     answer: (answer) => {

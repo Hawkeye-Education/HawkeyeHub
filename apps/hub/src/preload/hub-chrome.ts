@@ -24,6 +24,7 @@ import {
   NEW_CONVERSATION,
   CHOOSE_MODEL,
   TOGGLE_FAVOURITE,
+  TOGGLE_SWITCHER,
   type HubChromeApi,
   type HubChromeSnapshot,
 } from "../shared/hub-chrome-ipc";
@@ -98,6 +99,9 @@ const api: HubChromeApi = {
   },
   toggleFavourite(id) {
     void ipcRenderer.invoke(TOGGLE_FAVOURITE, id);
+  },
+  toggleSwitcher() {
+    void ipcRenderer.invoke(TOGGLE_SWITCHER);
   },
 };
 

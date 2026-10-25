@@ -1,5 +1,5 @@
-// The Hub Chrome's root element: the Plugin Switcher down the side, and beside it the header strip
-// above the content area and the Assistant Panel.
+// The Hub Chrome's root element: the Plugin Switcher, or its icon rail, down the side, and beside it
+// the header strip above the content area and the Assistant Panel.
 // It draws the latest snapshot of the lifecycle state held in main, built from the Theme (ADR 0006).
 // Loaded with #dialog it is the dialog overlay instead, above every Plugin UI, and draws only the
 // pending dialog.
@@ -10,6 +10,7 @@ import type { PluginId } from "@hawkeye-hub/plugin-format";
 import {
   ASSISTANT_PANEL_WIDTH_PX,
   HEADER_STRIP_HEIGHT_PX,
+  RAIL_WIDTH_PX,
   SWITCHER_WIDTH_PX,
   type HubChromeApi,
   type HubChromeSnapshot,
@@ -36,8 +37,9 @@ export class HubChrome extends LitElement {
     native,
     css`
       :host {
+        --switcher-width: ${unsafeCSS(SWITCHER_WIDTH_PX)}px;
         display: grid;
-        grid-template-columns: ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr;
+        grid-template-columns: var(--switcher-width) 1fr;
         grid-template-rows: ${unsafeCSS(HEADER_STRIP_HEIGHT_PX)}px 1fr;
         height: 100vh;
       }
@@ -51,20 +53,44 @@ export class HubChrome extends LitElement {
       plugin-switcher {
         flex: 1;
       }
+      :host([collapsed]) {
+        --switcher-width: ${unsafeCSS(RAIL_WIDTH_PX)}px;
+      }
       :host([panel]) {
         grid-template-columns:
-          ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr
+          var(--switcher-width) 1fr
           ${unsafeCSS(ASSISTANT_PANEL_WIDTH_PX)}px;
       }
-      /* Over the content area and the Assistant Panel. #153 puts the Switcher's collapse toggle
-         first in this row, at its left. */
+      /* Over the content area and the Assistant Panel, the Switcher's collapse toggle first. */
       header {
         grid-column: 2 / -1;
         display: flex;
         align-items: center;
         gap: var(--hub-space-2);
-        padding-inline: var(--hub-space-3) var(--hub-space-2);
+        padding-inline: var(--hub-space-1) var(--hub-space-2);
         min-width: 0;
+      }
+      .toggle {
+        flex: none;
+        width: 28px;
+        height: 28px;
+        min-height: 0;
+        padding: 0;
+        display: grid;
+        place-items: center;
+        border: none;
+        border-radius: var(--hub-radius-1);
+        background: none;
+        box-shadow: none;
+        color: var(--hub-color-fg-muted);
+      }
+      .toggle:hover {
+        background: color-mix(in srgb, var(--hub-color-accent) 8%, transparent);
+        color: var(--hub-color-fg);
+      }
+      .toggle .icon {
+        width: 16px;
+        height: 16px;
       }
       .title {
         display: flex;
@@ -158,9 +184,15 @@ export class HubChrome extends LitElement {
     const front =
       content.kind === "plugin" && foreground !== null ? foreground : null;
     const panel = front === null ? { kind: "none" as const } : assistant;
+    const { switcherCollapsed } = this.snapshot;
     this.toggleAttribute("panel", panel.kind === "open");
+    this.toggleAttribute("collapsed", switcherCollapsed);
+    const toggleLabel = switcherCollapsed
+      ? strings.showSwitcher
+      : strings.hideSwitcher;
     return html`<aside>
         <plugin-switcher
+          .collapsed=${switcherCollapsed}
           .strings=${strings}
           .plugins=${this.snapshot.plugins}
           .open=${this.snapshot.open}
@@ -172,6 +204,17 @@ export class HubChrome extends LitElement {
         ></plugin-switcher>
       </aside>
       <header>
+        <button
+          class="toggle"
+          aria-expanded=${switcherCollapsed ? "false" : "true"}
+          aria-label=${toggleLabel}
+          title=${toggleLabel}
+          @click=${() => {
+            window.hubChrome.toggleSwitcher();
+          }}
+        >
+          ${icon("panel-left")}
+        </button>
         ${
           front === null
             ? html`<span class="title">${this.screenTitle(strings)}</span>`

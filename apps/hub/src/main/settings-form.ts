@@ -16,8 +16,14 @@ import type { AiProviderLabel } from "./ids";
 export function formOf(settings: HubSettings): HubSettingsForm {
   // The index makes a row unique within the form.
   const rowOf = (index: number) => AiProviderRowSchema.parse(String(index));
-  // Favourites are starred in the Switcher, never edited in the form.
-  const { aiProviders, defaultAiProvider, favourites: _, ...rest } = settings;
+  // Favourites are starred, and the Switcher collapsed, in the Switcher, never in the form.
+  const {
+    aiProviders,
+    defaultAiProvider,
+    favourites: _favourites,
+    switcherCollapsed: _switcherCollapsed,
+    ...rest
+  } = settings;
   return {
     ...rest,
     aiProviders: aiProviders.map(({ label, endpoint, models }, index) => ({
@@ -56,7 +62,7 @@ export function rowsWithKey(
 }
 
 /**
- * The Hub Settings `form` saves as, with the stored `favourites`, and what happens to each
+ * The Hub Settings `form` saves as, with what the Switcher saves outside it, and what happens to each
  * provider's key, with the keys typed by row and the labels with a stored key; `invalid` when the form is not valid Hub Settings, or
  * an Anthropic provider has no key (the SDK would otherwise read `ANTHROPIC_API_KEY`).
  */
@@ -64,7 +70,7 @@ export function settingsFrom(
   form: HubSettingsForm,
   typedKeys: ReadonlyMap<AiProviderRow, AiProviderKey>,
   keyed: ReadonlySet<AiProviderLabel>,
-  favourites: HubSettings["favourites"],
+  outside: Pick<HubSettings, "favourites" | "switcherCollapsed">,
 ):
   | { kind: "valid"; settings: HubSettings; keys: SavedProviderKey[] }
   | { kind: "invalid" } {
@@ -85,7 +91,8 @@ export function settingsFrom(
       : undefined;
   const parsed = HubSettingsSchema.safeParse({
     ...form,
-    favourites,
+    favourites: outside.favourites,
+    switcherCollapsed: outside.switcherCollapsed,
     aiProviders: form.aiProviders.map(({ label, endpoint, models }) => ({
       label,
       endpoint,

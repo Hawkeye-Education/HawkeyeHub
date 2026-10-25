@@ -17,6 +17,7 @@ export const FIRST_LAUNCH_SETTINGS: HubSettings = {
   aiProviders: [],
   defaultAiProvider: { kind: "none" },
   favourites: [],
+  switcherCollapsed: false,
 };
 
 /** Writes the whole file, through a temporary file, so a crash mid-write never leaves half of it. */

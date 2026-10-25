@@ -21,6 +21,7 @@ const FIRST_LAUNCH = {
   aiProviders: [],
   defaultAiProvider: { kind: "none" },
   favourites: [],
+  switcherCollapsed: false,
 };
 
 let dataDir: AbsolutePath;
@@ -53,6 +54,7 @@ const CHOSEN = {
   aiProviders: [],
   defaultAiProvider: { kind: "none" },
   favourites: ["class-timer"],
+  switcherCollapsed: true,
 };
 
 test("a valid file is returned as it is, with nothing logged", () => {
@@ -68,6 +70,16 @@ test("a file from before Favourites reads as having none, with nothing logged", 
   expect(loadHubSettings(dataDir, diagnostics)).toEqual({
     ...CHOSEN,
     favourites: [],
+  });
+  expect(existsSync(join(logsDir, "hub.log"))).toBe(false);
+});
+
+test("a file from before the icon rail reads as an expanded Switcher, with nothing logged", () => {
+  const { switcherCollapsed: _, ...withoutCollapse } = CHOSEN;
+  writeSettings(JSON.stringify(withoutCollapse));
+  expect(loadHubSettings(dataDir, diagnostics)).toEqual({
+    ...CHOSEN,
+    switcherCollapsed: false,
   });
   expect(existsSync(join(logsDir, "hub.log"))).toBe(false);
 });

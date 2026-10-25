@@ -6,9 +6,11 @@ import {
   installFixturePlugins,
   launchHub,
   lifecycleLine,
+  pluginPage,
   switcherNames,
   test,
 } from "./hub";
+import { RAIL_WIDTH_PX } from "../src/shared/hub-chrome-ipc";
 
 function leftOutLine(id: string, message: string): unknown {
   return {
@@ -101,6 +103,61 @@ test("a starred Plugin moves to the top as a Favourite, and stays one after a re
   try {
     const hubChrome = await reopened.firstWindow();
     await expect.poll(() => switcherNames(hubChrome)).toEqual(starred.names);
+  } finally {
+    await reopened.close();
+  }
+});
+
+// For code evaluated in the Plugin UI's page; the smoke suite has no DOM types.
+declare const window: { innerWidth: number };
+
+const COLLAPSE = {
+  "en-HK": {
+    timer: "Timer",
+    hide: "Hide Plugin Switcher",
+    show: "Show Plugin Switcher",
+  },
+  "zh-HK": {
+    timer: "計時器",
+    hide: "隱藏外掛程式切換器",
+    show: "顯示外掛程式切換器",
+  },
+};
+
+test("collapsing the Switcher gives the Plugin UI the freed width, and stays collapsed after a restart", async ({
+  dataDir,
+}) => {
+  installFixturePlugins(dataDir, [fixtureInstall("class-timer")]);
+
+  const hub = await launchHub(dataDir);
+  let words: (typeof COLLAPSE)[keyof typeof COLLAPSE];
+  try {
+    const hubChrome = await hub.firstWindow();
+    words = COLLAPSE[await displayLanguageOf(hubChrome)];
+    await hubChrome
+      .getByRole("button", { name: words.timer, exact: true })
+      .click();
+    const timer = await pluginPage(() => hub.windows(), "class-timer");
+    await hubChrome
+      .getByRole("button", { name: words.hide, exact: true })
+      .click();
+    const [contentArea] = await hub.evaluate(({ BaseWindow }) =>
+      BaseWindow.getAllWindows().map((window) => window.getContentBounds()),
+    );
+    if (contentArea === undefined) throw new Error("The Hub has no window");
+    await expect
+      .poll(() => timer.evaluate(() => window.innerWidth))
+      .toBe(contentArea.width - RAIL_WIDTH_PX);
+  } finally {
+    await hub.close();
+  }
+
+  const reopened = await launchHub(dataDir);
+  try {
+    const hubChrome = await reopened.firstWindow();
+    await expect(
+      hubChrome.getByRole("button", { name: words.show, exact: true }),
+    ).toHaveAttribute("aria-expanded", "false");
   } finally {
     await reopened.close();
   }
