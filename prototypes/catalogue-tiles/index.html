@@ -1,0 +1,270 @@
+<!doctype html>
+<!-- PROTOTYPE (#146), throwaway. Three Plugin Catalogue tile variants (?variant=A|B|C) in a fake Hub
+     window with the chosen Switcher (#144) and header strip. Uses the real hawkeye.css + native.css and
+     fake data. The bottom bar flips variant, Colour Scheme, window width (960 / 1280 / fit) and the
+     Registry state (listed / empty / unreachable / checking). Install and Uninstall run fake jobs. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catalogue tiles prototype</title>
+<link rel="stylesheet" href="../../apps/hub/src/hub-kit/hawkeye.css">
+<link rel="stylesheet" href="../../apps/hub/src/hub-kit/native.css">
+<style>
+  /* hawkeye.css loads fonts from hawkeye-hub-kit://, which only main serves; point at the files. */
+  @font-face { font-family: "Inter"; src: url("../../apps/hub/src/hub-kit/fonts/Inter.woff2") format("woff2"); font-weight: 100 900; }
+  @font-face { font-family: "Noto Sans TC"; src: url("../../apps/hub/src/hub-kit/fonts/NotoSansTC.woff2") format("woff2"); font-weight: 100 900; }
+
+  :root { --tint: linear-gradient(160deg, #f8f3ee, #ede5dd); --item-hover: color-mix(in srgb, var(--hub-color-accent) 8%, transparent);
+          --item-front: color-mix(in srgb, var(--hub-color-accent) 15%, transparent); }
+  /* Dark is Near-black (#145, recorded in #142). */
+  :root[data-scheme="dark"] { --tint: #0c0c0c; --hub-color-surface: #161616; --hub-color-surface-raised: #202020;
+                              --hub-color-fg-muted: #a0a0a0; --hub-color-line: rgb(255 255 255 / 0.1); }
+  html, body { height: 100%; margin: 0; }
+  body { background: #777; overflow: hidden; font-size: 13px; }
+  svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  button { box-shadow: none; border-radius: var(--hub-radius-1); min-height: 28px; padding: 2px var(--hub-space-3); }
+  .bare { border: 0; background: none; padding: 0; min-height: 0; color: inherit; }
+  .bare:hover:not(:disabled) { background-image: none; }
+
+  /* ---------- Window, Switcher (variant A of #144), header strip ---------- */
+  .win { display: flex; height: 100vh; margin: 0 auto; background: var(--tint); color: var(--hub-color-fg); }
+  .content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .body { flex: 1; display: flex; min-height: 0; padding: 0 var(--hub-space-2) var(--hub-space-2) 0; }
+  .view { flex: 1; overflow: auto; background: var(--hub-color-surface); border: 1px solid var(--hub-color-line);
+          border-radius: var(--hub-radius-2); padding: var(--hub-space-5); }
+  .logo { position: relative; flex: none; width: 22px; height: 22px; border-radius: 6px; background: #ff6b35; }
+  .logo i { position: absolute; inset: 3px; background: #fff; -webkit-mask: url(logo-mark.png) center / contain no-repeat; mask: url(logo-mark.png) center / contain no-repeat; }
+  .brand { display: flex; align-items: center; gap: var(--hub-space-2); height: 40px; padding: 0 var(--hub-space-1) 0 var(--hub-space-3); }
+  .word { font-weight: 600; font-size: 14px; white-space: nowrap; } .word span { font-weight: 400; color: var(--hub-color-fg-muted); }
+  .acts { margin-left: auto; display: flex; gap: 2px; }
+  .ib { width: 28px; height: 28px; border-radius: var(--hub-radius-1); display: grid; place-items: center; color: var(--hub-color-fg-muted); }
+  .ib:hover:not(:disabled) { background: var(--item-hover); color: var(--hub-color-fg); }
+  .ib[aria-current] { background: var(--item-front); color: var(--hub-color-accent); }
+  .sw { flex: none; width: 260px; display: flex; flex-direction: column; }
+  .sw .scroll { padding: 0 var(--hub-space-2); }
+  .sec { margin: var(--hub-space-3) var(--hub-space-2) 2px; font-size: 11px; font-weight: 500; color: var(--hub-color-fg-muted); }
+  .sw ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+  .sw li { display: flex; align-items: center; gap: var(--hub-space-2); min-height: 28px; padding: 0 8px; border-radius: var(--hub-radius-1); }
+  .sw li span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .strip { flex: none; height: 40px; display: flex; align-items: center; gap: var(--hub-space-2); padding: 0 var(--hub-space-2) 0 var(--hub-space-1); font-weight: 500; }
+
+  /* ---------- Catalogue, shared ---------- */
+  .grid { display: grid; gap: var(--hub-space-3); }
+  .card { min-width: 0; background: var(--hub-color-surface-raised); border: 1px solid var(--hub-color-line); border-radius: var(--hub-radius-2); }
+  .icon { flex: none; display: grid; place-items: center; border-radius: var(--hub-radius-2); color: var(--hub-color-accent);
+          background: color-mix(in srgb, var(--hub-color-accent) 12%, transparent); }
+  .name { margin: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .desc { margin: 0; color: var(--hub-color-fg-muted); line-height: 1.4; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .ver { font-size: 11px; color: var(--hub-color-fg-muted); white-space: nowrap; }
+  .status { display: flex; align-items: center; gap: 6px; font-size: var(--hub-text-sm); color: var(--hub-color-fg-muted); white-space: nowrap; }
+  .status.ok { color: var(--hub-color-success); } .status.warn { color: var(--hub-color-warning); } .status.err { color: var(--hub-color-danger); }
+  .status svg { width: 14px; height: 14px; }
+  .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .card.blocked .icon, .card.blocked .name { opacity: .5; }
+  .link { color: var(--hub-color-accent); font-size: var(--hub-text-sm); text-decoration: underline; cursor: pointer; }
+  .notice { display: grid; justify-items: center; gap: var(--hub-space-3); text-align: center; color: var(--hub-color-fg-muted); padding: 80px 0; }
+  .notice svg { width: 32px; height: 32px; }
+
+  /* ---------- A: Store cards, icon + name row, footer with version and action ---------- */
+  .vA .grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+  .vA .card { display: flex; flex-direction: column; gap: var(--hub-space-2); padding: var(--hub-space-4); }
+  .vA .top { display: flex; align-items: center; gap: var(--hub-space-3); min-width: 0; }
+  .vA .icon { width: 40px; height: 40px; } .vA .icon svg { width: 22px; height: 22px; }
+  .vA .top > div { min-width: 0; display: grid; }
+  .vA .desc { min-height: 2.8em; }
+  .vA .foot { margin-top: auto; display: flex; align-items: center; justify-content: flex-end; gap: var(--hub-space-2); min-height: 28px; }
+  .vA .foot .status { margin-right: auto; white-space: normal; }
+
+  /* ---------- B: Wide tiles in two sections, action at the side ---------- */
+  .vB h3 { margin: var(--hub-space-4) 0 var(--hub-space-2); font-size: 11px; font-weight: 500; color: var(--hub-color-fg-muted); }
+  .vB h3:first-child { margin-top: 0; }
+  .vB .grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: var(--hub-space-2); }
+  .vB .card { display: flex; align-items: center; gap: var(--hub-space-3); padding: var(--hub-space-3); }
+  .vB .icon { width: 36px; height: 36px; align-self: start; } .vB .icon svg { width: 20px; height: 20px; }
+  .vB .mid { flex: 1; min-width: 0; display: grid; gap: 2px; }
+  .vB .nl { display: flex; align-items: baseline; gap: var(--hub-space-2); min-width: 0; }
+  .vB .side { flex: none; display: grid; justify-items: end; gap: 4px; max-width: 130px; text-align: end; }
+  .vB .side .status { white-space: normal; justify-content: flex-end; }
+
+  /* ---------- C: Icon-first posters, full-width action ---------- */
+  .vC .grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .vC .card { display: flex; flex-direction: column; overflow: hidden; }
+  .vC .band { position: relative; height: 84px; display: grid; place-items: center; background: color-mix(in srgb, var(--hub-color-accent) 9%, transparent); }
+  .vC .icon { width: 52px; height: 52px; background: var(--hub-color-surface-raised); border: 1px solid var(--hub-color-line); }
+  .vC .icon svg { width: 26px; height: 26px; }
+  .vC .band .ver { position: absolute; top: 8px; right: 10px; }
+  .vC .band .badge { position: absolute; top: 8px; left: 10px; }
+  .vC .txt { padding: var(--hub-space-3) var(--hub-space-3) 0; display: grid; gap: 4px; text-align: center; }
+  .vC .desc { min-height: 2.8em; font-size: var(--hub-text-sm); }
+  .vC .foot { margin-top: auto; padding: var(--hub-space-3); display: grid; gap: 6px; }
+  .vC .foot button { width: 100%; }
+  .vC .foot .status { justify-content: center; white-space: normal; text-align: center; min-height: 28px; }
+
+  /* ---------- Prototype bar (not part of the design) ---------- */
+  .pbar { position: fixed; z-index: 20; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; align-items: center;
+          padding: 6px; border-radius: 999px; background: #111; color: #fff; box-shadow: 0 6px 24px rgb(0 0 0 / .45); font: 12px/1 system-ui, sans-serif; }
+  .pbar button { all: unset; cursor: pointer; padding: 7px 12px; border-radius: 999px; background: #2a2a2a; }
+  .pbar button:hover { background: #3a3a3a; }
+  .pbar .lbl { padding: 0 6px; min-width: 150px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="pbar">
+  <button data-p="prev">‹</button><span class="lbl" id="vlabel"></span><button data-p="next">›</button>
+  <button data-p="scheme" id="pscheme"></button>
+  <button data-p="width" id="pwidth"></button>
+  <button data-p="reg" id="preg"></button>
+</div>
+<script>
+const I = {
+  grid: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  panel: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+  eraser: '<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
+  calendar: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+  clipboard: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+  mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  chart: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  book: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
+  printer: '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  pencil: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  cloudOff: '<path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/>',
+  package: '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+};
+const ico = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
+
+// Every state the Catalogue has today (plugin-catalogue.ts): installable, installing, install failed,
+// installed (Uninstall), uninstalling, and the three blocked reasons. Plus one long name and description.
+const BLOCKED = { 'not-for-this-computer': 'Not for this computer', 'needs-sign-in': 'Needs sign-in', 'needs-different-hub': 'Needs a different Hub' };
+const P = [
+  { id: 'eraser', icon: 'eraser', name: 'PDF Watermark Eraser', desc: 'Remove watermarks and stamps from scanned worksheets before you print them.', version: '1.0.1', installed: '1.0.1', job: 'none' },
+  { id: 'timetable', icon: 'calendar', name: 'Timetable Builder', desc: 'Build next term\'s class timetable from teacher availability and room bookings.', version: '2.3.0', job: 'none' },
+  { id: 'report', icon: 'pencil', name: 'Report Card Writer', desc: 'Draft report card comments from marks and teacher notes.', version: '0.9.2', job: 'installing' },
+  { id: 'attend', icon: 'clipboard', name: 'Attendance', desc: 'Take the register for each lesson.', version: '1.4.0', installed: '1.4.0', job: 'uninstalling' },
+  { id: 'letters', icon: 'mail', name: 'Parent Letters', desc: 'Write and translate letters home in English and Chinese, and print a copy for each class.', version: '1.1.0', job: 'install-failed' },
+  { id: 'exam', icon: 'printer', name: 'Exam Paper Printer', desc: 'Lay out exam papers and answer sheets for the print room.', version: '3.0.0', blocked: 'not-for-this-computer', job: 'none' },
+  { id: 'staff', icon: 'users', name: 'Staff Directory', desc: 'Find a colleague\'s extension, room and timetable.', version: '1.0.0', blocked: 'needs-sign-in', job: 'none' },
+  { id: 'marks', icon: 'chart', name: 'Marks Analysis', desc: 'Compare a class\'s marks with the form and see which questions went wrong.', version: '2.0.0', blocked: 'needs-different-hub', job: 'none' },
+  { id: 'vocab', icon: 'book', name: 'Cantonese–English Vocabulary Flashcard and Dictation Practice Generator', desc: 'Turn any word list into printable flashcards, spaced-repetition decks and timed dictation exercises with audio, for every form from S1 to S6, with answer keys and a progress sheet for each student.', version: '12.10.3', job: 'none' },
+  { id: 'music', icon: 'music', name: 'Music Room Booking', desc: 'Book the music rooms and instruments.', version: '1.2.0', installed: '1.2.0', job: 'none' },
+];
+const VARIANTS = { A: 'Store cards', B: 'Wide tiles, sectioned', C: 'Icon posters' };
+const REGS = ['listed', 'empty', 'unreachable', 'checking'];
+const WIDTHS = [960, 1280, 'fit'];
+const q = new URLSearchParams(location.search);
+const S = {
+  variant: VARIANTS[q.get('variant')] ? q.get('variant') : 'A',
+  scheme: q.get('scheme') === 'dark' ? 'dark' : 'light',
+  width: WIDTHS.map(String).includes(q.get('width')) ? (q.get('width') === 'fit' ? 'fit' : +q.get('width')) : 960,
+  reg: REGS.includes(q.get('reg')) ? q.get('reg') : 'listed',
+};
+
+// What the card shows for its state: { status: html, action: html }. Mirrors renderJob / renderAction.
+function state(p) {
+  const st = (cls, inner) => `<span class="status ${cls}">${inner}</span>`;
+  if (p.job === 'installing') return { status: st('', '<span class="spin"></span>Installing…'), action: '' };
+  if (p.job === 'uninstalling') return { status: st('', '<span class="spin"></span>Uninstalling…'), action: '' };
+  if (p.job === 'install-failed') return {
+    status: st('err', `${ico('alert')}<span>Install failed: the download did not finish · <a class="link" data-act="diag">Export diagnostics</a></span>`),
+    action: `<button data-act="install" data-id="${p.id}">Retry</button>` };
+  if (p.blocked) return { status: st('warn', `${ico('lock')}${BLOCKED[p.blocked]}`), action: '' };
+  if (p.installed) return { status: st('ok', `${ico('check')}Installed`), action: `<button data-act="uninstall" data-id="${p.id}">Uninstall</button>` };
+  return { status: '', action: `<button data-variant="primary" data-act="install" data-id="${p.id}">Install</button>` };
+}
+const ver = (p) => `<span class="ver">v${p.version}</span>`;
+const titled = (p) => `title="${p.name}"`;
+
+function cardA(p) {
+  const s = state(p);
+  return `<article class="card ${p.blocked ? 'blocked' : ''}">
+    <div class="top"><span class="icon">${ico(p.icon)}</span><div><h3 class="name" ${titled(p)}>${p.name}</h3>${ver(p)}</div></div>
+    <p class="desc">${p.desc}</p>
+    <div class="foot">${s.status}${s.action}</div></article>`;
+}
+function cardB(p) {
+  const s = state(p);
+  return `<article class="card ${p.blocked ? 'blocked' : ''}">
+    <span class="icon">${ico(p.icon)}</span>
+    <div class="mid"><div class="nl"><h4 class="name" ${titled(p)}>${p.name}</h4>${ver(p)}</div><p class="desc">${p.desc}</p></div>
+    <div class="side">${s.action}${s.status}</div></article>`;
+}
+function cardC(p) {
+  const s = state(p);
+  return `<article class="card ${p.blocked ? 'blocked' : ''}">
+    <div class="band">${ver(p)}<span class="icon">${ico(p.icon)}</span></div>
+    <div class="txt"><h3 class="name" ${titled(p)}>${p.name}</h3><p class="desc">${p.desc}</p></div>
+    <div class="foot">${s.status}${s.action}</div></article>`;
+}
+
+function catalogue() {
+  if (S.reg === 'checking') return `<div class="notice" role="status"><span class="spin" style="width:24px;height:24px"></span>Checking the Registry…</div>`;
+  if (S.reg === 'unreachable') return `<div class="notice" role="alert">${ico('cloudOff')}<b>Can't reach the Registry</b><button data-act="retry">Retry</button></div>`;
+  if (S.reg === 'empty') return `<div class="notice">${ico('package')}The Registry offers no Plugins</div>`;
+  if (S.variant === 'B') {
+    const inst = P.filter((p) => p.installed), rest = P.filter((p) => !p.installed);
+    return `<h3>Installed</h3><div class="grid">${inst.map(cardB).join('')}</div>
+            <h3>Available</h3><div class="grid">${rest.map(cardB).join('')}</div>`;
+  }
+  return `<div class="grid">${P.map(S.variant === 'A' ? cardA : cardC).join('')}</div>`;
+}
+
+function render() {
+  const installed = P.filter((p) => p.installed);
+  document.getElementById('app').innerHTML = `<div class="win" style="width:${S.width === 'fit' ? '100%' : S.width + 'px'}">
+    <nav class="sw"><div class="brand"><span class="logo"><i></i></span><span class="word">Hawkeye <span>Hub</span></span>
+      <span class="acts"><button class="bare ib" aria-current="page" title="Plugin Catalogue">${ico('grid')}</button><button class="bare ib" title="Settings">${ico('settings')}</button></span></div>
+      <div class="scroll"><div class="sec">Plugins</div><ul>${installed.map((p) => `<li>${ico(p.icon)}<span>${p.name}</span></li>`).join('')}</ul></div></nav>
+    <div class="content"><header class="strip"><button class="bare ib">${ico('panel')}</button>Plugin Catalogue</header>
+      <div class="body"><main class="view v${S.variant}">${catalogue()}</main></div></div></div>`;
+  document.getElementById('vlabel').textContent = `${S.variant} (${VARIANTS[S.variant]})`;
+  document.getElementById('pscheme').textContent = S.scheme === 'dark' ? 'Dark' : 'Light';
+  document.getElementById('pwidth').textContent = S.width === 'fit' ? 'Width: fit' : `Window ${S.width}px`;
+  document.getElementById('preg').textContent = `Registry: ${S.reg}`;
+  history.replaceState(null, '', `?${new URLSearchParams(S)}`);
+}
+
+// Force hawkeye.css's dark block on or off, whatever the OS says.
+function applyScheme() {
+  for (const sheet of document.styleSheets) for (const rule of sheet.cssRules)
+    if (rule instanceof CSSMediaRule && rule.conditionText.includes('prefers-color-scheme'))
+      rule.media.mediaText = S.scheme === 'dark' ? 'all' : 'not all';
+  document.documentElement.dataset.scheme = S.scheme;
+  document.documentElement.style.colorScheme = S.scheme;
+}
+
+const job = (p, kind, then) => { p.job = kind; render(); setTimeout(() => { p.job = 'none'; then(); render(); }, 2500); };
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act], [data-p]');
+  if (!b || b.disabled) return;
+  const p = P.find((x) => x.id === b.dataset.id);
+  switch (b.dataset.act ?? b.dataset.p) {
+    case 'install': job(p, 'installing', () => { p.installed = p.version; }); return;
+    case 'uninstall': job(p, 'uninstalling', () => { delete p.installed; }); return;
+    case 'retry': S.reg = 'checking'; setTimeout(() => { S.reg = 'listed'; render(); }, 1500); break;
+    case 'prev': case 'next': {
+      const keys = Object.keys(VARIANTS), d = b.dataset.p === 'next' ? 1 : keys.length - 1;
+      S.variant = keys[(keys.indexOf(S.variant) + d) % keys.length]; break;
+    }
+    case 'scheme': S.scheme = S.scheme === 'dark' ? 'light' : 'dark'; applyScheme(); break;
+    case 'width': S.width = WIDTHS[(WIDTHS.indexOf(S.width) + 1) % WIDTHS.length]; break;
+    case 'reg': S.reg = REGS[(REGS.indexOf(S.reg) + 1) % REGS.length]; break;
+    default: return;
+  }
+  render();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') document.querySelector(`[data-p="${e.key === 'ArrowLeft' ? 'prev' : 'next'}"]`).click();
+});
+addEventListener('load', () => { applyScheme(); render(); });
+render();
+</script>
+</body>
+</html>
