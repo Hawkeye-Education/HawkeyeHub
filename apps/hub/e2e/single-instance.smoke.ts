@@ -30,7 +30,9 @@ test("a second launch with the same data folder exits and leaves the first windo
 
   expect(await launchSecondHub(dataDir)).toBe(0);
 
-  await expect(hubChrome.getByText("Hawkeye Hub")).toBeVisible();
+  await expect(
+    hubChrome.getByRole("banner").getByText("Hawkeye Hub"),
+  ).toBeVisible();
   const windowCount = await hub.evaluate(
     ({ BaseWindow }) => BaseWindow.getAllWindows().length,
   );

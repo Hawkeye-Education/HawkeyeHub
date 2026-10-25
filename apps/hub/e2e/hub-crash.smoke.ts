@@ -149,7 +149,9 @@ test("a crashed Hub Chrome renderer is logged and the Hub Chrome comes back", as
   dataDir,
 }) => {
   const hubChrome = await hub.firstWindow();
-  await expect(hubChrome.getByText("Hawkeye Hub")).toBeVisible();
+  await expect(
+    hubChrome.getByRole("banner").getByText("Hawkeye Hub"),
+  ).toBeVisible();
   await stubMessageBox(hub);
 
   await crashHubChrome(hub);
@@ -184,7 +186,9 @@ const EXPORT_DIAGNOSTICS = 0;
 /** Crashes the Hub Chrome 3 times, so the Hub gives up and shows its box. */
 async function crashUntilGivenUp(hub: ElectronApplication): Promise<void> {
   const hubChrome = await hub.firstWindow();
-  await expect(hubChrome.getByText("Hawkeye Hub")).toBeVisible();
+  await expect(
+    hubChrome.getByRole("banner").getByText("Hawkeye Hub"),
+  ).toBeVisible();
   const language = await displayLanguageOf(hubChrome);
   await stubMessageBox(hub);
   await crashHubChrome(hub);
@@ -272,7 +276,9 @@ test("the next start after a crash opens the Hub as usual, with no prompt", asyn
   const nextHub = await launchHub(dataDir);
   try {
     const hubChrome = await nextHub.firstWindow();
-    await expect(hubChrome.getByText("Hawkeye Hub")).toBeVisible();
+    await expect(
+      hubChrome.getByRole("banner").getByText("Hawkeye Hub"),
+    ).toBeVisible();
     // A prompt would be a second window or a native dialog, and a dialog would keep the Hub
     // Chrome from showing.
     const windowCount = await nextHub.evaluate(

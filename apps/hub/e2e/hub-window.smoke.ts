@@ -9,7 +9,9 @@ test("the Hub shows one window whose Hub Chrome says Hawkeye Hub", async ({
 }) => {
   const hubChrome = await hub.firstWindow();
 
-  await expect(hubChrome.getByText("Hawkeye Hub")).toBeVisible();
+  await expect(
+    hubChrome.getByRole("banner").getByText("Hawkeye Hub"),
+  ).toBeVisible();
   const titles = await hub.evaluate(({ BaseWindow }) =>
     BaseWindow.getAllWindows().map((window) => window.getTitle()),
   );

@@ -13,6 +13,7 @@ export const STRINGS = {
   "en-HK": {
     plugins: "Plugins",
     noPluginOpen: "No Plugin is open",
+    hubName: "Hawkeye Hub",
     close: (name: string) => `Close ${name}`,
     closing: "Closing…",
     closeQuestion: (name: string) => `Close ${name}?`,
@@ -120,6 +121,7 @@ export const STRINGS = {
   "zh-HK": {
     plugins: "外掛程式",
     noPluginOpen: "未有開啟任何外掛程式",
+    hubName: "Hawkeye Hub",
     close: (name: string) => `關閉 ${name}`,
     closing: "正在關閉…",
     closeQuestion: (name: string) => `關閉 ${name}？`,
