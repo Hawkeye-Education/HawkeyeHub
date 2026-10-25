@@ -134,6 +134,7 @@ test("the Catalogue opens from the Plugin Switcher and lists the Registry's Plug
     const strings = STRINGS[await displayLanguageOf(hubChrome)];
 
     await hubChrome.getByRole("button", { name: strings.catalogue }).click();
+    await expect(hubChrome.getByRole("banner")).toHaveText(strings.catalogue);
 
     const catalogue = hubChrome.locator("plugin-catalogue");
     await expect(catalogue.getByRole("heading", { level: 3 })).toHaveText(

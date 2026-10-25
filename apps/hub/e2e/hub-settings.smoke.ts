@@ -69,6 +69,8 @@ test("a Colour Scheme applies on Save, in open Plugin UIs too, and is kept after
   const timer = await pluginPage(first.pages, "class-timer");
 
   await hubChrome.getByRole("button", { name: words.settings }).click();
+  // The header strip titles Settings, with no Assistant button.
+  await expect(hubChrome.getByRole("banner")).toHaveText(words.settings);
   await hubChrome.getByRole("radio", { name: chosen }).check();
   expect(await drawsDark(hubChrome)).toBe(osDark);
   const textBefore = await textColourOf(hubChrome);

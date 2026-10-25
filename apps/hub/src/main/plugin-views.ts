@@ -15,6 +15,7 @@ import {
 } from "electron";
 import {
   ASSISTANT_PANEL_WIDTH_PX,
+  HEADER_STRIP_HEIGHT_PX,
   SWITCHER_WIDTH_PX,
   type BusyReason,
   type DisplayLanguage,
@@ -65,7 +66,7 @@ const LOAD_FAILURE_SETTLE_MS = 500;
 export interface PluginViews {
   /** Creates, shows, hides and destroys views until they match `snapshot`. */
   follow(snapshot: HubChromeSnapshot): void;
-  /** Lays every view out beside the Plugin Switcher, at the window's current size. */
+  /** Lays every view out beside the Plugin Switcher and below the header strip, at the window's current size. */
   layout(): void;
 }
 
@@ -102,16 +103,16 @@ export function createPluginViews(
 
   // Whether the front Plugin's Assistant Panel is open, as the latest snapshot says.
   let panelOpen = false;
-  // Beside the Plugin Switcher, and left of the Assistant Panel while it is open. Only the front
-  // view shows, so every view takes the front one's bounds.
+  // Beside the Plugin Switcher, below the header strip, and left of the Assistant Panel while it
+  // is open. Only the front view shows, so every view takes the front one's bounds.
   const contentArea = (): Rectangle => {
     const { width, height } = contentAreaOf(window);
     const panel = panelOpen ? ASSISTANT_PANEL_WIDTH_PX : 0;
     return {
       x: SWITCHER_WIDTH_PX,
-      y: 0,
+      y: HEADER_STRIP_HEIGHT_PX,
       width: width - SWITCHER_WIDTH_PX - panel,
-      height,
+      height: height - HEADER_STRIP_HEIGHT_PX,
     };
   };
 

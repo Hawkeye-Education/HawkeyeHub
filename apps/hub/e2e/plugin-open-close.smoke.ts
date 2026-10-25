@@ -16,7 +16,10 @@ import {
   test,
   type DisplayLanguage,
 } from "./hub";
-import { SWITCHER_WIDTH_PX } from "../src/shared/hub-chrome-ipc";
+import {
+  HEADER_STRIP_HEIGHT_PX,
+  SWITCHER_WIDTH_PX,
+} from "../src/shared/hub-chrome-ipc";
 
 // What the Hub Chrome says, in each Display Language; the Hub follows the OS's.
 const WORDS = {
@@ -88,6 +91,9 @@ test("a UI-only Plugin opens beside the Plugin Switcher with window.hub and <htm
   const { hub, hubChrome, words } = await hubWithTwoPlugins(dataDir);
   try {
     const language = await displayLanguageOf(hubChrome);
+    // The header strip titles the empty screen, then the front Plugin.
+    const strip = hubChrome.getByRole("banner");
+    await expect(strip).toHaveText("Hawkeye Hub");
 
     await pluginButton(hubChrome, words.timer).click();
 
@@ -108,7 +114,8 @@ test("a UI-only Plugin opens beside the Plugin Switcher with window.hub and <htm
       "page",
     );
     await expect(hubChrome.getByText(words.noPluginOpen)).toBeHidden();
-    // The Plugin UI fills the content area beside the Plugin Switcher.
+    await expect(strip).toHaveText(words.timer);
+    // The Plugin UI fills the content area beside the Plugin Switcher and below the header strip.
     const [contentArea] = await hub.evaluate(({ BaseWindow }) =>
       BaseWindow.getAllWindows().map((window) => window.getContentBounds()),
     );
@@ -120,7 +127,7 @@ test("a UI-only Plugin opens beside the Plugin Switcher with window.hub and <htm
       })),
     ).toEqual({
       width: contentArea.width - SWITCHER_WIDTH_PX,
-      height: contentArea.height,
+      height: contentArea.height - HEADER_STRIP_HEIGHT_PX,
     });
   } finally {
     await hub.close();

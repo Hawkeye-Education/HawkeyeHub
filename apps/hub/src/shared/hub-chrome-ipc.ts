@@ -24,6 +24,9 @@ export type DisplayLanguage = (typeof DISPLAY_LANGUAGES)[number];
 /** The Plugin Switcher's width: the Hub Chrome draws it, main lays Plugin UIs out beside it. */
 export const SWITCHER_WIDTH_PX = 240;
 
+/** The header strip's height: the Hub Chrome draws it, main lays Plugin UIs out below it. */
+export const HEADER_STRIP_HEIGHT_PX = 40;
+
 /**
  * Why the Hub cannot run an installed Plugin (ADRs 0002, 0005): it needs a Staff Identity and
  * there is no Auth Provider, or its `hubApi` range excludes this Hub's Hub API version.
