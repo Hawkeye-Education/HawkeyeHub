@@ -8,7 +8,18 @@ export const enHK = {
       "That file isn't a Google service-account key. Choose the .json downloaded for the service account. Nothing was saved.",
   },
   loading: "Reading the tutor sheet…",
-  loadFailed: "The tutor sheet couldn't be read.",
+  failed: {
+    keyRejected:
+      "The key isn't valid: Google refused it. Replace it with a current key for the service account.",
+    noAccess:
+      "This key can't see the tutor sheet. Share the sheet with {{email}}, then Retry.",
+    unreachable:
+      "The tutor sheet couldn't be reached. Check the internet connection, then Retry.",
+    stale: "Refresh failed, so this is the roster as it was last read.",
+  },
+  retry: "Retry",
+  replaceKey: "Replace key",
+  settings: "Settings",
   refresh: "Refresh",
   filters: {
     level: "Level",

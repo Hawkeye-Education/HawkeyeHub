@@ -18,6 +18,21 @@ main {
   align-items: center;
   gap: var(--hub-space-3);
 }
+.grow {
+  flex: 1;
+}
+#settings[open] {
+  display: flex;
+  flex-direction: column;
+  align-items: end;
+  gap: var(--hub-space-1);
+}
+/* The stale banner: the table below is the last good read, not the sheet as it is now. */
+.banner {
+  padding: var(--hub-space-2) var(--hub-space-3);
+  border-inline-start: 3px solid var(--hub-color-warning);
+  background: var(--hub-color-surface-raised);
+}
 #setup {
   max-width: 40rem;
 }

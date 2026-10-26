@@ -9,7 +9,28 @@
   </head>
   <body>
     <main class="stack">
-      <p id="status" role="status"></p>
+      <div class="row">
+        <p id="status" class="grow" role="status"></p>
+        <!-- Replace key, always reachable once a key is stored. The Hub draws no dialog (ADR 0013). -->
+        <details id="settings" hidden>
+          <summary id="settings-label"></summary>
+          <button id="settings-replace-key" type="button"></button>
+        </details>
+      </div>
+
+      <!-- Why the last read failed, and what staff can do about it. -->
+      <section id="problem" class="stack-tight" role="alert" hidden>
+        <p id="stale" class="banner" hidden></p>
+        <p id="problem-message"></p>
+        <div class="row">
+          <button id="retry" type="button" data-variant="primary"></button>
+          <button
+            id="replace-key"
+            type="button"
+            data-variant="primary"
+          ></button>
+        </div>
+      </section>
 
       <section id="setup" class="stack" hidden>
         <h1 id="setup-title"></h1>

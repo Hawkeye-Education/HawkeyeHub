@@ -49,6 +49,24 @@ export class SheetReadFailed extends Error {
   }
 }
 
+/** Why a read failed, as staff can act on it: replace the key, share the sheet, or try again. */
+export type ReadFailure = "keyRejected" | "noAccess" | "unreachable";
+
+/** What `readSheet`'s rejection means for staff. */
+export function readFailure(e: unknown): ReadFailure {
+  // Anything but an HTTP error is fetch's TypeError (no network) or a body that isn't Google's
+  // shape (a portal page, a cut-off response): both worth a Retry.
+  if (!(e instanceof SheetReadFailed)) return "unreachable";
+  const { step, status } = e;
+  // The token endpoint answers a revoked, deleted or garbled key with 400 invalid_grant, or 401.
+  if (step === "token")
+    return status === 400 || status === 401 ? "keyRejected" : "unreachable";
+  if (status === 401) return "keyRejected";
+  // The service account was never given the sheet, or the sheet is gone: 403 or 404.
+  if (status === 403 || status === 404) return "noAccess";
+  return "unreachable"; // 5xx, and 429 rate limiting
+}
+
 const Token = z.object({ access_token: z.string().min(1) });
 // FORMATTED_VALUE (the default) gives every cell as a string. Google leaves out `values` for an
 // empty range and trailing blank cells in a row; parseRows reads a short row as blanks.
