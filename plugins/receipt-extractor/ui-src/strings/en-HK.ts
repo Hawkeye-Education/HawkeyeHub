@@ -6,7 +6,7 @@ export const enHK = {
   busy: "Extracting receipts. Closing now loses this run.",
   summary: "Done: {{receipts}} of {{total}} receipts extracted.",
   page: "{{name}}, page {{page}}",
-  fallback: "No receipt found: whole photo kept",
+  fallback: "No receipt found: kept whole",
   failed: {
     unsupported: "Not a JPEG, PNG or PDF",
     encrypted: "Password protected",
