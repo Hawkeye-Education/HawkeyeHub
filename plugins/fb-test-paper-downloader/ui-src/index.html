@@ -20,9 +20,18 @@
       <section class="stack">
         <div class="row">
           <button id="sign-in" type="button"></button>
+          <button id="update" type="button" data-variant="primary"></button>
+          <button id="stop" type="button" hidden></button>
+          <label
+            ><input id="stop-at-known" type="checkbox" />
+            <span id="stop-at-known-label"></span
+          ></label>
         </div>
+        <progress id="progress" value="0" max="1"></progress>
         <p id="status" role="status"></p>
       </section>
+
+      <hub-log id="log"></hub-log>
     </main>
   </body>
 </html>
