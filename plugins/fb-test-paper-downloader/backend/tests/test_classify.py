@@ -40,8 +40,8 @@ def test_secondary_levels_are_not_primary() -> None:
 @pytest.mark.parametrize(
     ("text", "images"),
     [
-        ("讓我們熱烈歡迎新成員！ Chan Tai Man,", 5),
-        ("让我们热烈欢迎新成员！", 0),
+        ("讓我們熱烈歡迎新成員! Chan Tai Man,", 5),
+        ("让我们热烈欢迎新成员!", 0),
         ("有冇答案", 1),
         ("想要答案", 0),
     ],
