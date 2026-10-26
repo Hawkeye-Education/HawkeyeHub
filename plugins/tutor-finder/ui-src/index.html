@@ -9,8 +9,32 @@
   </head>
   <body>
     <main class="stack">
-      <h1 id="title"></h1>
-      <p id="placeholder"></p>
+      <p id="status" role="status"></p>
+
+      <section id="setup" class="stack" hidden>
+        <h1 id="setup-title"></h1>
+        <p id="setup-hint"></p>
+        <label class="stack-tight">
+          <span id="key-file-label"></span>
+          <input id="key-file" type="file" accept=".json,application/json" />
+        </label>
+        <p id="setup-error" role="alert"></p>
+      </section>
+
+      <section id="roster" class="layout" hidden>
+        <!-- The filters (#177) fill this column. -->
+        <aside id="filters" class="stack"></aside>
+        <div class="stack results">
+          <div class="row">
+            <h1 id="title"></h1>
+            <button id="refresh" type="button"></button>
+          </div>
+          <div class="scroller">
+            <table id="table"></table>
+          </div>
+          <p id="tally"></p>
+        </div>
+      </section>
     </main>
   </body>
 </html>
