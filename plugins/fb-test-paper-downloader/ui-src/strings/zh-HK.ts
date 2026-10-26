@@ -15,20 +15,22 @@ export const zhHK: typeof enHK = {
   stop: "停止",
   pickOutput: "請先選擇輸出資料夾。",
   busy: "正在下載試卷。現在關閉會停止下載；已儲存的試卷會保留。",
+  savingFiles: "正在儲存「檔案」分頁：第 {{done}} 個檔案，共 {{total}} 個。",
   scanning: "正在掃描群組動態：找到 {{found}} 個新帖子。",
   downloading: "正在下載第 {{done}} 個帖子，共 {{total}} 個。",
   result: {
     saved: "已儲存　{{item}}",
     "skipped-not-paper": "已略過　{{item}}：不是試卷",
+    "skipped-known": "已略過　{{item}}：已下載過",
     incomplete:
       "不完整　{{item}}：只取得 {{saved}} 張，約有 {{shown}} 張圖片；下次會再試",
     failed: "失敗　　{{item}}：{{detail}}",
   },
   summary: {
     finished:
-      "完成：已儲存 {{saved}} 個，非試卷 {{skippedNotPaper}} 個，不完整 {{incomplete}} 個，失敗 {{failed}} 個。",
+      "完成：檔案已儲存 {{filesSaved}} 個，已下載過 {{filesKnown}} 個，失敗 {{filesFailed}} 個；帖子已儲存 {{saved}} 個，非試卷 {{skippedNotPaper}} 個，不完整 {{incomplete}} 個，失敗 {{failed}} 個。",
     cancelled:
-      "已停止：已儲存 {{saved}} 個，非試卷 {{skippedNotPaper}} 個，不完整 {{incomplete}} 個，失敗 {{failed}} 個。",
+      "已停止：檔案已儲存 {{filesSaved}} 個，已下載過 {{filesKnown}} 個，失敗 {{filesFailed}} 個；帖子已儲存 {{saved}} 個，非試卷 {{skippedNotPaper}} 個，不完整 {{incomplete}} 個，失敗 {{failed}} 個。",
     "bad-streak":
       "連續 4 個帖子下載失敗或不完整，已停止：Facebook 可能正在限制此帳戶。請等數小時後再按「更新」。（已儲存 {{saved}} 個，不完整 {{incomplete}} 個，失敗 {{failed}} 個。）",
   },

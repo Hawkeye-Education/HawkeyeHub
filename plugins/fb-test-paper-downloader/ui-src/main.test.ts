@@ -94,6 +94,9 @@ async function openWithOutput(displayLanguage = "en-HK"): Promise<FakeHub> {
 }
 
 const RESULT = {
+  filesSaved: 1,
+  filesKnown: 1,
+  filesFailed: 1,
   saved: 1,
   skippedNotPaper: 1,
   incomplete: 1,
@@ -166,11 +169,53 @@ test("Update scans the feed, logs one line per post and sums up, while Busy", as
   ]);
   expect($<HTMLProgressElement>("progress").value).toBe(1);
   expect(text("status")).toBe(
-    "Done: 1 saved, 1 not papers, 1 incomplete, 1 failed.",
+    "Done: files 1 saved, 1 already downloaded, 1 failed; posts 1 saved, 1 not papers, 1 incomplete, 1 failed.",
   );
   expect(fake.busy.state).toEqual({ kind: "idle" });
   expect($<HTMLButtonElement>("update").disabled).toBe(false);
   expect($<HTMLButtonElement>("sign-in").disabled).toBe(false);
+});
+
+test("Update saves the Files tab first, one log line per file", async () => {
+  const fake = await openWithOutput();
+  const status: string[] = [];
+  fake.backend.handle("update", () => {
+    const file = { phase: "files", total: 3 };
+    fake.backend.emit("progress", {
+      ...file,
+      done: 1,
+      item: "P.4考試二.數學卷.pdf",
+      result: { kind: "saved" },
+    });
+    status.push(text("status"));
+    fake.backend.emit("progress", {
+      ...file,
+      done: 2,
+      item: "P1 中文.pdf",
+      result: { kind: "skipped-known" },
+    });
+    fake.backend.emit("progress", {
+      ...file,
+      done: 3,
+      item: "P2 英文.docx",
+      result: { kind: "failed", detail: "no download route worked" },
+    });
+    return RESULT;
+  });
+
+  $("update").click();
+  await fake.settle();
+
+  expect(status).toEqual(["Saving the Files tab: file 1 of 3."]);
+  expect(logLines($("log"))).toEqual([
+    { tone: "success", text: "Saved       P.4考試二.數學卷.pdf" },
+    { tone: "info", text: "Skipped     P1 中文.pdf: already downloaded" },
+    {
+      tone: "danger",
+      text: "Failed      P2 英文.docx: no download route worked",
+    },
+  ]);
+  expect($<HTMLProgressElement>("progress").value).toBe(1);
 });
 
 test("Update sends the checkbox as staff left it", async () => {
@@ -214,7 +259,7 @@ test("Stop sends cancel, and the summary says the run stopped", async () => {
   await fake.settle();
 
   expect(text("status")).toBe(
-    "Stopped: 1 saved, 1 not papers, 1 incomplete, 1 failed.",
+    "Stopped: files 1 saved, 1 already downloaded, 1 failed; posts 1 saved, 1 not papers, 1 incomplete, 1 failed.",
   );
   expect($("stop").hidden).toBe(true);
   expect(fake.busy.state).toEqual({ kind: "idle" });

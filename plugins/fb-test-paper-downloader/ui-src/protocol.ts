@@ -7,20 +7,41 @@ export const SignInResult = z.strictObject({
   outcome: z.enum(["signed-in", "cancelled"]),
 });
 
+const Saved = z.strictObject({ kind: z.literal("saved") });
+const Failed = z.strictObject({
+  kind: z.literal("failed"),
+  detail: z.string(),
+});
+
+const FileResult = z.discriminatedUnion("kind", [
+  Saved,
+  // a file of that name is already on disk
+  z.strictObject({ kind: z.literal("skipped-known") }),
+  Failed,
+]);
+export type FileResult = z.infer<typeof FileResult>;
+
 const PostResult = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("saved") }),
+  Saved,
   z.strictObject({ kind: z.literal("skipped-not-paper") }),
   z.strictObject({
     kind: z.literal("incomplete"),
     saved: z.number().int(),
     shown: z.number().int(),
   }),
-  z.strictObject({ kind: z.literal("failed"), detail: z.string() }),
+  Failed,
 ]);
 export type PostResult = z.infer<typeof PostResult>;
 
-/** backend/update.py's ScanProgress | PostProgress. */
+/** backend/update.py's FilesProgress | ScanProgress | PostProgress. */
 export const Progress = z.discriminatedUnion("phase", [
+  z.strictObject({
+    phase: z.literal("files"),
+    done: z.number().int(),
+    total: z.number().int(),
+    item: z.string(),
+    result: FileResult,
+  }),
   // new posts queued so far: the feed's length is unknown until the scan ends
   z.strictObject({ phase: z.literal("scan"), found: z.number().int() }),
   z.strictObject({
@@ -33,6 +54,9 @@ export const Progress = z.discriminatedUnion("phase", [
 ]);
 
 export const UpdateResult = z.strictObject({
+  filesSaved: z.number().int(),
+  filesKnown: z.number().int(),
+  filesFailed: z.number().int(),
   saved: z.number().int(),
   skippedNotPaper: z.number().int(),
   incomplete: z.number().int(),
