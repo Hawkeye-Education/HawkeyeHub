@@ -5,6 +5,8 @@ import { installFakeHub, type FakeHub } from "@hawkeye-hub/fake-hub";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import manifest from "../manifest.json";
 import page from "./index.html?raw";
+import layout from "./layout.css?raw";
+import { PLATES } from "./plates";
 
 // The page's body only: happy-dom would fetch the head's stylesheet and script.
 const html = page.slice(
@@ -401,7 +403,7 @@ const method = (value: string): HTMLInputElement =>
 const language = (name: string): HTMLInputElement =>
   filter(`input[type=checkbox][value=${name}]`);
 
-test("the filters sit in order: level, how they teach, language", async () => {
+test("the filters sit in order: level, how they teach, district, language", async () => {
   await openWithKey([ROWS]);
 
   const controls = [...$("filters").querySelectorAll("select, input")].map(
@@ -411,6 +413,7 @@ test("the filters sit in order: level, how they teach, language", async () => {
     "select",
     "radio:face-to-face",
     "radio:online",
+    "checkbox:no-district",
     "checkbox:Cantonese",
     "checkbox:English",
     "checkbox:Mandarin",
@@ -634,6 +637,149 @@ test("a failed read logs nothing", async () => {
     expect($<HTMLButtonElement>("refresh").disabled).toBe(false);
   });
   for (const spy of logged) expect(spy).not.toHaveBeenCalled();
+});
+
+// --- District map (source SPEC §4.3) ------------------------------------------------------------
+
+describe("the district map", () => {
+  // Synthetic tutors who travel: Dee to Tai Po, Fay with no district recorded, Gus to Central.
+  const travellers = [
+    [
+      "Dee",
+      "Ng",
+      "64440000",
+      "Female",
+      "Face-to-face",
+      "Tai Po",
+      "English",
+      "SAT",
+      "SAT $400",
+    ],
+    [
+      "Fay",
+      "Lo",
+      "66660000",
+      "Female",
+      "Face-to-face, Online",
+      "",
+      "English",
+      "SAT",
+      "SAT $250",
+    ],
+    [
+      "Gus",
+      "Ip",
+      "67770000",
+      "Male",
+      "Face-to-face",
+      "Central and Western",
+      "Cantonese",
+      "SAT",
+      "SAT $200",
+    ],
+  ];
+  const roster = [...ROWS, ...travellers];
+
+  const plate = (id: string): SVGPathElement => {
+    const el = $("filters").querySelector<SVGPathElement>(
+      `svg path[data-district=${id}]`,
+    );
+    if (el === null) throw new Error(`no plate ${id}`);
+    return el;
+  };
+  const tap = (id: string): void => {
+    plate(id).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  };
+  const region = (name: string): HTMLButtonElement => {
+    const found = [
+      ...$("filters").querySelectorAll<HTMLButtonElement>("button"),
+    ].find((b) => b.textContent === `+ ${name}`);
+    if (found === undefined) throw new Error(`no + ${name} button`);
+    return found;
+  };
+  const noDistrict = (): HTMLInputElement =>
+    filter("input[type=checkbox][value=no-district]");
+
+  test("every plate is drawn as an inline SVG coloured only by --hub-* tokens", async () => {
+    await openWithKey([roster]);
+
+    const svg = filter("svg");
+    const plates = [...svg.querySelectorAll("path[data-district]")];
+    expect(plates.map((p) => p.getAttribute("data-district"))).toEqual(
+      Object.keys(PLATES),
+    );
+    expect(plates.map((p) => p.getAttribute("d"))).toEqual(
+      Object.values(PLATES).map((p) => p.d),
+    );
+    expect(svg.querySelector("[fill], [stroke], [style]")).toBeNull();
+    expect(layout).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
+  });
+
+  test("the map is armed only by Face-to-face, and leaving Face-to-face clears it", async () => {
+    await openWithKey([roster]);
+
+    expect(plate("sha_tin").getAttribute("aria-disabled")).toBe("true");
+    expect(region("New Territories").disabled).toBe(true);
+    expect(noDistrict().disabled).toBe(true);
+    tap("sha_tin");
+    expect(names()).toHaveLength(6);
+
+    tick(method("face-to-face"), true);
+    expect(plate("sha_tin").getAttribute("aria-disabled")).toBe("false");
+    tap("sha_tin");
+    expect(plate("sha_tin").getAttribute("aria-pressed")).toBe("true");
+    expect(names()).toEqual(["Mr Chan"]);
+    // Ann and Cat match level and language but cannot travel.
+    expect($("tally").textContent).toBe(
+      "1 tutor · 2 online-only hidden by district",
+    );
+
+    tick(method("online"), true);
+    expect(names()).toHaveLength(6);
+    expect($("tally").textContent).toBe("6 tutors");
+    tick(method("face-to-face"), true);
+    expect(plate("sha_tin").getAttribute("aria-pressed")).toBe("false");
+    expect(names()).toHaveLength(4);
+  });
+
+  test("a region shortcut selects its districts and again clears them; zero-match districts can still be tapped", async () => {
+    await openWithKey([roster]);
+    tick(method("face-to-face"), true);
+
+    region("New Territories").click();
+    expect(plate("tai_po").getAttribute("aria-pressed")).toBe("true");
+    expect(plate("islands").getAttribute("aria-pressed")).toBe("true");
+    expect(names()).toEqual(["Mr Chan", "Miss Ng"]);
+    region("New Territories").click();
+    expect(plate("tai_po").getAttribute("aria-pressed")).toBe("false");
+    expect(names()).toHaveLength(4);
+
+    expect(plate("islands").classList.contains("zero")).toBe(true);
+    expect(plate("sha_tin").classList.contains("zero")).toBe(false);
+    tap("islands");
+    expect(names()).toEqual([]);
+    expect($("tally").textContent).toBe(
+      "0 tutors · 2 online-only hidden by district",
+    );
+  });
+
+  test("the no-district checkbox adds the tutors who travel but recorded no district", async () => {
+    await openWithKey([roster]);
+    tick(method("face-to-face"), true);
+
+    expect(noDistrict().checked).toBe(false);
+    expect($("filters").textContent).toContain(
+      "1 can travel but never filled the field",
+    );
+    tick(noDistrict(), true);
+    expect(names()).toEqual(["Miss Lo"]);
+    tap("sha_tin");
+    expect(names()).toEqual(["Miss Lo", "Mr Chan"]);
+
+    tick(method("online"), true);
+    tick(method("face-to-face"), true);
+    expect(noDistrict().checked).toBe(false);
+  });
 });
 
 // --- Selection and the two WhatsApp messages (source SPEC §5–6) ------------------------------

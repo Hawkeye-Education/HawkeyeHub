@@ -12,7 +12,7 @@ import {
   type ReadFailure,
   type ServiceAccountKey,
 } from "./google";
-import { applyFilters, createFilters } from "./filters";
+import { createFilters } from "./filters";
 import { t } from "./i18n";
 import { matching, phoneMessage, profileMessage } from "./messages";
 import { parseRows, type Tutor } from "./parsing";
@@ -72,9 +72,13 @@ const filters = createFilters(byId("aside", "filters"), showRoster);
 let loaded = false;
 
 function showRoster(): void {
-  const shown = applyFilters(tutors, filters());
+  const { shown, suppressed } = filters.apply(tutors);
   table.show(shown);
-  tally.textContent = t("tally", { count: shown.length });
+  const count = t("tally", { count: shown.length });
+  tally.textContent =
+    suppressed === 0
+      ? count
+      : `${count} · ${t("suppressed", { count: suppressed })}`;
 }
 
 /** Reads the sheet with `key` and shows it. Every open does this once; Refresh and Retry do it again. */
@@ -150,7 +154,7 @@ let problemShown = false;
 writeMessages.addEventListener("click", () => {
   // Regenerated on every entry, in table order, priced by the level filter now. A picked tutor the
   // filters hide is still in the messages.
-  const { level } = filters();
+  const level = filters.level();
   const picked = tutors
     .filter((tutor) => selection.has(tutor.row))
     .map((tutor) => ({ tutor, offerings: matching(tutor, level) }));
