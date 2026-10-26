@@ -106,7 +106,7 @@ test("a UI-only Plugin opens beside the Plugin Switcher with window.hub and <htm
     ).toEqual({
       displayLanguage: language,
       lang: language,
-      hubKeys: ["displayLanguage", "busy", "files", "ai"],
+      hubKeys: ["displayLanguage", "busy", "files", "secrets", "ai"],
       hubFrozen: true,
     });
     await expect(pluginButton(hubChrome, words.timer)).toHaveAttribute(

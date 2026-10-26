@@ -8,6 +8,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { MessagePortMain } from "electron";
+import semver from "semver";
 import { z } from "zod";
 import type {
   BackendExit,
@@ -28,6 +29,7 @@ import {
   SPAWN_DETACHED,
   venvPython,
 } from "./platform";
+import type { SecretName } from "./plugin-secrets";
 import { pluginDataFolder, storeFolder } from "./stores";
 
 export interface Backend {
@@ -103,6 +105,17 @@ const PreloadText = z.string();
 // An SDK Backend's error data (PLUGIN_STANDARD.md §5.3). A raw JSON-RPC Backend may send none.
 const RpcData = z.object({ reason: RpcErrorReason });
 
+/** The first Hub API version with Plugin Secrets (ADR 0013). */
+const SECRETS_HUB_API = "1.4.0";
+
+/** Whether every Hub API version `hubApi` accepts has Plugin Secrets. */
+function requiresSecrets(hubApi: string): boolean {
+  const lowest = semver.minVersion(hubApi);
+  // Install refuses a range this Hub does not satisfy, so an installed one has a lowest version.
+  if (lowest === null) throw new Error(`No lowest version in ${hubApi}`);
+  return semver.gte(lowest, SECRETS_HUB_API);
+}
+
 /** The Hub's environment minus the locale: a Backend never relies on it (PLUGIN_STANDARD.md §5.5). */
 function backendEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(
@@ -115,6 +128,8 @@ function backendEnv(): NodeJS.ProcessEnv {
 export function startBackend(
   installed: InstalledPlugin,
   hubDataDir: AbsolutePath,
+  /** The Plugin's stored secrets, sent once in `initialize` (ADR 0013). */
+  secrets: ReadonlyMap<SecretName, string>,
   diagnostics: Diagnostics,
   pluginSession: PluginSession,
   /** Closes the whole Plugin, while it is still open: the Backend broke or failed to start. */
@@ -289,7 +304,18 @@ export function startBackend(
       jsonrpc: "2.0",
       id: INITIALIZE_ID,
       method: "initialize",
-      params: { dataDir, stores, hubApi: HUB_API_VERSION },
+      params: {
+        dataDir,
+        stores,
+        hubApi: HUB_API_VERSION,
+        // Only to a Plugin requiring Hub API 1.4.0, and only when one is stored: an SDK 1.0.0
+        // Backend refuses an `initialize` with a key it does not know, printing it to its log,
+        // and SDK 1.1.0 reads a missing one as none (ADR 0013).
+        ...(secrets.size > 0 &&
+          requiresSecrets(manifest.hubApi) && {
+            secrets: Object.fromEntries(secrets),
+          }),
+      },
     }),
   );
 

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { HUB_API_VERSION } from "./hub-api-version";
 
-test("the Hub implements Hub API 1.3.0, the version of @hawkeye-hub/hub-api", () => {
-  expect(HUB_API_VERSION).toBe("1.3.0");
+test("the Hub implements Hub API 1.4.0, the version of @hawkeye-hub/hub-api", () => {
+  expect(HUB_API_VERSION).toBe("1.4.0");
 });

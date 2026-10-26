@@ -37,7 +37,11 @@ export type HubError =
       readonly code: "folder-not-opened";
       readonly path: string;
       readonly message: string;
-    };
+    }
+  /** `hub.secrets`: the name is blank or has a character outside `[a-z0-9-]`. */
+  | { readonly code: "secret-name-invalid"; readonly name: string }
+  /** `hub.secrets.set`: the value is over 64 KiB of UTF-8. */
+  | { readonly code: "secret-too-large"; readonly name: string };
 
 export interface HubBackend {
   /** Queued until the Backend's `initialize` succeeds. Rejects with a `HubError`. */
@@ -106,6 +110,24 @@ export interface HubFiles {
   openFolder(path: string): Promise<void>;
 }
 
+/** What `hub.secrets.get` comes to: the stored value, or no secret by that name. */
+export type SecretLookup =
+  | { readonly kind: "stored"; readonly value: string }
+  | { readonly kind: "missing" };
+
+/**
+ * Plugin Secrets (ADR 0013): named strings the Hub keeps encrypted in the Plugin's own data.
+ * Names are non-blank `[a-z0-9-]`; values are strings up to 64 KiB. Every call rejects with a
+ * `HubError`. The Backend gets every stored secret in `initialize`, so a change reaches it at the
+ * next open.
+ */
+export interface HubSecrets {
+  get(name: string): Promise<SecretLookup>;
+  set(name: string, value: string): Promise<void>;
+  /** Removing a secret that is not stored does nothing. */
+  remove(name: string): Promise<void>;
+}
+
 /** Which model a chat uses: the Default AI Provider, or a provider and model by name. */
 export type AiModelChoice =
   | { readonly kind: "default" }
@@ -171,6 +193,7 @@ export interface Hub {
   readonly stores?: HubStores;
   readonly files: HubFiles;
   readonly ai: HubAi;
+  readonly secrets: HubSecrets;
 }
 
 declare global {

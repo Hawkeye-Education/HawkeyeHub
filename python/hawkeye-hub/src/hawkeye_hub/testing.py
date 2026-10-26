@@ -192,11 +192,16 @@ class RunningBackend:
 
 @contextmanager
 def run_backend(
-    backend_dir: Path, *, data_dir: Path, stores: Mapping[str, Path], hub_api: str
+    backend_dir: Path,
+    *,
+    data_dir: Path,
+    stores: Mapping[str, Path],
+    secrets: Mapping[str, str],
+    hub_api: str,
 ) -> Generator[RunningBackend]:
     """Starts `backend_dir/main.py` with the current interpreter, without LANG or LC_*, sends
     `initialize`, and on exit sends `shutdown`. The data and store folders are made, as the Hub
-    makes them."""
+    makes them, and `secrets` is left out of `initialize` when empty, as the Hub leaves it out."""
     data_dir.mkdir(parents=True, exist_ok=True)
     for folder in stores.values():
         folder.mkdir(parents=True, exist_ok=True)
@@ -218,6 +223,7 @@ def run_backend(
                 "dataDir": str(data_dir),
                 "stores": {name: str(path) for name, path in stores.items()},
                 "hubApi": hub_api,
+                **({"secrets": dict(secrets)} if secrets else {}),
             },
             INITIALIZE_TIMEOUT_S,
         )

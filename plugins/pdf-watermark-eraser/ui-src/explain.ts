@@ -21,8 +21,10 @@ export function explain(e: unknown): string {
     case "provider-missing":
     case "provider-rejected":
     case "provider-unreachable":
-      // This Plugin declares no stores and makes no AI calls. A HubError is a plain object by
-      // contract (hub-api), so this throws no Error.
+    case "secret-name-invalid":
+    case "secret-too-large":
+      // This Plugin declares no stores, makes no AI calls and keeps no secrets. A HubError is a
+      // plain object by contract (hub-api), so this throws no Error.
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw err;
     default: {

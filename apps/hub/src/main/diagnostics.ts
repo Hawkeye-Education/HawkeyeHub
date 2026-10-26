@@ -212,6 +212,9 @@ export type HubEvent =
   // The AI Provider key file could not be decrypted or parsed, so the Hub starts with no keys.
   // Never its contents.
   | { kind: "ai-keys-unreadable" }
+  // A Plugin's `plugin-secrets/<id>.bin` could not be decrypted or parsed, so it starts with no
+  // secrets. Never its contents, nor a secret's name.
+  | { kind: "plugin-secrets-unreadable"; plugin: PluginRef }
   // `assistant-models.json` was damaged, so every Plugin's Assistant is on Default. Never its
   // contents.
   | { kind: "assistant-models-unreadable" }
@@ -671,6 +674,12 @@ function summarizeHubEvent(event: HubEvent | PluginClosedAbnormally): {
         level: "warn",
         message: "AI Provider keys unreadable, starting with none",
         subject: NO_PLUGIN,
+      };
+    case "plugin-secrets-unreadable":
+      return {
+        level: "warn",
+        message: "Plugin Secrets unreadable, starting with none",
+        subject: subjectOf(event.plugin),
       };
     case "assistant-models-unreadable":
       return {
