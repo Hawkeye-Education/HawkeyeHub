@@ -1,12 +1,13 @@
-// Plugin Secrets (ADR 0013): each Plugin's named strings, kept in one file in the Hub's data folder,
-// `plugin-secrets/<plugin-id>.bin`, encrypted whole with `safeStorage` as `ai-keys.ts` keeps AI
-// Provider keys. Read once per open; the Plugin UI changes them through `hub.secrets`, and the
-// Backend gets them in `initialize`. No name or value is ever logged.
+// Plugin Secrets (ADR 0013): each Plugin's named strings, kept in one file in the Hub's data
+// folder, `plugin-secrets/<plugin-id>.bin`, encrypted whole with `safeStorage` as `ai-keys.ts`
+// keeps AI Provider keys. Read at each open; the Plugin UI changes them through `hub.secrets`, and
+// the Backend gets them in `initialize`. No name or value is ever logged.
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { HubError, SecretLookup } from "@hawkeye-hub/hub-api";
 import type { PluginId } from "@hawkeye-hub/plugin-format";
+import { fitsSecret, SECRET_NAME } from "@hawkeye-hub/plugin-format/secrets";
 import type { WebContents } from "electron";
 import { z } from "zod";
 import type { Branded } from "../shared/branded";
@@ -17,15 +18,12 @@ import type { HubEvent, PluginRef } from "./diagnostics";
 import { errorCode } from "./error-code";
 import type { AbsolutePath } from "./ids";
 
-/** The largest value `hub.secrets.set` stores, in UTF-8 bytes (ADR 0013). */
-export const MAX_SECRET_BYTES = 64 * 1024;
-
 export type SecretName = Branded<string, "SecretName">;
 
 // The check makes it the type, and the `as` grants the brand.
 const SecretNameSchema = z
   .string()
-  .regex(/^[a-z0-9-]+$/)
+  .regex(SECRET_NAME)
   .transform((raw) => raw as SecretName);
 
 const SecretsFileSchema = z.array(z.tuple([SecretNameSchema, z.string()]));
@@ -38,10 +36,8 @@ export class SecretRefused extends Error {
       { code: "secret-name-invalid" | "secret-too-large" }
     >,
   ) {
-    // The name only: never the value.
-    super(
-      `Secret call refused: ${refusal.code} ${JSON.stringify(refusal.name)}`,
-    );
+    // Never the name or value: an Error's message may reach a log.
+    super(`Secret call refused: ${refusal.code}`);
   }
 }
 
@@ -61,22 +57,35 @@ export interface PluginSecrets {
 }
 
 /**
- * The Plugin's secrets as stored now. A missing file is none. One that cannot be decrypted or
- * parsed (another OS user's, or one cut short) is none too, recorded once in hub.log without its
- * contents, and the Plugin asks staff again.
+ * Every Plugin's secrets, for one Hub run. `open` reads a Plugin's as stored now. A missing file is
+ * none. One that cannot be decrypted or parsed (another OS user's, or one cut short) is none too,
+ * recorded in hub.log without its contents once per Plugin per Hub run, and the Plugin asks staff
+ * again.
  */
-export function openPluginSecrets(
+export function createPluginSecrets(
   hubDataDir: AbsolutePath,
-  plugin: PluginRef,
   cipher: KeyCipher,
   recordHubEvent: (event: HubEvent) => void,
+): { open(plugin: PluginRef): PluginSecrets } {
+  const recorded = new Set<PluginId>();
+  return {
+    open: (plugin) =>
+      openPluginSecrets(hubDataDir, plugin.id, cipher, () => {
+        if (recorded.has(plugin.id)) return;
+        recorded.add(plugin.id);
+        recordHubEvent({ kind: "plugin-secrets-unreadable", plugin });
+      }),
+  };
+}
+
+function openPluginSecrets(
+  hubDataDir: AbsolutePath,
+  id: PluginId,
+  cipher: KeyCipher,
+  unreadable: () => void,
 ): PluginSecrets {
-  const file = pluginSecretsFile(hubDataDir, plugin.id);
-  const stored = new Map(
-    load(file, cipher, () => {
-      recordHubEvent({ kind: "plugin-secrets-unreadable", plugin });
-    }),
-  );
+  const file = pluginSecretsFile(hubDataDir, id);
+  const stored = new Map(load(file, cipher, unreadable));
   const nameOf = (raw: string): SecretName => {
     const parsed = SecretNameSchema.safeParse(raw);
     if (!parsed.success) {
@@ -102,7 +111,7 @@ export function openPluginSecrets(
     },
     set(raw, value) {
       const name = nameOf(raw);
-      if (Buffer.byteLength(value, "utf8") > MAX_SECRET_BYTES) {
+      if (!fitsSecret(value)) {
         throw new SecretRefused({ code: "secret-too-large", name });
       }
       stored.set(name, value);
@@ -127,12 +136,27 @@ function load(
     if (errorCode(error) === "ENOENT") return [];
     throw error;
   }
+  // Each step fails only on data that is not a secrets file; anything else propagates.
+  let text: string;
   try {
-    return SecretsFileSchema.parse(JSON.parse(cipher.decryptString(encrypted)));
+    // safeStorage throws an Error for ciphertext it cannot decrypt, such as another OS user's.
+    text = cipher.decryptString(encrypted);
   } catch {
     unreadable();
     return [];
   }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    unreadable();
+    return [];
+  }
+  const parsed = SecretsFileSchema.safeParse(json);
+  if (parsed.success) return parsed.data;
+  unreadable();
+  return [];
 }
 
 /** Serves `hub.secrets` to one Plugin UI's page over the Plugin preload's `SECRETS` channel. */
@@ -146,10 +170,10 @@ export function serveSecrets(
         return secrets.get(call.name);
       case "set":
         secrets.set(call.name, call.value);
-        return null;
+        return undefined;
       case "remove":
         secrets.remove(call.name);
-        return null;
+        return undefined;
       default:
         return call satisfies never;
     }
@@ -160,7 +184,8 @@ export function serveSecrets(
       try {
         return { kind: "done", value: answer(SecretCall.parse(raw)) };
       } catch (error) {
-        // A refusal is the Plugin's to handle; anything else rejects as the Hub failure it is.
+        // A refusal is the Plugin's to handle; anything else, such as a failed write, rejects as
+        // the Hub failure it is, as `hub.stores` does.
         if (error instanceof SecretRefused) {
           return { kind: "refused", refusal: error.refusal };
         }

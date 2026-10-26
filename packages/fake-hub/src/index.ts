@@ -11,6 +11,7 @@ import type {
   SecretLookup,
 } from "@hawkeye-hub/hub-api";
 import { parseManifest } from "@hawkeye-hub/plugin-format";
+import { fitsSecret, SECRET_NAME } from "@hawkeye-hub/plugin-format/secrets";
 
 /** What the UI sent: a request or a notification to the Backend. */
 export interface BackendCall {
@@ -97,8 +98,8 @@ export function installFakeHub(options: {
   let busy: BusyState = { kind: "idle" };
   const secrets = new Map<string, string>();
   // The Hub's own rules (ADR 0013): a refusal is a rejected `HubError`, as the preload sends it.
-  const secretName = (name: string): void => {
-    if (!/^[a-z0-9-]+$/.test(name)) {
+  const assertSecretName = (name: string): void => {
+    if (!SECRET_NAME.test(name)) {
       // A HubError is a plain object by contract (hub-api).
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw { code: "secret-name-invalid", name } satisfies HubError;
@@ -175,7 +176,7 @@ export function installFakeHub(options: {
     secrets: Object.freeze({
       get: (name: string) =>
         new Promise<SecretLookup>((resolve) => {
-          secretName(name);
+          assertSecretName(name);
           const value = secrets.get(name);
           resolve(
             value === undefined
@@ -185,8 +186,8 @@ export function installFakeHub(options: {
         }),
       set: (name: string, value: string) =>
         new Promise<void>((resolve) => {
-          secretName(name);
-          if (new TextEncoder().encode(value).length > 64 * 1024) {
+          assertSecretName(name);
+          if (!fitsSecret(value)) {
             // A HubError is a plain object by contract (hub-api).
             // eslint-disable-next-line @typescript-eslint/only-throw-error
             throw { code: "secret-too-large", name } satisfies HubError;
@@ -196,7 +197,7 @@ export function installFakeHub(options: {
         }),
       remove: (name: string) =>
         new Promise<void>((resolve) => {
-          secretName(name);
+          assertSecretName(name);
           secrets.delete(name);
           resolve();
         }),

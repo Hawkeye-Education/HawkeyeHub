@@ -7,7 +7,7 @@ import type { KeyCipher } from "./ai-keys";
 import type { HubEvent } from "./diagnostics";
 import { parseAbsolutePath, type AbsolutePath } from "./ids";
 import {
-  openPluginSecrets,
+  createPluginSecrets,
   pluginSecretsFile,
   SecretRefused,
 } from "./plugin-secrets";
@@ -31,8 +31,9 @@ beforeEach(() => {
   dataDir = parseAbsolutePath(mkdtempSync(join(tmpdir(), "hub-secrets-")));
 });
 
+// A fresh Hub run each time.
 const open = (events: (event: HubEvent) => void = unexpected) =>
-  openPluginSecrets(dataDir, TUTORS, cipher, events);
+  createPluginSecrets(dataDir, cipher, events).open(TUTORS);
 
 test("a secret never set is missing", () => {
   expect(open().get("sheets-key")).toEqual({ kind: "missing" });
@@ -76,6 +77,15 @@ test("a name that is blank or not lowercase kebab characters is refused", () => 
   }
 });
 
+test("a refusal's message never carries the name, which only the refusal itself holds", () => {
+  const refused = new SecretRefused({
+    code: "secret-name-invalid",
+    name: "Sheets Key",
+  });
+  expect(refused.message).not.toContain("Sheets Key");
+  expect(refused.refusal.name).toBe("Sheets Key");
+});
+
 test("a value over 64 KiB of UTF-8 is refused, and one of exactly 64 KiB is stored", () => {
   const secrets = open();
   // 3 bytes each in UTF-8: 21,846 of them are 65,538 bytes.
@@ -91,7 +101,7 @@ test("a value over 64 KiB of UTF-8 is refused, and one of exactly 64 KiB is stor
   });
 });
 
-test("a file that cannot be decrypted is no secrets, recorded once without its contents", () => {
+test("a file that cannot be decrypted is no secrets, recorded once per Hub run without its contents", () => {
   open().set("sheets-key", "pk-secret");
   const otherUser: KeyCipher = {
     ...cipher,
@@ -100,12 +110,12 @@ test("a file that cannot be decrypted is no secrets, recorded once without its c
     },
   };
   const events: HubEvent[] = [];
-  const secrets = openPluginSecrets(dataDir, TUTORS, otherUser, (event) =>
+  const hubRun = createPluginSecrets(dataDir, otherUser, (event) =>
     events.push(event),
   );
 
-  expect(secrets.get("sheets-key")).toEqual({ kind: "missing" });
-  expect(secrets.get("sheets-key")).toEqual({ kind: "missing" });
+  expect(hubRun.open(TUTORS).get("sheets-key")).toEqual({ kind: "missing" });
+  expect(hubRun.open(TUTORS).get("sheets-key")).toEqual({ kind: "missing" });
   expect(events).toEqual([
     {
       kind: "plugin-secrets-unreadable",
@@ -114,14 +124,17 @@ test("a file that cannot be decrypted is no secrets, recorded once without its c
   ]);
 });
 
-test("a file that decrypts to something else is no secrets", () => {
-  mkdirSync(join(dataDir, "plugin-secrets"));
-  writeFileSync(
-    pluginSecretsFile(dataDir, TUTORS.id),
-    cipher.encryptString('[["Bad Name","x"]]'),
-  );
-  const events: HubEvent[] = [];
+test.each(['[["Bad Name","x"]]', '[["sheets-key"', "{}"])(
+  "a file that decrypts to something else, %s, is no secrets",
+  (contents) => {
+    mkdirSync(join(dataDir, "plugin-secrets"));
+    writeFileSync(
+      pluginSecretsFile(dataDir, TUTORS.id),
+      cipher.encryptString(contents),
+    );
+    const events: HubEvent[] = [];
 
-  expect(open((event) => events.push(event)).stored).toEqual(new Map());
-  expect(events).toHaveLength(1);
-});
+    expect(open((event) => events.push(event)).stored).toEqual(new Map());
+    expect(events).toHaveLength(1);
+  },
+);

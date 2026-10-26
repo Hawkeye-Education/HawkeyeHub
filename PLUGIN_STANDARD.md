@@ -369,7 +369,7 @@ await hub.secrets.remove('sheets-key');            // nothing stored is fine
 
 - Names are non-blank `[a-z0-9-]`, else `secret-name-invalid`. Values are strings up to 64 KiB of UTF-8, else `secret-too-large`, so a JSON key is stored as its text. There is no `list()`.
 - Draw the form staff type a secret into yourself, from the Hub Kit. On `missing`, ask staff for it. A secret the Hub could not decrypt (another OS user's, a damaged file) is `missing` too.
-- The Backend gets every stored secret once, in `initialize`, as `ctx.secrets` (§5.5). A secret set or removed while the Plugin is open reaches the Backend only at the next open. When the Backend needs the new value sooner, pass it in a `hub.backend.request`.
+- The Backend gets every stored secret once, in `initialize`, as `ctx.secrets` (§5.5), only when the Plugin has `"hubApi": "^1.4.0"` (or a range starting no lower) **and** `backend/pyproject.toml` depends on `hawkeye-hub>=1.1.0`. An older range gets no `secrets`, because SDK 1.0.0 refuses `initialize` keys it does not know (ADR 0013). A secret set or removed while the Plugin is open reaches the Backend only at the next open. When the Backend needs the new value sooner, pass it in a `hub.backend.request`.
 - Uninstall with "Also delete my data" removes the Plugin's secrets; "keep data" keeps them.
 - Never log a secret, its name included, from `console` or the Backend's stderr: the Hub writes both verbatim into the Plugin's log and the Diagnostics Bundle.
 

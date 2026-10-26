@@ -12,3 +12,7 @@ We chose to give secrets to both the Plugin UI and the Backend because a UI-only
 - **Uninstall.** "Also delete my data" removes the file, and "keep data" keeps it.
 - **Logging.** The Hub never logs a secret's name or value, and the Diagnostics Bundle never holds either (ADR 0012). The JSON-RPC relay already logs no params, so `initialize` never reaches a log. Plugin UI `console` output and Backend stderr are written verbatim, so the Plugin Standard's ban on logging secrets covers both.
 - Per-staff OAuth (Service Connections) is a separate decision.
+
+## Amendment (2026-10-26, #161)
+
+`initialize` carries `secrets` only to a Plugin whose `hubApi` range requires 1.4.0 or later, and only when at least one secret is stored; otherwise the key is left out, and SDK 1.1.0 reads a missing `secrets` as none stored. The SDK 1.0.0 that published Backends lock refuses an `initialize` key it does not know (`extra="forbid"`), and its validation error prints the params it got, secrets included, to stderr and so to the Plugin's log. A Plugin on an older range still has `hub.secrets` in its UI; its Backend just never gets them. The "one `plugin-secrets-unreadable` event" is one per Plugin per Hub run.

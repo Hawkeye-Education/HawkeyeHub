@@ -2,7 +2,8 @@
 // closed: the record entry goes, then the `<id>@<version>` folder. With "Also delete my data" its
 // partition's storage, its Plugin Data, its Plugin Secrets and every Shared Store no other
 // installed Plugin declares go too. A Python Backend's interpreters and uv's cache are pruned, and
-// uv goes with the last one (ADR 0011). Nothing here can fail with a cause staff could act on, so a throw is a Hub crash.
+// uv goes with the last one (ADR 0011). Nothing here can fail with a cause staff could act on, so
+// a throw is a Hub crash.
 
 import { rmSync } from "node:fs";
 import type { PluginId } from "@hawkeye-hub/plugin-format";

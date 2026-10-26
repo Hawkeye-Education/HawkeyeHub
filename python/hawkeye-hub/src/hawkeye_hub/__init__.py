@@ -49,6 +49,8 @@ class Model(BaseModel):
         alias_generator=to_camel,
         validate_by_name=True,
         validate_by_alias=True,
+        # A validation error never echoes its input, which may be a Plugin Secret (ADR 0013).
+        hide_input_in_errors=True,
     )
 
 
@@ -107,8 +109,9 @@ class Context:
 
     data_dir: Path
     stores: Mapping[str, Path]
-    # Every stored Plugin Secret by name, as the Hub had them at open (ADR 0013). Never log them.
-    secrets: Mapping[str, str]
+    # Every stored Plugin Secret by name, as the Hub had them at open (ADR 0013). Never log them;
+    # kept out of repr so that logging the context does not.
+    secrets: Mapping[str, str] = field(repr=False)
     hub_api: SemVer
     _write: Callable[[Message], None] = field(repr=False)
 
@@ -117,7 +120,8 @@ class Context:
 
 
 class _Wire(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    # As for Model: a bad message never echoes its params, which may carry a secret.
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
 
 class _Request(_Wire):
@@ -142,8 +146,9 @@ _incoming: TypeAdapter[_Request | _Notification] = TypeAdapter(_Request | _Notif
 class _Initialize(Model):
     data_dir: Path
     stores: dict[str, Path]
-    # The Hub leaves `secrets` out when none is stored, because SDK 1.0.0 refuses a key it does not
-    # know (ADR 0013): absent is none stored.
+    # The Hub leaves `secrets` out when none is stored, and for a Plugin accepting a Hub API before
+    # 1.4.0, because SDK 1.0.0 refuses a key it does not know (ADR 0013): absent is none stored, as
+    # test_an_initialize_without_secrets_is_none_stored shows.
     secrets: dict[str, str] = Field(default_factory=dict[str, str])
     hub_api: SemVer
 

@@ -42,7 +42,7 @@ import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
 import { serveHubKit, TRANSPARENT } from "./hub-kit";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
-import { openPluginSecrets, serveSecrets } from "./plugin-secrets";
+import { createPluginSecrets, serveSecrets } from "./plugin-secrets";
 import { serveStores } from "./stores";
 import { watchResponsiveness } from "./plugin-ui-responsiveness";
 
@@ -103,6 +103,14 @@ export function createPluginViews(
   aiDepsNow: () => AiCallDeps,
 ): PluginViews {
   const opened = new Map<PluginId, OpenPlugin>();
+  // One per Hub window, which is one per Hub run, so an unreadable file is recorded once a run.
+  const pluginSecrets = createPluginSecrets(
+    hubDataDir,
+    safeStorage,
+    (event) => {
+      diagnostics.recordHubEvent(event);
+    },
+  );
 
   // Whether the front Plugin's Assistant Panel is open, and the Switcher collapsed to its rail, as
   // the latest snapshot says.
@@ -195,14 +203,7 @@ export function createPluginViews(
       serveStores(view.webContents, hubDataDir, manifest.stores);
     }
     // `hub.secrets`, for every Plugin, read once here and shared with the Backend's `initialize`.
-    const secrets = openPluginSecrets(
-      hubDataDir,
-      pluginRefOf(plugin),
-      safeStorage,
-      (event) => {
-        diagnostics.recordHubEvent(event);
-      },
-    );
+    const secrets = pluginSecrets.open(pluginRefOf(plugin));
     serveSecrets(view.webContents, secrets);
     // `hub.files`, for every Plugin.
     serveFiles(view.webContents, window);

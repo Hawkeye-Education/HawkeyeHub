@@ -62,11 +62,11 @@ const session: PluginSession = {
 };
 const diagnostics = { recordHubEvent: noop } as unknown as Diagnostics;
 
-function installed() {
+function installed(hubApi = "^1.0.0") {
   const parsed = parseManifest({
     id: "echo-backend",
     version: "1.0.0",
-    hubApi: "^1.0.0",
+    hubApi,
     name: "Echo",
     description: "A fixture.",
     platforms: ["win32-x64"],
@@ -93,9 +93,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function started(secrets: ReadonlyMap<SecretName, string>) {
+function started(hubApi: string, secrets: ReadonlyMap<SecretName, string>) {
   return startBackend(
-    installed(),
+    installed(hubApi),
     parseAbsolutePath(mkdtempSync(join(tmpdir(), "hub-data-"))),
     secrets,
     diagnostics,
@@ -131,18 +131,32 @@ async function initializedBackend() {
   return backend;
 }
 
-test("initialize carries every stored secret", async () => {
-  // A test builds the brand by hand; only `openPluginSecrets` parses one.
-  started(new Map([["sheets-key" as SecretName, "pk-secret"]]));
+// A test builds the brand by hand; only `createPluginSecrets` parses one.
+const STORED = new Map([["sheets-key" as SecretName, "pk-secret"]]);
 
-  expect(await initializeParams()).toMatchObject({
-    secrets: { "sheets-key": "pk-secret" },
-  });
-});
+test.each(["^1.4.0", ">=1.5.0 <2"])(
+  "initialize carries every stored secret to a Plugin requiring Hub API %s",
+  async (hubApi) => {
+    started(hubApi, STORED);
 
-// SDK 1.0.0 Backends refuse an `initialize` with keys they do not know.
+    expect(await initializeParams()).toMatchObject({
+      secrets: { "sheets-key": "pk-secret" },
+    });
+  },
+);
+
+// SDK 1.0.0 Backends refuse an `initialize` with keys they do not know, and print what they got.
+test.each(["^1.3.0", ">=1.0.0 <2"])(
+  "initialize leaves secrets out for a Plugin that accepts Hub API %s, before secrets",
+  async (hubApi) => {
+    started(hubApi, STORED);
+
+    expect(await initializeParams()).not.toHaveProperty("secrets");
+  },
+);
+
 test("initialize leaves secrets out when none is stored", async () => {
-  started(new Map());
+  started("^1.4.0", new Map());
 
   expect(await initializeParams()).not.toHaveProperty("secrets");
 });

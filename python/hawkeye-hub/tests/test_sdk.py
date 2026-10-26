@@ -3,7 +3,9 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
+from hawkeye_hub import Context, Model, SemVer
 from hawkeye_hub.testing import BackendFailed, run_backend
+from pydantic import ValidationError
 
 BACKEND = Path(__file__).parent / "backend"
 
@@ -33,6 +35,28 @@ def test_a_handler_gets_what_initialize_sent(tmp_path: Path) -> None:
         "secrets": {"sheets-key": '{"private_key": "pk"}'},
         "hubApi": "1.4.0",
     }
+
+
+class _Keyed(Model):
+    key_id: int
+
+
+def test_a_validation_error_never_echoes_its_input() -> None:
+    # `initialize` is validated as a Model too, so a bad one never prints the secrets it carries.
+    with pytest.raises(ValidationError) as failed:
+        _Keyed.model_validate({"keyId": "pk-very-secret"})
+    assert "pk-very-secret" not in str(failed.value)
+
+
+def test_a_context_never_shows_its_secrets() -> None:
+    ctx = Context(
+        data_dir=Path("data"),
+        stores={},
+        secrets={"sheets-key": "pk-very-secret"},
+        hub_api=SemVer("1.4.0"),
+        _write=lambda message: None,
+    )
+    assert "pk-very-secret" not in repr(ctx)
 
 
 def test_an_initialize_without_secrets_is_none_stored(tmp_path: Path) -> None:
