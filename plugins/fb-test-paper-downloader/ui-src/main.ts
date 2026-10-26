@@ -51,7 +51,7 @@ stopAtKnown.checked = settings.stopAtKnown;
 
 function save(): void {
   saveSettings({
-    v: 2,
+    v: 1,
     group: group.value,
     output: output.value,
     stopAtKnown: stopAtKnown.checked,
@@ -92,7 +92,7 @@ backend.onNotification("progress", (raw) => {
     case "files":
       progress.value = p.done / p.total;
       status.textContent = t("savingFiles", p);
-      logFile(p.item, p.result);
+      logResult(p.item, p.result);
       return;
     case "scan":
       status.textContent = t("scanning", { found: p.found });
@@ -100,36 +100,21 @@ backend.onNotification("progress", (raw) => {
     case "posts":
       progress.value = p.done / p.total;
       status.textContent = t("downloading", p);
-      logPost(p.item, p.result);
+      logResult(p.item, p.result);
       return;
     default:
       p satisfies never;
   }
 });
 
-function logFile(item: string, result: FileResult): void {
+/** One log line per file or post. */
+function logResult(item: string, result: FileResult | PostResult): void {
   switch (result.kind) {
     case "saved":
       log.append({ tone: "success", text: t("result.saved", { item }) });
       return;
     case "skipped-known":
       log.append({ tone: "info", text: t("result.skipped-known", { item }) });
-      return;
-    case "failed":
-      log.append({
-        tone: "danger",
-        text: t("result.failed", { item, detail: result.detail }),
-      });
-      return;
-    default:
-      result satisfies never;
-  }
-}
-
-function logPost(item: string, result: PostResult): void {
-  switch (result.kind) {
-    case "saved":
-      log.append({ tone: "success", text: t("result.saved", { item }) });
       return;
     case "skipped-not-paper":
       log.append({

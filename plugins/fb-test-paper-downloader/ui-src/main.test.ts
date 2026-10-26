@@ -54,26 +54,6 @@ test("the first open shows the default group and no output folder", async () => 
   expect($<HTMLInputElement>("stop-at-known").checked).toBe(true);
 });
 
-test("Plugin Data from version 1 opens with stop-at-known on", async () => {
-  localStorage.setItem(
-    "settings",
-    JSON.stringify({
-      v: 1,
-      group: "123",
-      output: { kind: "chosen", path: OUT },
-    }),
-  );
-
-  await open();
-
-  expect($<HTMLInputElement>("group").value).toBe("123");
-  expect($<HubFolderFieldElement>("output").value).toEqual({
-    kind: "chosen",
-    path: OUT,
-  });
-  expect($<HTMLInputElement>("stop-at-known").checked).toBe(true);
-});
-
 test("the stop-at-known checkbox survives closing and reopening the Plugin", async () => {
   await open();
   $<HTMLInputElement>("stop-at-known").click();
