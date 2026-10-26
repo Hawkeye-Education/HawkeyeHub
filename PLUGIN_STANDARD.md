@@ -599,7 +599,7 @@ test('a rejected run shows the translated reason and clears Busy', async () => {
 });
 ```
 
-The fake's surface: `installFakeHub({manifest, displayLanguage})`. It does not fake `hub.identity` or `hub.stores` yet, and refuses a Manifest that declares identity or a Shared Store; they join when a Plugin's tests need them. `fake.backend.handle(method, fn)`, `fake.backend.emit(method, params)` (a Backend notification), `fake.backend.requests` and `fake.backend.notifications` (what the UI sent). `fake.files.queuePick(result)`, `fake.files.failNextOpen(hubError)` and `fake.files.opened`. `fake.ai.queueReply(text)` and `fake.ai.chats`. `fake.busy.state`. `fake.settle()` waits for pending Hub calls. `backendError(reason, message)` builds the `HubError` a Backend rejection becomes.
+The fake's surface: `installFakeHub({manifest, displayLanguage})`. It does not fake `hub.identity` or `hub.stores` yet, and refuses a Manifest that declares identity or a Shared Store; they join when a Plugin's tests need them. `fake.backend.handle(method, fn)`, `fake.backend.emit(method, params)` (a Backend notification), `fake.backend.requests` and `fake.backend.notifications` (what the UI sent). `fake.files.queuePick(result)`, `fake.files.failNextOpen(hubError)` and `fake.files.opened`. `fake.ai.queueReply(text)` and `fake.ai.chats`. `fake.busy.state`. `fake.settle()` waits for pending Hub calls. `backendError(reason, message)` builds the `HubError` a Backend rejection becomes. `@hawkeye-hub/fake-hub/hub-kit` defines test doubles of the Hub Kit elements, with `browse(field)` to click a folder field's Browse… and `logLines(log)` to read a log.
 
 Test at least one path per `Reason` the UI can show, and the Plugin Data migration from every older version.
 
