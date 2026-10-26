@@ -79,7 +79,13 @@ function show(name: string, extracted: Extracted): HTMLLIElement {
       thumbnails.push(url);
       img.src = url;
       img.alt = "";
-      return item(name, img);
+      const shown = item(name, img);
+      if (extracted.fallback) {
+        const flag = document.createElement("strong");
+        flag.textContent = t("fallback");
+        shown.append(flag);
+      }
+      return shown;
     }
     case "failed": {
       const flag = document.createElement("strong");
