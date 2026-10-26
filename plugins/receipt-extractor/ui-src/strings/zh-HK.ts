@@ -8,7 +8,7 @@ export const zhHK: typeof enHK = {
   busy: "正在擷取收據。現在關閉會失去這次的結果。",
   summary: "完成：已擷取 {{total}} 張收據中的 {{receipts}} 張。",
   page: "{{name}} 第 {{page}} 頁",
-  fallback: "找不到收據：保留整張相片",
+  fallback: "找不到收據：保留原圖",
   failed: {
     unsupported: "不是 JPEG、PNG 或 PDF",
     encrypted: "設有密碼保護",

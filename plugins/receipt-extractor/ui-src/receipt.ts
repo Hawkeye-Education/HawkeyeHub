@@ -2,6 +2,7 @@
 // one, a PDF into one per page.
 
 import type { Crop } from "./crop";
+import { context } from "./offscreen";
 import { openPdf, pageBitmap } from "./pdf";
 
 /** A receipt ready for the document: an upright JPEG and its size in pixels. */
@@ -11,17 +12,15 @@ export interface Receipt {
   readonly height: number;
 }
 
+/** Why a file or page gave no receipt. */
+export type FailReason = "unsupported" | "encrypted" | "unreadable";
+
 export type Extracted =
-  | {
-      readonly kind: "receipt";
-      readonly receipt: Receipt;
-      /** No receipt was found in the photo, so it is the whole photo. */
-      readonly fallback: boolean;
-    }
-  | {
-      readonly kind: "failed";
-      readonly reason: "unsupported" | "encrypted" | "unreadable";
-    };
+  /** The receipt cropped out of its photo or page. */
+  | { readonly kind: "receipt"; readonly receipt: Receipt }
+  /** No receipt was found, so it is the whole photo or page. */
+  | { readonly kind: "uncropped"; readonly receipt: Receipt }
+  | { readonly kind: "failed"; readonly reason: FailReason };
 
 /** What one file gave: one result for a photo or a file that failed whole, else one per page. */
 export type FileExtracted =
@@ -49,12 +48,6 @@ function isJpegOrPng(b: Uint8Array): boolean {
     (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) ||
     (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47)
   );
-}
-
-function context(canvas: OffscreenCanvas): OffscreenCanvasRenderingContext2D {
-  const ctx = canvas.getContext("2d");
-  if (ctx === null) throw new Error("OffscreenCanvas has no 2d context");
-  return ctx;
 }
 
 /** The `area` of the photo on a canvas of its own. */
@@ -142,15 +135,11 @@ async function extractPdf(bytes: Uint8Array): Promise<FileExtracted> {
   try {
     const pages: Extracted[] = [];
     for (let number = 1; number <= pdf.numPages; number++) {
-      let bitmap: ImageBitmap;
-      try {
-        bitmap = await pageBitmap(pdf, number);
-      } catch {
-        // A page pdf.js can't draw is flagged on its own; the rest of the PDF carries on.
-        pages.push(UNREADABLE);
-        continue;
-      }
-      pages.push(await receiptOf(bitmap));
+      const bitmap = await pageBitmap(pdf, number);
+      // A page pdf.js can't read is flagged on its own; the rest of the PDF carries on.
+      pages.push(
+        bitmap === "unreadable" ? UNREADABLE : await receiptOf(bitmap),
+      );
     }
     return { kind: "pages", pages };
   } finally {
@@ -172,8 +161,7 @@ async function receiptOf(bitmap: ImageBitmap): Promise<Extracted> {
     quality: JPEG_QUALITY,
   });
   return {
-    kind: "receipt",
-    fallback: crop.kind === "fallback",
+    kind: crop.kind === "box" ? "receipt" : "uncropped",
     receipt: {
       jpeg: new Uint8Array(await jpeg.arrayBuffer()),
       width: canvas.width,

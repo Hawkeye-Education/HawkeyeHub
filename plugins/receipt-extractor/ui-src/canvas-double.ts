@@ -9,7 +9,15 @@ import {
   type Canvas,
   type Image,
 } from "@napi-rs/canvas";
-import { PDFDocument, PDFHexString, rgb } from "pdf-lib";
+import {
+  concatTransformationMatrix,
+  drawObject,
+  PDFDocument,
+  PDFHexString,
+  popGraphicsState,
+  pushGraphicsState,
+  rgb,
+} from "pdf-lib";
 import { cropBox, type Crop, type Pixels } from "./crop";
 
 class FakeOffscreenCanvas {
@@ -176,9 +184,33 @@ export async function jpegSize(
   return { width: image.width, height: image.height };
 }
 
-/** One page of a synthetic PDF: a scan (one JPEG `photo`, drawn small) or a vector drawing. */
+/** A JPEG's red value at (x, y), 0 to 255. */
+export async function jpegRed(
+  bytes: Uint8Array,
+  x: number,
+  y: number,
+): Promise<number> {
+  const image = await loadImage(Buffer.from(bytes));
+  const canvas = createCanvas(image.width, image.height);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(image, 0, 0);
+  const [red] = ctx.getImageData(x, y, 1, 1).data;
+  if (red === undefined)
+    throw new Error(`no pixel at ${String(x)}, ${String(y)}`);
+  return red;
+}
+
+/**
+ * One page of a synthetic PDF: a scan (one JPEG `photo`, drawn small), a black-and-white scan (the
+ * same, as one 1-bit DeviceGray image) or a vector drawing.
+ */
 export type PdfPage =
   | { readonly kind: "scan"; readonly width: number; readonly height: number }
+  | {
+      readonly kind: "bw-scan";
+      readonly width: number;
+      readonly height: number;
+    }
   | {
       readonly kind: "drawing";
       readonly widthPt: number;
@@ -201,6 +233,41 @@ export async function pdf(
         doc
           .addPage([595, 842])
           .drawImage(image, { x: 20, y: 20, width: 200, height: 300 });
+        break;
+      }
+      case "bw-scan": {
+        const { width, height } = page;
+        // `photo`'s block, as 1-bit rows padded to whole bytes; a set bit is white (Decode [0 1]).
+        const pad = Math.floor(Math.max(width, height) * 0.015);
+        const rowBytes = Math.ceil(width / 8);
+        const black = (x: number, y: number): boolean =>
+          x >= pad && x < width - pad && y >= pad && y < height - pad;
+        const bits = new Uint8Array(rowBytes * height);
+        for (let y = 0; y < height; y++)
+          for (let b = 0; b < rowBytes; b++) {
+            let byte = 0;
+            for (let k = 0; k < 8; k++)
+              byte = (byte << 1) | (black(b * 8 + k, y) ? 0 : 1);
+            bits[y * rowBytes + b] = byte;
+          }
+        const image = doc.context.register(
+          doc.context.flateStream(bits, {
+            Type: "XObject",
+            Subtype: "Image",
+            Width: width,
+            Height: height,
+            ColorSpace: "DeviceGray",
+            BitsPerComponent: 1,
+          }),
+        );
+        const added = doc.addPage([595, 842]);
+        const name = added.node.newXObject("Scan", image);
+        added.pushOperators(
+          pushGraphicsState(),
+          concatTransformationMatrix(200, 0, 0, 300, 20, 20),
+          drawObject(name),
+          popGraphicsState(),
+        );
         break;
       }
       case "drawing": {

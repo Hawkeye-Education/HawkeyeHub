@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import manifest from "../manifest.json";
 import {
   installCanvasDouble,
+  jpegRed,
   jpegSize,
   paper,
   pdf,
@@ -127,6 +128,7 @@ interface DocxPage {
   /** The receipt's size on the page, in EMU (360 000 per cm). */
   extent: { cx: number; cy: number };
   image: { width: number; height: number };
+  jpeg: Uint8Array;
 }
 
 async function readDocx(blob: Blob): Promise<{
@@ -166,7 +168,10 @@ async function readDocx(blob: Blob): Promise<{
           align: /<w:jc w:val="(\w+)"/.exec(p)?.[1] ?? "none",
           pageBreakBefore: p.includes("<w:pageBreakBefore"),
           extent: { cx: Number(extent[1]), cy: Number(extent[2]) },
-          image: await jpegSize(await media.async("uint8array")),
+          ...(await (async () => {
+            const jpeg = await media.async("uint8array");
+            return { image: await jpegSize(jpeg), jpeg };
+          })()),
         };
       }),
   );
@@ -210,7 +215,7 @@ test("photos become one receipt per page in name order, fitted in 9 × 25 cm, wh
   expect(docx.pageSize).toMatch(/w:h="16838"/);
   for (const side of ["top", "right", "bottom", "left"])
     expect(docx.margins).toMatch(new RegExp(`w:${side}="720"`));
-  expect(docx.pages).toEqual([
+  expect(docx.pages.map(({ jpeg: _, ...placed }) => placed)).toEqual([
     // 100 × 1000 px is held by the 25 cm height: 2.5 × 25 cm.
     {
       align: "right",
@@ -262,7 +267,7 @@ test("each receipt is cropped out of its photo, and one with no receipt found is
     { name: "a receipt.png", flag: null, thumbnail: true },
     {
       name: "b blank.png",
-      flag: "No receipt found: whole photo kept",
+      flag: "No receipt found: kept whole",
       thumbnail: true,
     },
   ]);
@@ -299,6 +304,30 @@ test("a PDF gives one receipt per page: a scan's own image at full size, any oth
     { width: 520, height: 1040 },
     { width: 850, height: 1700 },
   ]);
+});
+
+test("a black-and-white scan's own 1-bit image is used at full size", async () => {
+  const fake = await open();
+  // 509 px wide: each row ends part-way through a byte.
+  pick([await pdf("bw.pdf", [{ kind: "bw-scan", width: 509, height: 1000 }])]);
+  await run(fake);
+
+  expect(listed()).toEqual([
+    { name: "bw.pdf, page 1", flag: null, thumbnail: true },
+  ]);
+  const { pages } = await readDocx((await save()).blob);
+  expect(pages.map((p) => p.image)).toEqual([{ width: 509, height: 1000 }]);
+  // Black inside x 15..493, y 15..984, white in the 15 px border around it, the half-used byte
+  // that ends each row included; a row read off its byte boundary would shift the bottom edge.
+  const [scan] = pages;
+  if (scan === undefined) throw new Error("no page");
+  const red = (x: number, y: number) => jpegRed(scan.jpeg, x, y);
+  expect(await red(254, 500)).toBeLessThan(64);
+  expect(await red(490, 500)).toBeLessThan(64);
+  expect(await red(254, 980)).toBeLessThan(64);
+  expect(await red(5, 500)).toBeGreaterThan(192);
+  expect(await red(506, 500)).toBeGreaterThan(192);
+  expect(await red(254, 992)).toBeGreaterThan(192);
 });
 
 test("dropped photos and PDFs go in name order, a PDF's pages in page order", async () => {

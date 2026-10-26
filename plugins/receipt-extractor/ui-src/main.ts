@@ -57,20 +57,26 @@ function choose(chosen: readonly File[]): void {
 }
 
 files.addEventListener("change", () => {
-  choose([...(files.files ?? [])]);
+  // null only for an <input> that isn't type=file, which index.html's is.
+  if (files.files === null) throw new Error("#files is not a file input");
+  choose([...files.files]);
 });
 document.addEventListener("dragover", (e) => {
   e.preventDefault(); // allows the drop
 });
 document.addEventListener("drop", (e) => {
   e.preventDefault(); // Chromium would otherwise open the dropped file in place of the Plugin UI
-  choose([...(e.dataTransfer?.files ?? [])]);
+  // A drop the browser fires always carries its data; only a script-made DragEvent lacks it:
+  // https://html.spec.whatwg.org/multipage/dnd.html#dndevents
+  if (e.dataTransfer === null) throw new Error("a drop without its data");
+  choose([...e.dataTransfer.files]);
 });
 
 /** A result's line in the list, `name` with its thumbnail or flag; a receipt joins the document. */
 function show(name: string, extracted: Extracted): HTMLLIElement {
   switch (extracted.kind) {
-    case "receipt": {
+    case "receipt":
+    case "uncropped": {
       receipts.push(extracted.receipt);
       const img = document.createElement("img");
       const url = URL.createObjectURL(
@@ -80,7 +86,7 @@ function show(name: string, extracted: Extracted): HTMLLIElement {
       img.src = url;
       img.alt = "";
       const shown = item(name, img);
-      if (extracted.fallback) {
+      if (extracted.kind === "uncropped") {
         const flag = document.createElement("strong");
         flag.textContent = t("fallback");
         shown.append(flag);
@@ -126,7 +132,10 @@ async function extractAll(): Promise<void> {
           throw new Error("unreachable");
       }
       total += shown.length;
-      lines[i]?.replaceWith(...shown);
+      const line = lines[i];
+      if (line === undefined)
+        throw new Error(`no line in the list for ${file.name}`);
+      line.replaceWith(...shown);
     }
     summary.textContent = t("summary", { receipts: receipts.length, total });
   } finally {
