@@ -30,6 +30,10 @@ _Avoid_: Locked, working, in use
 What a Plugin keeps on the machine between opens, private to that Plugin and belonging to the OS user rather than to a Staff Identity; it never leaves the machine.
 _Avoid_: Plugin storage, app data, state
 
+**Plugin Secret**:
+A named value, such as a service-account key, that a Plugin keeps and the Hub stores encrypted; part of that Plugin's Plugin Data, so it follows the same rules, and never logged or exported.
+_Avoid_: Credential, key, token, password
+
 **Shared Store**:
 A named folder of files the Hub keeps so that every Plugin declaring it can read and write the same data; owned by no Plugin, belonging to the OS user, and never leaving the machine.
 _Avoid_: Shared storage, common folder, data bus

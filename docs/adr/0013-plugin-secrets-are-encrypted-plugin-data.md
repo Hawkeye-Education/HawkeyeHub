@@ -1,0 +1,14 @@
+# Plugin Secrets are encrypted Plugin Data, read by the Plugin UI and handed to the Backend at start
+
+A Plugin keeps a value it must not store in plain text, such as a Google service-account key, as a **Plugin Secret**: a named string the Hub encrypts with `safeStorage`, as it does AI Provider keys. A Plugin Secret is part of the Plugin's Plugin Data (ADR 0008), so it belongs to the OS user, never leaves the machine, survives updates and is handled by uninstall like the rest of the Plugin's data. The Plugin UI reads and writes secrets through `hub.secrets`. The Backend gets every stored secret once, in `initialize`. Staff enter a secret in a form the Plugin draws from the Hub Kit, and the Manifest declares nothing.
+
+We chose to give secrets to both the Plugin UI and the Backend because a UI-only Plugin needs them in the renderer, while a Backend can keep a key out of the renderer entirely, which Google advises for service-account keys ([#157](https://github.com/Hawkeye-Education/HawkeyeHub/issues/157)). We pass them in `initialize` rather than adding a Backend-to-Hub call, because a Backend has no other channel to the Hub (ADR 0009). We chose a Plugin-drawn form over a Hub-drawn dialog, and no Manifest declaration, because Plugins are trusted (ADR 0003): the Plugin can read the secret back anyway, so a Hub dialog or a declaration would protect nothing and only add Hub Chrome and fields to validate.
+
+## Consequences
+
+- **`hub.secrets`** is in every Plugin UI from Hub API 1.4.0. It offers `get(name)`, which returns `{kind: 'stored', value} | {kind: 'missing'}`, `set(name, value)` and `remove(name)`. Names are non-blank `[a-z0-9-]`. Values are strings up to 64 KiB, so a JSON key is stored as its text. Errors are `HubError` codes `'secret-name-invalid'` and `'secret-too-large'`. There is no `list()`.
+- **`initialize`** gains `secrets: {[name]: value}`, holding only stored secrets, possibly none. The Python SDK exposes it on the typed context. A secret changed while the Plugin is open reaches the Backend at the next open, and a Plugin that needs it sooner passes it in a `hub.backend.request`.
+- **Storage.** Each Plugin's secrets are one file, `plugin-secrets/<plugin-id>.bin` in the Hub's data folder (not the Backend's `dataDir`), encrypted whole and replaced atomically. A file that cannot be decrypted or parsed counts as no secrets: the Hub records one `plugin-secrets-unreadable` event without its contents, and the Plugin asks staff again.
+- **Uninstall.** "Also delete my data" removes the file, and "keep data" keeps it.
+- **Logging.** The Hub never logs a secret's name or value, and the Diagnostics Bundle never holds either (ADR 0012). The JSON-RPC relay already logs no params, so `initialize` never reaches a log. Plugin UI `console` output and Backend stderr are written verbatim, so the Plugin Standard's ban on logging secrets covers both.
+- Per-staff OAuth (Service Connections) is a separate decision.
