@@ -89,6 +89,11 @@ async function extractAll(): Promise<void> {
           img.src = url;
           img.alt = "";
           shown = item(file.name, img);
+          if (extracted.fallback) {
+            const flag = document.createElement("strong");
+            flag.textContent = t("fallback");
+            shown.append(flag);
+          }
           break;
         }
         case "failed": {

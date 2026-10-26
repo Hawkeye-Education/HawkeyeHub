@@ -4,7 +4,7 @@ import { installFakeHub, type FakeHub } from "@hawkeye-hub/fake-hub";
 import JSZip from "jszip";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import manifest from "../manifest.json";
-import { installCanvasDouble, jpegSize, photo } from "./canvas-double";
+import { installCanvasDouble, jpegSize, paper, photo } from "./canvas-double";
 import page from "./index.html?raw";
 
 // The page's body only: happy-dom would fetch the head's stylesheet and script.
@@ -170,7 +170,7 @@ test("photos become one receipt per page in name order, fitted in 9 × 25 cm, wh
   vi.useFakeTimers({ toFake: ["Date"], now: new Date(2026, 9, 26, 23, 30) });
   const fake = await open();
   pick([
-    photo("receipt 10.png", 400, 100, "png"),
+    photo("receipt 10.png", 800, 200, "png"),
     photo("receipt 2.jpg", 100, 1000, "jpeg"),
   ]);
   expect($<HTMLButtonElement>("save").disabled).toBe(true);
@@ -207,31 +207,58 @@ test("photos become one receipt per page in name order, fitted in 9 × 25 cm, wh
       extent: { cx: 900_000, cy: 9_000_000 },
       image: { width: 100, height: 1000 },
     },
-    // 400 × 100 px is held by the 9 cm width: 9 × 2.25 cm.
+    // 800 × 200 px is held by the 9 cm width: 9 × 2.25 cm.
     {
       align: "right",
       pageBreakBefore: true,
       extent: { cx: 3_240_000, cy: 810_000 },
-      image: { width: 400, height: 100 },
+      image: { width: 800, height: 200 },
     },
   ]);
 });
 
 test("a dropped photo is saved under its own name, turned upright by its EXIF orientation", async () => {
   const fake = await open();
-  // Stored 40 × 20 px, to be turned 90° clockwise for viewing.
-  drop([photo("IMG_0042.JPG", 40, 20, "jpeg", "exif-6")]);
+  // Stored 1000 × 500 px, to be turned 90° clockwise for viewing.
+  drop([photo("IMG_0042.JPG", 1000, 500, "jpeg", "exif-6")]);
   await run(fake);
 
   const download = await save();
   expect(download.name).toBe("IMG_0042_receipts.docx");
   const { pages } = await readDocx(download.blob);
-  // Upright it is 20 × 40 px, held by the 9 cm width: 9 × 18 cm.
+  // Upright it is 500 × 1000 px, held by the 9 cm width: 9 × 18 cm.
   expect(pages.map((p) => [p.image, p.extent])).toEqual([
     [
-      { width: 20, height: 40 },
+      { width: 500, height: 1000 },
       { cx: 3_240_000, cy: 6_480_000 },
     ],
+  ]);
+});
+
+test("each receipt is cropped out of its photo, and one with no receipt found is kept whole and flagged", async () => {
+  const fake = await open();
+  pick([
+    // 1000 × 1000 px: dilating grows the receipt 14 px before and 15 px after itself, then its
+    // box shrinks by 15 and is padded by 15 (spec #159): x 286..715, y 86..915.
+    paper("a receipt.png", 1000, 1000, [
+      { x: 300, y: 100, width: 400, height: 800 },
+    ]),
+    paper("b blank.png", 300, 200, []),
+  ]);
+  await run(fake);
+
+  expect(listed()).toEqual([
+    { name: "a receipt.png", flag: null, thumbnail: true },
+    {
+      name: "b blank.png",
+      flag: "No receipt found: whole photo kept",
+      thumbnail: true,
+    },
+  ]);
+  const { pages } = await readDocx((await save()).blob);
+  expect(pages.map((p) => p.image)).toEqual([
+    { width: 429, height: 829 },
+    { width: 300, height: 200 },
   ]);
 });
 
@@ -245,7 +272,7 @@ test("a file that can't be read is flagged and the run carries on", async () => 
         type: "image/jpeg",
       },
     ),
-    photo("b good.png", 50, 100, "png"),
+    photo("b good.png", 500, 1000, "png"),
     new File(["not a photo"], "c notes.heic", { type: "image/heic" }),
   ]);
   await run(fake);
@@ -258,7 +285,7 @@ test("a file that can't be read is flagged and the run carries on", async () => 
   ]);
   expect(fake.busy.state).toEqual({ kind: "idle" });
   const { pages } = await readDocx((await save()).blob);
-  expect(pages.map((p) => p.image)).toEqual([{ width: 50, height: 100 }]);
+  expect(pages.map((p) => p.image)).toEqual([{ width: 500, height: 1000 }]);
 });
 
 test("Save stays off until a run makes at least one receipt", async () => {

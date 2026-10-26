@@ -5,6 +5,7 @@ export const enHK = {
   save: "Save Word document",
   busy: "Extracting receipts. Closing now loses this run.",
   summary: "Done: {{receipts}} of {{total}} photos extracted.",
+  fallback: "No receipt found: whole photo kept",
   failed: {
     unsupported: "Not a JPEG or PNG",
     unreadable: "Could not be read",
