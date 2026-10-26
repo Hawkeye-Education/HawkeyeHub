@@ -53,7 +53,35 @@
           <div class="scroller">
             <table id="table"></table>
           </div>
-          <p id="tally"></p>
+          <div class="row">
+            <p id="tally" class="grow"></p>
+            <button
+              id="write-messages"
+              type="button"
+              data-variant="primary"
+            ></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- The messages view, swapped in for the results: no route, no pushState. -->
+      <section id="messages" class="stack" hidden>
+        <div class="row">
+          <button id="back" type="button"></button>
+        </div>
+        <label class="stack-tight">
+          <span id="profile-label"></span>
+          <textarea id="profile-message" rows="16"></textarea>
+        </label>
+        <div class="row">
+          <button id="copy-profile" type="button"></button>
+        </div>
+        <label class="stack-tight">
+          <span id="phones-label"></span>
+          <textarea id="phone-message" rows="5"></textarea>
+        </label>
+        <div class="row">
+          <button id="copy-phones" type="button"></button>
         </div>
       </section>
     </main>

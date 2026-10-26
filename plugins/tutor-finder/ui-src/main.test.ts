@@ -2,7 +2,7 @@
 // Google is a stubbed `fetch`; the key is generated here, never a real one, and every row is synthetic.
 
 import { installFakeHub, type FakeHub } from "@hawkeye-hub/fake-hub";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import manifest from "../manifest.json";
 import page from "./index.html?raw";
 
@@ -184,7 +184,7 @@ const rows = (): HTMLTableRowElement[] => [
   ...$("table").querySelectorAll<HTMLTableRowElement>("tbody > tr"),
 ];
 const cells = (row: HTMLTableRowElement | undefined): HTMLElement[] => [
-  ...(row?.querySelectorAll<HTMLElement>(":scope > td") ?? []),
+  ...(row?.querySelectorAll<HTMLElement>(":scope > td:not(.pick)") ?? []),
 ];
 /** Each body row's display name, top to bottom. */
 const names = (): string[] =>
@@ -634,4 +634,141 @@ test("a failed read logs nothing", async () => {
     expect($<HTMLButtonElement>("refresh").disabled).toBe(false);
   });
   for (const spy of logged) expect(spy).not.toHaveBeenCalled();
+});
+
+// --- Selection and the two WhatsApp messages (source SPEC §5–6) ------------------------------
+
+describe("Selection and messages", () => {
+  /** The checkbox that picks the tutor shown as `name`. */
+  const pick = (name: string): HTMLInputElement => {
+    const row = rows().find(
+      (r) => cells(r)[0]?.firstElementChild?.textContent === name,
+    );
+    const box = row?.querySelector<HTMLInputElement>("input[type=checkbox]");
+    if (box === null || box === undefined) throw new Error(`no ${name} row`);
+    return box;
+  };
+
+  test("a Selection survives filter changes and is counted on the messages button", async () => {
+    await openWithKey([ROWS]);
+    const write = $<HTMLButtonElement>("write-messages");
+    expect(write.disabled).toBe(true);
+
+    tick(pick("Mr Chan"), true);
+    tick(pick("Miss Bo"), true);
+    expect(write.disabled).toBe(false);
+    expect(write.textContent).toBe("Write messages (2 selected)");
+
+    tick(language("Mandarin"), true);
+    expect(names()).toEqual(["Miss Bo"]);
+    tick(language("Mandarin"), false);
+    expect(pick("Mr Chan").checked).toBe(true);
+    expect(pick("Miss Bo").checked).toBe(true);
+    expect(pick("Miss Au").checked).toBe(false);
+
+    tick(pick("Miss Bo"), false);
+    expect(write.textContent).toBe("Write messages (1 selected)");
+  });
+
+  const INTRO_HEADER = [
+    ...HEADER,
+    "Self_introduction_chi",
+    "Self_introduction_eng",
+    "our_version_description",
+  ];
+  const chan = [
+    ...(ROWS[2] ?? []),
+    "我教數學。\n十年經驗。",
+    "I teach maths.",
+    "",
+  ];
+  const lam = [
+    "Fay",
+    "Lam",
+    "+852 6777 0000",
+    "Female",
+    "Online",
+    "",
+    "English",
+    "Piano; IB Maths",
+    "",
+    "",
+    "",
+    "原文",
+    "",
+    "Polished by us.",
+  ];
+  const wu = [
+    "Gus",
+    "Wu",
+    "",
+    "Male",
+    "Online",
+    "",
+    "English",
+    "HKDSE Chemistry",
+    "$280",
+  ];
+  const PROFILES = [
+    "Mr Chan | IB導師 | $500/hr",
+    "我教數學。",
+    "十年經驗。",
+    "---",
+    "Miss Lam | IB導師 | $?/hr",
+    "Polished by us.",
+    "---",
+    "Mr Wu | HKDSE導師 | $?/hr",
+    "(no self-introduction on file)",
+  ].join("\n");
+  const PHONES = [
+    "Ben Chan: +852 62220000",
+    "Fay Lam: +852 6777 0000",
+    "Gus Wu: +852 ?",
+  ].join("\n");
+
+  /** Opens on the three tutors above, picks them all, then filters to IB, which hides Mr Wu. */
+  async function pickThenFilter(): Promise<void> {
+    await openWithKey([[INTRO_HEADER, chan, lam, wu]]);
+    for (const name of ["Mr Wu", "Mr Chan", "Miss Lam"]) tick(pick(name), true);
+    change(level(), "IB");
+    expect(names()).toEqual(["Mr Chan", "Miss Lam"]);
+  }
+
+  test("the messages view shows both messages for the Selection, in table order, priced by the level filter", async () => {
+    await pickThenFilter();
+
+    $("write-messages").click();
+    expect($("messages").hidden).toBe(false);
+    expect($("roster").hidden).toBe(true);
+    expect($<HTMLTextAreaElement>("profile-message").value).toBe(PROFILES);
+    expect($<HTMLTextAreaElement>("phone-message").value).toBe(PHONES);
+  });
+
+  test("copy writes the edited text; Back keeps the Selection and filters; re-entering regenerates", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    await pickThenFilter();
+    $("write-messages").click();
+
+    const profile = $<HTMLTextAreaElement>("profile-message");
+    profile.value = "Edited by staff";
+    profile.dispatchEvent(new Event("input"));
+    $("copy-profile").click();
+    expect(writeText).toHaveBeenLastCalledWith("Edited by staff");
+    $("copy-phones").click();
+    expect(writeText).toHaveBeenLastCalledWith(PHONES);
+
+    $("back").click();
+    expect($("messages").hidden).toBe(true);
+    expect($("roster").hidden).toBe(false);
+    expect(level().value).toBe("IB");
+    expect(names()).toEqual(["Mr Chan", "Miss Lam"]);
+    expect(pick("Mr Chan").checked).toBe(true);
+
+    $("write-messages").click();
+    expect(profile.value).toBe(PROFILES);
+  });
 });
