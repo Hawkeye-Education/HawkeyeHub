@@ -14,20 +14,22 @@ export const enHK = {
   stop: "Stop",
   pickOutput: "Choose an output folder first.",
   busy: "Downloading test papers. Closing now stops the run; papers already saved are kept.",
+  savingFiles: "Saving the Files tab: file {{done}} of {{total}}.",
   scanning: "Scanning the group feed: {{found}} new posts found.",
   downloading: "Downloading post {{done}} of {{total}}.",
   result: {
     saved: "Saved       {{item}}",
     "skipped-not-paper": "Skipped     {{item}}: not a test paper",
+    "skipped-known": "Skipped     {{item}}: already downloaded",
     incomplete:
       "Incomplete  {{item}}: only {{saved}} of about {{shown}} images; retried next run",
     failed: "Failed      {{item}}: {{detail}}",
   },
   summary: {
     finished:
-      "Done: {{saved}} saved, {{skippedNotPaper}} not papers, {{incomplete}} incomplete, {{failed}} failed.",
+      "Done: files {{filesSaved}} saved, {{filesKnown}} already downloaded, {{filesFailed}} failed; posts {{saved}} saved, {{skippedNotPaper}} not papers, {{incomplete}} incomplete, {{failed}} failed.",
     cancelled:
-      "Stopped: {{saved}} saved, {{skippedNotPaper}} not papers, {{incomplete}} incomplete, {{failed}} failed.",
+      "Stopped: files {{filesSaved}} saved, {{filesKnown}} already downloaded, {{filesFailed}} failed; posts {{saved}} saved, {{skippedNotPaper}} not papers, {{incomplete}} incomplete, {{failed}} failed.",
     "bad-streak":
       "Stopped after 4 bad posts in a row: Facebook is probably limiting this account. Wait several hours, then press Update again. ({{saved}} saved, {{incomplete}} incomplete, {{failed}} failed.)",
   },

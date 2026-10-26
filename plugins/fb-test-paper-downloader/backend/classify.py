@@ -73,10 +73,14 @@ def is_not_paper(text: str, images: int) -> bool:
 def post_title(text: str) -> str:
     """The post's first two lines, as a folder name of at most 60 characters."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    title = re.sub(r"#(\w)", r"\1", " ".join(lines[:2]))  # "#P2" -> "P2"
-    title = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", title)
-    title = re.sub(r"\s+", " ", title).strip().strip(".")
-    return title[:60].strip() or "untitled"
+    return safe_name(re.sub(r"#(\w)", r"\1", " ".join(lines[:2])), 60)  # "#P2" -> "P2"
+
+
+def safe_name(text: str, max_len: int) -> str:
+    """`text` as a Windows file or folder name of at most `max_len` characters."""
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", text)
+    name = re.sub(r"\s+", " ", name).strip().strip(".")
+    return name[:max_len].strip() or "untitled"
 
 
 def is_incomplete(saved: int, shown: int) -> bool:

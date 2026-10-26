@@ -59,10 +59,11 @@ def update(ctx: Context, p: Update) -> UpdateResult:
         with sync_playwright() as pw:
             window = open_edge(pw, ctx.data_dir / "browser-profile")
             try:
-                # The Files tab phase runs here, before the feed scan, once it lands.
+                facebook = Facebook(window, group, stopping)
                 return run_update(
-                    Facebook(window, group, stopping),
-                    p.output / "posts",
+                    facebook,
+                    facebook,
+                    p.output,
                     group,
                     p.stop_at_known,
                     stopping,
@@ -79,7 +80,7 @@ def update(ctx: Context, p: Update) -> UpdateResult:
 
 @app.notification("cancel")
 def on_cancel(ctx: Context, p: Empty) -> None:
-    stopping.set()  # the run stops between posts, or between a post's images
+    stopping.set()  # the run stops between files, between posts, or between a post's images
 
 
 @app.notification("shutdown")

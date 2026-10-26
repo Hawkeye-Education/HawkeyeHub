@@ -1,4 +1,5 @@
-"""The group feed and photo viewer in the Plugin's Edge: `update.Feed`, ported from fb_papers.py.
+"""The Files tab, group feed and photo viewer in the Plugin's Edge: `files.FilesTab` and
+`update.Feed`, ported from fb_papers.py.
 
 It reads Facebook's live DOM, so it has no unit tests: saved DOM fixtures would pass while the
 live site breaks. A dev-mode run against the live group before each release covers it.
@@ -10,11 +11,13 @@ import re
 import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
-from urllib.parse import parse_qs, urlparse
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 
+from files import FileRow
 from hawkeye_hub import Model, RpcError
 from playwright._impl._errors import TargetClosedError  # the closed-window error, as browser.py
-from playwright.sync_api import BrowserContext, Page
+from playwright.sync_api import APIResponse, BrowserContext, Page
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from posts import Stopped
@@ -109,6 +112,48 @@ _JS_MAIN_IMAGE = r"""
 """
 
 
+# Marks each Files-tab row it has read, and the row's menu button for the Download route.
+_JS_FILE_ROWS = r"""
+() => {
+  const extRe = /\.(pdf|docx?|xlsx?|pptx?|jpe?g|png|zip|rar)$/i;
+  const countNames = (el) =>
+    (el.innerText || '').split('\n').filter(l => extRe.test(l.trim())).length;
+  const main = document.querySelector('[role="main"]') || document.body;
+  const out = [];
+  for (const el of main.querySelectorAll('a, span')) {
+    if (el.closest('[data-fbp-row]')) continue;
+    const t = (el.innerText || '').trim();
+    if (!t || t.length > 200 || t.includes('\n') || !extRe.test(t)) continue;
+    // climb to the row: stop at the first ancestor holding a menu button,
+    // but never climb into a container that holds several file names
+    let row = el, btn = null;
+    for (let i = 0; i < 12 && row.parentElement; i++) {
+      const up = row.parentElement;
+      if (countNames(up) > 1) break;
+      row = up;
+      btn = row.querySelector('[aria-haspopup="menu"], [role="button"][aria-label]');
+      if (btn) break;
+    }
+    if (row.hasAttribute('data-fbp-row')) continue;
+    const id = 'r' + Math.random().toString(36).slice(2, 10);
+    row.setAttribute('data-fbp-row', id);
+    if (btn) btn.setAttribute('data-fbp-more', id);
+    const a = el.closest('a[href]') || row.querySelector('a[href]');
+    out.push({ rowId: id, name: t, href: a ? a.href : '' });
+  }
+  return out;
+}
+"""
+
+
+class _FileItem(Model):
+    """What _JS_FILE_ROWS returns for one row: parsed, since the page is Facebook's."""
+
+    row_id: str
+    name: str
+    href: str  # empty when the row has no link: only its Download menu can save it
+
+
 class _FeedItem(Model):
     """What _JS_FEED_POSTS returns for one post: parsed, since the page is Facebook's."""
 
@@ -180,6 +225,116 @@ class Facebook:
         time.sleep(random.uniform(0.2, 0.5))
         return response.body()
 
+    def file_rows(self) -> Iterator[Sequence[FileRow]]:
+        page = self._page
+        _retry(lambda: page.goto(f"{BASE}/groups/{self._group}/files/files"))
+        time.sleep(4)
+        self._check()
+        _dismiss_popups(page)
+        idle = 0
+        while idle < IDLE_ROUNDS:
+            raw: list[object] = page.evaluate(_JS_FILE_ROWS)
+            items = [_FileItem.model_validate(item) for item in raw]
+            idle = 0 if items else idle + 1
+            yield [FileRow(i.row_id, i.name, i.href) for i in items]
+            page.mouse.wheel(0, 5000)
+            page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+            time.sleep(random.uniform(2.0, 3.5))
+            more = page.get_by_role("button", name=re.compile(r"^(查看更多|顯示更多|See more)$"))
+            if more.count():
+                try:
+                    more.first.click(timeout=3000)
+                    time.sleep(2)
+                except PlaywrightTimeout:
+                    pass  # the button went away as the list grew: the next scroll goes on
+            self._check()
+
+    def save_file(self, row: FileRow, to: Path) -> None:
+        """Tries each route fb_papers.py found Facebook to need, most direct first."""
+        href = _resolve_href(row.href)
+        if href and "facebook.com/groups/" not in href and self._save_via_request(href, to):
+            return
+        if self._save_via_menu(row.row_id, to):
+            return
+        if (
+            href
+            and ("/permalink/" in href or "/posts/" in href)
+            and self._save_via_post_page(href, row.name, to)
+        ):
+            return
+        if href and self._save_via_new_tab(href, to):
+            return
+        raise RuntimeError("no download route worked")
+
+    def _save_via_request(self, url: str, to: Path) -> bool:
+        response = _retry(lambda: self._window.request.get(url, timeout=120_000))
+        if not response.ok:
+            return False
+        body = response.body()
+        if len(body) < 500 or _looks_like_html(response, body):  # a login or error page
+            return False
+        to.write_bytes(body)
+        return True
+
+    def _save_via_menu(self, row_id: str, to: Path) -> bool:
+        page = self._page
+        more = page.locator(f'[data-fbp-more="{row_id}"]')
+        if not more.count():
+            return False
+        more.first.scroll_into_view_if_needed()
+        more.first.click()
+        item = (
+            page.get_by_role("menuitem")
+            .filter(has_text=re.compile(r"下載|下载|Download", re.I))
+            .first
+        )
+        try:
+            item.wait_for(timeout=5000)
+            with page.expect_download(timeout=90_000) as download:
+                item.click()
+            download.value.save_as(to)
+            return True
+        except PlaywrightTimeout:
+            page.keyboard.press("Escape")
+            return False
+
+    def _save_via_post_page(self, href: str, name: str, to: Path) -> bool:
+        """Some rows link to the post the file was attached to: take the file link from there."""
+        tab = self._window.new_page()
+        try:
+            _retry(lambda: tab.goto(href))
+            time.sleep(4)
+            links: list[str] = tab.evaluate(
+                "() => [...document.querySelectorAll('a[href]')].map(a => a.href)"
+            )
+        finally:
+            tab.close()
+        stem = Path(name).stem.lower()
+        found = [
+            real
+            for real in map(_resolve_href, links)
+            if "fbsbx.com" in real or "/download/" in real
+        ]
+        found.sort(key=lambda real: stem not in unquote(real).lower())  # its own name first
+        return any(self._save_via_request(real, to) for real in found)
+
+    def _save_via_new_tab(self, href: str, to: Path) -> bool:
+        tab = self._window.new_page()
+        try:
+            with tab.expect_download(timeout=45_000) as download:
+                try:
+                    tab.goto(href)
+                except TargetClosedError:
+                    raise
+                except PlaywrightError:
+                    pass  # Playwright reports "Download is starting" as a failed navigation
+            download.value.save_as(to)
+            return True
+        except PlaywrightTimeout:
+            return False
+        finally:
+            tab.close()
+
     def _main_image(self, prev: str | None, seen: set[str]) -> str | None:
         """This photo's image once it is stable (up to ~10 s), or None when it never changes."""
         page = self._page
@@ -205,6 +360,23 @@ class Facebook:
             return
         if any(s in text for s in _BLOCKED):
             raise RpcError("blocked", "Facebook says this account is temporarily blocked")
+
+
+def _resolve_href(href: str) -> str:
+    """The target of an l.facebook.com/l.php?u=... redirect link, or the link itself."""
+    if not href:
+        return href
+    u = urlparse(href)
+    if u.netloc.startswith("l.facebook.com") or u.path == "/l.php":
+        target = parse_qs(u.query).get("u", [""])[0]
+        return unquote(target) if target else href
+    return href
+
+
+def _looks_like_html(response: APIResponse, body: bytes) -> bool:
+    head = body[:200].lstrip().lower()
+    content_type = response.headers.get("content-type", "").lower()
+    return "text/html" in content_type or head.startswith((b"<!doctype", b"<html"))
 
 
 def _image_key(src: str) -> str:

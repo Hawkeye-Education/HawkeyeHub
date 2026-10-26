@@ -1,6 +1,7 @@
-"""The Update run's feed phases: scan the group feed newest first, then download each new post.
+"""The Update run: save the Files tab, scan the group feed newest first, then download new posts.
 
-Facebook itself is behind `Feed`, so this runs against a stand-in in tests: no test opens Facebook.
+Facebook itself is behind `FilesTab` and `Feed`, so this runs against stand-ins in tests: no test
+opens Facebook.
 """
 
 import random
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Protocol
 
 from classify import is_incomplete, is_not_paper, post_title
+from files import FileRow, FilesTab, file_dest, write_file
 from hawkeye_hub import Model, RpcError
 from playwright._impl._errors import TargetClosedError  # the closed-window error, as browser.py
 from posts import Stopped, known_post_ids, write_post
@@ -79,7 +81,20 @@ class Failed(Model):
     detail: str
 
 
+class SkippedKnown(Model):
+    kind: Literal["skipped-known"]  # a file of that name is already on disk
+
+
 PostResult = Saved | SkippedNotPaper | Incomplete | Failed
+FileResult = Saved | SkippedKnown | Failed
+
+
+class FilesProgress(Model):
+    phase: Literal["files"]
+    done: int
+    total: int
+    item: str  # the file's name
+    result: Annotated[FileResult, Field(discriminator="kind")]
 
 
 class ScanProgress(Model):
@@ -95,11 +110,14 @@ class PostProgress(Model):
     result: Annotated[PostResult, Field(discriminator="kind")]
 
 
-Progress = ScanProgress | PostProgress
+Progress = FilesProgress | ScanProgress | PostProgress
 Outcome = Literal["finished", "cancelled", "bad-streak"]
 
 
 class UpdateResult(Model):
+    files_saved: int
+    files_known: int
+    files_failed: int
     saved: int
     skipped_not_paper: int
     incomplete: int
@@ -110,24 +128,33 @@ class UpdateResult(Model):
 
 def run_update(
     feed: Feed,
-    posts: Path,
+    tab: FilesTab,
+    output: Path,
     group: GroupId,
     stop_at_known: bool,
     stopping: threading.Event,
     notify: Callable[[Progress], None],
     delay_seconds: float,
 ) -> UpdateResult:
-    """Scans, then downloads into `posts`. The queue lives only here: disk is the resume state.
+    """Saves the Files tab into output/files, then scans the feed and downloads into output/posts.
+    The queue lives only here: disk is the resume state.
 
     signed-out, checkpoint and blocked (RpcError) propagate and end the run.
     """
+    files: list[FileResult] = []
     results: list[PostResult] = []
 
     def ended(outcome: Outcome) -> UpdateResult:
         def count(kind: type[PostResult]) -> int:
             return sum(isinstance(r, kind) for r in results)
 
+        def count_files(kind: type[FileResult]) -> int:
+            return sum(isinstance(r, kind) for r in files)
+
         return UpdateResult(
+            files_saved=count_files(Saved),
+            files_known=count_files(SkippedKnown),
+            files_failed=count_files(Failed),
             saved=count(Saved),
             skipped_not_paper=count(SkippedNotPaper),
             incomplete=count(Incomplete),
@@ -135,7 +162,25 @@ def run_update(
             outcome=outcome,
         )
 
+    posts = output / "posts"
     try:
+        rows = _file_rows(tab, stopping)
+        for done, row in enumerate(rows, 1):
+            if stopping.is_set():
+                return ended("cancelled")
+            dest = file_dest(output / "files", row.name)
+            # ponytail: a name on disk is done, so distinct files sharing a name are skipped
+            result = SkippedKnown(kind="skipped-known") if dest.exists() else _save(tab, row, dest)
+            files.append(result)
+            notify(
+                FilesProgress(
+                    phase="files", done=done, total=len(rows), item=row.name, result=result
+                )
+            )
+            if not isinstance(result, SkippedKnown) and done < len(rows):
+                stopping.wait(random.uniform(delay_seconds, delay_seconds * 1.6))
+        if stopping.is_set():
+            return ended("cancelled")
         queue = _scan(feed, known_post_ids(posts), stop_at_known, stopping, notify)
         bad = 0
         for done, post in enumerate(queue, 1):
@@ -157,6 +202,27 @@ def run_update(
         return ended("cancelled" if stopping.is_set() else "finished")
     except (Stopped, TargetClosedError):  # Stop or shutdown mid-post, or staff closed Edge
         return ended("cancelled")
+
+
+def _file_rows(tab: FilesTab, stopping: threading.Event) -> list[FileRow]:
+    """Every row of the Files tab, once each. Raises Stopped once stopping."""
+    rows: dict[tuple[str, str], FileRow] = {}
+    for batch in tab.file_rows():
+        if stopping.is_set():
+            raise Stopped()
+        for row in batch:
+            rows.setdefault((row.name, row.href), row)
+    return list(rows.values())
+
+
+def _save(tab: FilesTab, row: FileRow, dest: Path) -> FileResult:
+    try:
+        write_file(dest, lambda to: tab.save_file(row, to))
+        return Saved(kind="saved")
+    except (RpcError, TargetClosedError):
+        raise
+    except Exception as e:  # noqa: BLE001 - reported to staff per file, so one bad file does not stop the run
+        return Failed(kind="failed", detail=f"{type(e).__name__}: {e}")
 
 
 def _scan(
