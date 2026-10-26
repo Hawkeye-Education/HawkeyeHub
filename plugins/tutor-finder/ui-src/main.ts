@@ -7,7 +7,9 @@ import type { HubError } from "@hawkeye-hub/hub-api";
 import {
   KEY_SECRET,
   parseKey,
+  readFailure,
   readSheet,
+  type ReadFailure,
   type ServiceAccountKey,
 } from "./google";
 import { t } from "./i18n";
@@ -36,7 +38,18 @@ const roster = byId("section", "roster");
 const refresh = byId("button", "refresh");
 const tally = byId("p", "tally");
 const table = createTable(byId("table", "table"));
+const settings = byId("details", "settings");
+const problem = byId("section", "problem");
+const problemMessage = byId("p", "problem-message");
+const stale = byId("p", "stale");
+const retry = byId("button", "retry");
+const replaceKey = byId("button", "replace-key");
 
+byId("summary", "settings-label").textContent = t("settings");
+byId("button", "settings-replace-key").textContent = t("replaceKey");
+replaceKey.textContent = t("replaceKey");
+retry.textContent = t("retry");
+stale.textContent = t("failed.stale");
 byId("h1", "setup-title").textContent = t("setup.title");
 byId("p", "setup-hint").textContent = t("setup.hint");
 byId("span", "key-file-label").textContent = t("setup.file");
@@ -46,35 +59,75 @@ refresh.textContent = t("refresh");
 let key: ServiceAccountKey | null = null; // null: no usable key stored yet
 /** The roster in memory: what the table shows, and what the filters (#177) will narrow. */
 let tutors: readonly Tutor[] = [];
+/** Whether a read has worked since the Plugin opened, so a failed one leaves its table, marked stale. */
+let loaded = false;
 
 function showRoster(): void {
   table.show(tutors.map((tutor) => ({ tutor, offerings: tutor.offerings })));
   tally.textContent = t("tally", { count: tutors.length });
 }
 
-/** Reads the sheet with `key` and shows it. Every open does this once; Refresh does it again. */
+/** Reads the sheet with `key` and shows it. Every open does this once; Refresh and Retry do it again. */
 async function load(key: ServiceAccountKey): Promise<void> {
   setup.hidden = true;
+  settings.hidden = false;
   refresh.disabled = true;
+  retry.disabled = true;
   status.textContent = t("loading");
   try {
     tutors = parseRows(await readSheet(key));
+    loaded = true;
     showRoster();
     roster.hidden = false;
-    status.textContent = "";
-  } catch {
-    // Not logged: Google's errors may echo sheet data. #176 tells the failures apart.
-    status.textContent = t("loadFailed");
+    problem.hidden = true;
+  } catch (e) {
+    // Not logged: Google's errors may echo sheet data.
+    showProblem(readFailure(e), key);
   } finally {
+    status.textContent = "";
     refresh.disabled = false;
+    retry.disabled = false;
   }
+}
+
+/** Says why the read failed and offers what fixes it. Once a read has worked, its table stays, marked stale. */
+function showProblem(failure: ReadFailure, key: ServiceAccountKey): void {
+  switch (failure) {
+    case "keyRejected":
+      problemMessage.textContent = t("failed.keyRejected");
+      break;
+    case "noAccess":
+      problemMessage.textContent = t("failed.noAccess", {
+        email: key.client_email,
+      });
+      break;
+    case "unreachable":
+      problemMessage.textContent = t("failed.unreachable");
+      break;
+    default:
+      failure satisfies never;
+  }
+  retry.hidden = failure === "keyRejected"; // the same key would fail the same way
+  replaceKey.hidden = failure !== "keyRejected";
+  stale.hidden = !loaded;
+  roster.hidden = !loaded;
+  problem.hidden = false;
 }
 
 function askForKey(): void {
   roster.hidden = true;
+  problem.hidden = true;
+  settings.hidden = true;
+  settings.open = false;
   status.textContent = "";
   setup.hidden = false;
 }
+
+retry.addEventListener("click", () => {
+  if (key !== null) void load(key); // a failure is shown only after a key was read
+});
+replaceKey.addEventListener("click", askForKey);
+byId("button", "settings-replace-key").addEventListener("click", askForKey);
 
 keyFile.addEventListener("change", () => {
   void (async () => {
