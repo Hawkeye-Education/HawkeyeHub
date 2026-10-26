@@ -62,7 +62,10 @@ export type AiChatEvent = { id: number } & (
   | { kind: "failed"; failure: AiFailure }
 );
 
-/** What a `StoreCall` comes to: its value, or the `HubError` the page's call rejects with. */
+/** The preload invokes this with a `SecretCall` (main/plugin-secrets.ts); main answers a `StoreAnswer`. */
+export const SECRETS = "hub:secrets";
+
+/** What a `StoreCall` or `SecretCall` comes to: its value, or the `HubError` the page's call rejects with. */
 export type StoreAnswer<Value> =
   { kind: "done"; value: Value } | { kind: "refused"; refusal: HubError };
 

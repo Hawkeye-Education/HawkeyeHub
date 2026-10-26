@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { SHUTDOWN_GRACE_MS, startBackend } from "./backend";
 import type { Diagnostics, PluginSession } from "./diagnostics";
 import { parseAbsolutePath } from "./ids";
+import type { SecretName } from "./plugin-secrets";
 
 // The Backend process, as the Hub sees it: stdin lines it was sent, and stdout it answers on.
 const child = vi.hoisted((): { current: unknown } => ({ current: undefined }));
@@ -92,10 +93,31 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+function started(secrets: ReadonlyMap<SecretName, string>) {
+  return startBackend(
+    installed(),
+    parseAbsolutePath(mkdtempSync(join(tmpdir(), "hub-data-"))),
+    secrets,
+    diagnostics,
+    session,
+    noop,
+    "installed",
+  );
+}
+
+/** The params of the `initialize` the Backend was sent. */
+async function initializeParams(): Promise<unknown> {
+  await vi.advanceTimersByTimeAsync(0);
+  const [first] = fake.sent;
+  if (first === undefined) throw new Error("Nothing was sent");
+  return (JSON.parse(first) as { params: unknown }).params;
+}
+
 async function initializedBackend() {
   const backend = startBackend(
     installed(),
     parseAbsolutePath(mkdtempSync(join(tmpdir(), "hub-data-"))),
+    new Map(),
     diagnostics,
     session,
     noop,
@@ -108,6 +130,22 @@ async function initializedBackend() {
   await vi.advanceTimersByTimeAsync(REMEMBER_MS);
   return backend;
 }
+
+test("initialize carries every stored secret", async () => {
+  // A test builds the brand by hand; only `openPluginSecrets` parses one.
+  started(new Map([["sheets-key" as SecretName, "pk-secret"]]));
+
+  expect(await initializeParams()).toMatchObject({
+    secrets: { "sheets-key": "pk-secret" },
+  });
+});
+
+// SDK 1.0.0 Backends refuse an `initialize` with keys they do not know.
+test("initialize leaves secrets out when none is stored", async () => {
+  started(new Map());
+
+  expect(await initializeParams()).not.toHaveProperty("secrets");
+});
 
 test("shutdown is sent at once, without waiting for the process tree to be noted", async () => {
   const backend = await initializedBackend();

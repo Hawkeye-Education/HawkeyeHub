@@ -136,6 +136,7 @@ Before your code runs, the Hub preload has set `<html lang>`, loaded the `--hub-
 | Talk to your Backend | `hub.backend` |
 | Read or write a Shared Store | `hub.stores` |
 | Call an AI model from your own UI | `hub.ai` |
+| Keep a key or password encrypted | `hub.secrets` (§4.10) |
 | Warn staff before they close mid-work | `hub.busy` |
 | Who is using the Plugin | `hub.identity` |
 
@@ -356,6 +357,22 @@ The Backend's private folder is `ctx.data_dir` (§5.5). Plugin Data belongs to t
 
 `hub.ai.chat` lets the Plugin UI call a model for its own features, separately from the Assistant. Use `{kind: 'default'}` unless staff chose a model in your UI from `hub.ai.providers()`. There is no tool calling and no structured output. Parse what comes back as untrusted text. Backends never call AI: the UI calls it and passes the result over the protocol.
 
+### 4.10 Plugin Secrets
+
+A value the Plugin must not keep in plain text, such as a Google service-account key, is a **Plugin Secret** (ADR 0013): a named string the Hub encrypts with the OS user's key and keeps with the Plugin's data. Never put one in `localStorage`, a Shared Store or `ctx.data_dir`. Every Plugin UI has `hub.secrets` from Hub API 1.4.0, with no Manifest field, so write `"hubApi": "^1.4.0"`:
+
+```ts
+const found = await hub.secrets.get('sheets-key'); // {kind: 'stored', value} | {kind: 'missing'}
+await hub.secrets.set('sheets-key', keyJsonText);  // replaces any stored value
+await hub.secrets.remove('sheets-key');            // nothing stored is fine
+```
+
+- Names are non-blank `[a-z0-9-]`, else `secret-name-invalid`. Values are strings up to 64 KiB of UTF-8, else `secret-too-large`, so a JSON key is stored as its text. There is no `list()`.
+- Draw the form staff type a secret into yourself, from the Hub Kit. On `missing`, ask staff for it. A secret the Hub could not decrypt (another OS user's, a damaged file) is `missing` too.
+- The Backend gets every stored secret once, in `initialize`, as `ctx.secrets` (§5.5). A secret set or removed while the Plugin is open reaches the Backend only at the next open. When the Backend needs the new value sooner, pass it in a `hub.backend.request`.
+- Uninstall with "Also delete my data" removes the Plugin's secrets; "keep data" keeps them.
+- Never log a secret, its name included, from `console` or the Backend's stderr: the Hub writes both verbatim into the Plugin's log and the Diagnostics Bundle.
+
 ## 5. The Backend
 
 ### 5.1 Project
@@ -510,7 +527,7 @@ Reject a request with `RpcError(reason, message)`. The `reason` is a kebab-case 
 
 ### 5.5 Files, stores and processes
 
-- `ctx.data_dir` is the Backend's private Plugin Data folder. `ctx.stores` maps each declared Shared Store to its folder. `ctx.hub_api` is the Hub API version the Hub implements.
+- `ctx.data_dir` is the Backend's private Plugin Data folder. `ctx.stores` maps each declared Shared Store to its folder. `ctx.secrets` maps each stored Plugin Secret's name to its value as the Hub had them at open, possibly none (SDK 1.1.0, §4.10). `ctx.hub_api` is the Hub API version the Hub implements.
 - Read and write staff's files only under folders the Plugin UI picked with `hub.files.pickFolder` and passed in a request.
 - stdout is the protocol. The SDK moves `sys.stdout` to stderr, so a stray `print()` is harmless, and stderr is the Backend's log. Log with `logging` to stderr. The Hub keeps it verbatim in the Plugin's log (§1).
 - Reach other programs as child processes. The Backend never listens on a port: no local HTTP servers, no sockets (ADR 0003).
@@ -599,7 +616,7 @@ test('a rejected run shows the translated reason and clears Busy', async () => {
 });
 ```
 
-The fake's surface: `installFakeHub({manifest, displayLanguage})`. It does not fake `hub.identity` or `hub.stores` yet, and refuses a Manifest that declares identity or a Shared Store; they join when a Plugin's tests need them. `fake.backend.handle(method, fn)`, `fake.backend.emit(method, params)` (a Backend notification), `fake.backend.requests` and `fake.backend.notifications` (what the UI sent). `fake.files.queuePick(result)`, `fake.files.failNextOpen(hubError)` and `fake.files.opened`. `fake.ai.queueReply(text)` and `fake.ai.chats`. `fake.busy.state`. `fake.settle()` waits for pending Hub calls. `backendError(reason, message)` builds the `HubError` a Backend rejection becomes.
+The fake's surface: `installFakeHub({manifest, displayLanguage})`. It does not fake `hub.identity` or `hub.stores` yet, and refuses a Manifest that declares identity or a Shared Store; they join when a Plugin's tests need them. `fake.backend.handle(method, fn)`, `fake.backend.emit(method, params)` (a Backend notification), `fake.backend.requests` and `fake.backend.notifications` (what the UI sent). `fake.files.queuePick(result)`, `fake.files.failNextOpen(hubError)` and `fake.files.opened`. `fake.ai.queueReply(text)` and `fake.ai.chats`. `fake.secrets.stored`, a `Map` of the stored secrets: seed it before the UI runs, and read what the UI set or removed; the fake refuses a bad name or a value too large as the Hub does. `fake.busy.state`. `fake.settle()` waits for pending Hub calls. `backendError(reason, message)` builds the `HubError` a Backend rejection becomes.
 
 Test at least one path per `Reason` the UI can show, and the Plugin Data migration from every older version.
 
@@ -630,7 +647,7 @@ def make_pdf(path: Path, watermark: str) -> None:
 
 def test_run_cleans_nested_pdfs_and_reports_progress(tmp_path: Path) -> None:
     make_pdf(tmp_path / "in" / "sub" / "a.pdf", "Provided by dse.life")
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.0.0") as backend:
+    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.0.0") as backend:
         result = backend.request("run", {
             "input": str(tmp_path / "in"), "output": str(tmp_path / "out"),
             "pattern": r"Provided\s+by\s+dse\.life", "regex": True, "ignoreCase": False,
@@ -642,7 +659,7 @@ def test_run_cleans_nested_pdfs_and_reports_progress(tmp_path: Path) -> None:
 
 def test_run_refuses_the_same_folder(tmp_path: Path) -> None:
     (tmp_path / "in").mkdir()
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.0.0") as backend:
+    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.0.0") as backend:
         with pytest.raises(BackendFailed) as failed:
             backend.request("run", {
                 "input": str(tmp_path / "in"), "output": str(tmp_path / "in"),
@@ -651,7 +668,7 @@ def test_run_refuses_the_same_folder(tmp_path: Path) -> None:
     assert failed.value.reason == "same-folder"
 ```
 
-The harness's surface: `run_backend(backend_dir, *, data_dir, stores, hub_api)` starts `main.py` with the current interpreter, which is `backend/.venv`'s Python under `uv run pytest`. The running Backend offers `request(method, params)`, which returns the decoded result or raises `BackendFailed(code, reason, message)`; `notify(method, params)`; `notifications(method)`, the params received so far; `wait_for(method, count, timeout)`; and `stderr`. Build test files in code, as above, rather than committing binaries, unless a real-world sample is the point of the test.
+The harness's surface: `run_backend(backend_dir, *, data_dir, stores, secrets, hub_api)` (`secrets` from SDK 1.1.0; pass `{}` for none) starts `main.py` with the current interpreter, which is `backend/.venv`'s Python under `uv run pytest`. The running Backend offers `request(method, params)`, which returns the decoded result or raises `BackendFailed(code, reason, message)`; `notify(method, params)`; `notifications(method)`, the params received so far; `wait_for(method, count, timeout)`; and `stderr`. Build test files in code, as above, rather than committing binaries, unless a real-world sample is the point of the test.
 
 Test every reason the Backend raises, cancel mid-run, and `shutdown` mid-run leaving no partial file.
 

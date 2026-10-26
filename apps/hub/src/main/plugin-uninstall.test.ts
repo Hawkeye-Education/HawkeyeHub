@@ -105,6 +105,8 @@ function installedOnDisk(
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "kept.txt"), "x");
   }
+  mkdirSync(join(dataDir, "plugin-secrets"), { recursive: true });
+  writeFileSync(join(dataDir, "plugin-secrets", `${id}.bin`), "encrypted");
   return { folder, manifest };
 }
 
@@ -127,6 +129,7 @@ test("keeping data removes the record entry and the version folder, and leaves t
   expect(there("class-timer@1.0.0")).toBe(true);
   expect(there("plugin-data", "seating-plan", "kept.txt")).toBe(true);
   expect(there("stores", "rooms", "kept.txt")).toBe(true);
+  expect(there("plugin-secrets", "seating-plan.bin")).toBe(true);
   expect(cleared).toEqual([]);
 });
 
@@ -140,6 +143,8 @@ test("deleting data also clears the partition, the Plugin Data and every store n
   expect(there("seating-plan@1.0.0")).toBe(false);
   expect(cleared).toEqual(["seating-plan"]);
   expect(there("plugin-data", "seating-plan")).toBe(false);
+  expect(there("plugin-secrets", "seating-plan.bin")).toBe(false);
+  expect(there("plugin-secrets", "class-timer.bin")).toBe(true);
   expect(there("stores", "rooms")).toBe(false);
   expect(there("stores", "timetable", "kept.txt")).toBe(true);
   expect(there("plugin-data", "class-timer", "kept.txt")).toBe(true);

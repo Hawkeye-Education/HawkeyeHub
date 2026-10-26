@@ -107,6 +107,8 @@ class Context:
 
     data_dir: Path
     stores: Mapping[str, Path]
+    # Every stored Plugin Secret by name, as the Hub had them at open (ADR 0013). Never log them.
+    secrets: Mapping[str, str]
     hub_api: SemVer
     _write: Callable[[Message], None] = field(repr=False)
 
@@ -140,6 +142,9 @@ _incoming: TypeAdapter[_Request | _Notification] = TypeAdapter(_Request | _Notif
 class _Initialize(Model):
     data_dir: Path
     stores: dict[str, Path]
+    # The Hub leaves `secrets` out when none is stored, because SDK 1.0.0 refuses a key it does not
+    # know (ADR 0013): absent is none stored.
+    secrets: dict[str, str] = Field(default_factory=dict[str, str])
     hub_api: SemVer
 
 
@@ -211,6 +216,7 @@ class Backend:
         ctx = Context(
             data_dir=started.data_dir,
             stores=MappingProxyType(dict(started.stores)),
+            secrets=MappingProxyType(dict(started.secrets)),
             hub_api=started.hub_api,
             _write=write,
         )

@@ -1,8 +1,8 @@
 // Uninstalling a Plugin (ADR 0005, spec #91), as one job of the job queue, once the Plugin is
 // closed: the record entry goes, then the `<id>@<version>` folder. With "Also delete my data" its
-// partition's storage, its Plugin Data and every Shared Store no other installed Plugin declares go
-// too. A Python Backend's interpreters and uv's cache are pruned, and uv goes with the last one
-// (ADR 0011). Nothing here can fail with a cause staff could act on, so a throw is a Hub crash.
+// partition's storage, its Plugin Data, its Plugin Secrets and every Shared Store no other
+// installed Plugin declares go too. A Python Backend's interpreters and uv's cache are pruned, and
+// uv goes with the last one (ADR 0011). Nothing here can fail with a cause staff could act on, so a throw is a Hub crash.
 
 import { rmSync } from "node:fs";
 import type { PluginId } from "@hawkeye-hub/plugin-format";
@@ -15,6 +15,7 @@ import {
   type InstalledPlugin,
 } from "./installed-plugins";
 import { pluginDataFolder, storeFolder } from "./stores";
+import { pluginSecretsFile } from "./plugin-secrets";
 import { pruneUv, type Uv } from "./uv";
 
 /** Staff's choice in the uninstall dialog: the "Also delete my data" checkbox. */
@@ -52,6 +53,7 @@ export async function uninstallPlugin(
     recursive: true,
     force: true,
   });
+  rmSync(pluginSecretsFile(dataDir, manifest.id), { force: true });
   // A Plugin the record names but that could not be loaded declares no store we know of.
   const stillDeclared = new Set(
     loadInstalledPlugins(dataDir).loaded.flatMap(

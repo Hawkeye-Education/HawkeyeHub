@@ -195,3 +195,35 @@ test("a Manifest declaring Shared Stores is refused until the fake has them", ()
     }),
   ).toThrow("stores");
 });
+
+test("secrets seeded by the test read back, and what the UI sets or removes shows in the store", async () => {
+  const fake = installFakeHub({ manifest, displayLanguage: "en-HK" });
+  fake.secrets.stored.set("sheets-key", "pk-seeded");
+
+  await expect(window.hub.secrets.get("sheets-key")).resolves.toEqual({
+    kind: "stored",
+    value: "pk-seeded",
+  });
+  await expect(window.hub.secrets.get("sheet-id")).resolves.toEqual({
+    kind: "missing",
+  });
+  await window.hub.secrets.set("sheet-id", "abc");
+  await window.hub.secrets.remove("sheets-key");
+
+  expect(fake.secrets.stored).toEqual(new Map([["sheet-id", "abc"]]));
+});
+
+test("secrets refuse a bad name and a value over 64 KiB, as the Hub does", async () => {
+  installFakeHub({ manifest, displayLanguage: "en-HK" });
+
+  await expect(window.hub.secrets.get("Sheets Key")).rejects.toEqual({
+    code: "secret-name-invalid",
+    name: "Sheets Key",
+  });
+  await expect(
+    window.hub.secrets.set("big", "密".repeat(21_846)),
+  ).rejects.toEqual({ code: "secret-too-large", name: "big" });
+  await expect(
+    window.hub.secrets.set("big", "x".repeat(64 * 1024)),
+  ).resolves.toBeUndefined();
+});

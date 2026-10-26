@@ -8,6 +8,7 @@ import type { PluginId } from "@hawkeye-hub/plugin-format";
 import { z } from "zod";
 import {
   MessageChannelMain,
+  safeStorage,
   session,
   WebContentsView,
   type BaseWindow,
@@ -41,6 +42,7 @@ import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
 import { serveHubKit, TRANSPARENT } from "./hub-kit";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
+import { openPluginSecrets, serveSecrets } from "./plugin-secrets";
 import { serveStores } from "./stores";
 import { watchResponsiveness } from "./plugin-ui-responsiveness";
 
@@ -192,6 +194,16 @@ export function createPluginViews(
     if (manifest.stores.length > 0) {
       serveStores(view.webContents, hubDataDir, manifest.stores);
     }
+    // `hub.secrets`, for every Plugin, read once here and shared with the Backend's `initialize`.
+    const secrets = openPluginSecrets(
+      hubDataDir,
+      pluginRefOf(plugin),
+      safeStorage,
+      (event) => {
+        diagnostics.recordHubEvent(event);
+      },
+    );
+    serveSecrets(view.webContents, secrets);
     // `hub.files`, for every Plugin.
     serveFiles(view.webContents, window);
     // `hub.ai`, for every Plugin, with the Hub Settings and keys saved when each chat starts.
@@ -212,6 +224,7 @@ export function createPluginViews(
       ? startBackend(
           plugin,
           hubDataDir,
+          secrets.stored,
           diagnostics,
           pluginSession,
           crashed,

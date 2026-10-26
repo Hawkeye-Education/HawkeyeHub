@@ -28,6 +28,7 @@ import {
   SPAWN_DETACHED,
   venvPython,
 } from "./platform";
+import type { SecretName } from "./plugin-secrets";
 import { pluginDataFolder, storeFolder } from "./stores";
 
 export interface Backend {
@@ -115,6 +116,8 @@ function backendEnv(): NodeJS.ProcessEnv {
 export function startBackend(
   installed: InstalledPlugin,
   hubDataDir: AbsolutePath,
+  /** The Plugin's stored secrets, sent once in `initialize` (ADR 0013). */
+  secrets: ReadonlyMap<SecretName, string>,
   diagnostics: Diagnostics,
   pluginSession: PluginSession,
   /** Closes the whole Plugin, while it is still open: the Backend broke or failed to start. */
@@ -289,7 +292,14 @@ export function startBackend(
       jsonrpc: "2.0",
       id: INITIALIZE_ID,
       method: "initialize",
-      params: { dataDir, stores, hubApi: HUB_API_VERSION },
+      params: {
+        dataDir,
+        stores,
+        hubApi: HUB_API_VERSION,
+        // Left out when none is stored: an SDK 1.0.0 Backend refuses an `initialize` with a key it
+        // does not know, and SDK 1.1.0 reads a missing one as none (ADR 0013).
+        ...(secrets.size > 0 && { secrets: Object.fromEntries(secrets) }),
+      },
     }),
   );
 

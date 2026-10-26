@@ -1,5 +1,5 @@
 // A fake `window.hub` for Plugin UI tests under Vitest and happy-dom (PLUGIN_STANDARD.md §9.1).
-// It covers `displayLanguage`, `backend`, `busy`, `files` and `ai`; other namespaces join when a
+// It covers `displayLanguage`, `backend`, `busy`, `files`, `ai` and `secrets`; other namespaces join when a
 // Plugin needs them.
 
 import type {
@@ -8,6 +8,7 @@ import type {
   Hub,
   HubError,
   PickFolderResult,
+  SecretLookup,
 } from "@hawkeye-hub/hub-api";
 import { parseManifest } from "@hawkeye-hub/plugin-format";
 
@@ -39,6 +40,13 @@ export interface FakeHub {
     failNextOpen(error: HubError): void;
     /** Every path `openFolder` was called with, whether or not it opened. */
     readonly opened: readonly string[];
+  };
+  readonly secrets: {
+    /**
+     * The Plugin Secrets as stored: seed it before the UI runs, and read what the UI set or
+     * removed. Names and sizes are checked only on the UI's calls, as the Hub checks them.
+     */
+    readonly stored: Map<string, string>;
   };
   readonly ai: {
     /** The next `chat` streams `text` back word by word; one queued reply per chat. */
@@ -87,6 +95,15 @@ export function installFakeHub(options: {
   const replies: string[] = [];
   const chats: AiChatRequest[] = [];
   let busy: BusyState = { kind: "idle" };
+  const secrets = new Map<string, string>();
+  // The Hub's own rules (ADR 0013): a refusal is a rejected `HubError`, as the preload sends it.
+  const secretName = (name: string): void => {
+    if (!/^[a-z0-9-]+$/.test(name)) {
+      // A HubError is a plain object by contract (hub-api).
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw { code: "secret-name-invalid", name } satisfies HubError;
+    }
+  };
 
   const pending = new Set<Promise<unknown>>();
   const track = <T>(call: Promise<T>): Promise<T> => {
@@ -154,6 +171,36 @@ export function installFakeHub(options: {
         return Promise.reject(failure);
       },
     }),
+    // Each call a promise, so a thrown HubError reaches the UI as a rejection.
+    secrets: Object.freeze({
+      get: (name: string) =>
+        new Promise<SecretLookup>((resolve) => {
+          secretName(name);
+          const value = secrets.get(name);
+          resolve(
+            value === undefined
+              ? { kind: "missing" }
+              : { kind: "stored", value },
+          );
+        }),
+      set: (name: string, value: string) =>
+        new Promise<void>((resolve) => {
+          secretName(name);
+          if (new TextEncoder().encode(value).length > 64 * 1024) {
+            // A HubError is a plain object by contract (hub-api).
+            // eslint-disable-next-line @typescript-eslint/only-throw-error
+            throw { code: "secret-too-large", name } satisfies HubError;
+          }
+          secrets.set(name, value);
+          resolve();
+        }),
+      remove: (name: string) =>
+        new Promise<void>((resolve) => {
+          secretName(name);
+          secrets.delete(name);
+          resolve();
+        }),
+    }),
     ai: Object.freeze({
       // ponytail: not faked until a Plugin's tests need it.
       providers: () => Promise.reject(fail("hub.ai.providers is not faked")),
@@ -192,6 +239,7 @@ export function installFakeHub(options: {
       failNextOpen: (error) => openFailures.push(error),
       opened,
     },
+    secrets: { stored: secrets },
     ai: { queueReply: (text) => replies.push(text), chats },
     settle: async () => {
       do {
