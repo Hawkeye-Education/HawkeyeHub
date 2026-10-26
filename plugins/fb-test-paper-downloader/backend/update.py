@@ -10,7 +10,7 @@ import threading
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal, NewType, Protocol
 
 from classify import is_incomplete, is_not_paper, post_title
 from files import FileRow, FilesTab, file_dest, write_file
@@ -19,7 +19,8 @@ from playwright._impl._errors import TargetClosedError  # the closed-window erro
 from posts import Stopped, known_post_ids, write_post
 from pydantic import Field
 
-GroupId = str  # digits only: what `group_id` returns
+GroupId = NewType("GroupId", str)  # digits only: made by `group_id` alone
+Digits = Annotated[str, Field(pattern=r"^\d+$")]
 
 
 def group_id(group: str) -> GroupId:
@@ -30,7 +31,7 @@ def group_id(group: str) -> GroupId:
     )
     if m is None:
         raise RpcError("group-invalid", f"{group!r} is not a Facebook group URL or id")
-    return m.group(1)
+    return GroupId(m.group(1))
 
 
 # Fixed, as fb_papers.py ran them; not staff settings.
@@ -40,9 +41,34 @@ BAD_STREAK = 4  # incomplete or failed posts in a row: Facebook is limiting the 
 DELAY_SECONDS = 3.0  # between two posts, stretched by up to 60% at random
 
 
+class GroupPost(Model):
+    """A post in the group, by its numeric id."""
+
+    kind: Literal["post"]
+    id: Digits
+
+    def disk_id(self) -> str:
+        """Its id in post.json and its folder name."""
+        return self.id
+
+
+class SinglePhoto(Model):
+    """A single-photo post: it has no post id, only its photo's fbid."""
+
+    kind: Literal["photo"]
+    fbid: Digits
+
+    def disk_id(self) -> str:
+        """Its id in post.json and its folder name, apart from any group post's."""
+        return f"photo_{self.fbid}"
+
+
+PostId = Annotated[GroupPost | SinglePhoto, Field(discriminator="kind")]
+
+
 @dataclass(frozen=True)
 class FeedPost:
-    post_id: str
+    post_id: GroupPost | SinglePhoto
     photo_url: str
     text: str
     shown: int  # images the feed showed for the post: the viewer should give about as many
@@ -127,6 +153,7 @@ class UpdateResult(Model):
 
 
 def run_update(
+    *,
     feed: Feed,
     tab: FilesTab,
     output: Path,
@@ -145,22 +172,23 @@ def run_update(
     results: list[PostResult] = []
 
     def ended(outcome: Outcome) -> UpdateResult:
-        def count(kind: type[PostResult]) -> int:
-            return sum(isinstance(r, kind) for r in results)
-
-        def count_files(kind: type[FileResult]) -> int:
-            return sum(isinstance(r, kind) for r in files)
+        def count(of: Sequence[object], kind: type) -> int:
+            return sum(isinstance(r, kind) for r in of)
 
         return UpdateResult(
-            files_saved=count_files(Saved),
-            files_known=count_files(SkippedKnown),
-            files_failed=count_files(Failed),
-            saved=count(Saved),
-            skipped_not_paper=count(SkippedNotPaper),
-            incomplete=count(Incomplete),
-            failed=count(Failed),
+            files_saved=count(files, Saved),
+            files_known=count(files, SkippedKnown),
+            files_failed=count(files, Failed),
+            saved=count(results, Saved),
+            skipped_not_paper=count(results, SkippedNotPaper),
+            incomplete=count(results, Incomplete),
+            failed=count(results, Failed),
             outcome=outcome,
         )
+
+    def pause() -> None:
+        """Between two downloads, stretched by up to 60% at random; Stop cuts it short."""
+        stopping.wait(random.uniform(delay_seconds, delay_seconds * 1.6))
 
     posts = output / "posts"
     try:
@@ -178,7 +206,7 @@ def run_update(
                 )
             )
             if not isinstance(result, SkippedKnown) and done < len(rows):
-                stopping.wait(random.uniform(delay_seconds, delay_seconds * 1.6))
+                pause()
         if stopping.is_set():
             return ended("cancelled")
         queue = _scan(feed, known_post_ids(posts), stop_at_known, stopping, notify)
@@ -198,7 +226,7 @@ def run_update(
             if bad >= BAD_STREAK:
                 return ended("bad-streak")
             if done < len(queue):
-                stopping.wait(random.uniform(delay_seconds, delay_seconds * 1.6))
+                pause()
         return ended("cancelled" if stopping.is_set() else "finished")
     except (Stopped, TargetClosedError):  # Stop or shutdown mid-post, or staff closed Edge
         return ended("cancelled")
@@ -206,7 +234,7 @@ def run_update(
 
 def _file_rows(tab: FilesTab, stopping: threading.Event) -> list[FileRow]:
     """Every row of the Files tab, once each. Raises Stopped once stopping."""
-    rows: dict[tuple[str, str], FileRow] = {}
+    rows: dict[tuple[str, str | None], FileRow] = {}
     for batch in tab.file_rows():
         if stopping.is_set():
             raise Stopped()
@@ -240,11 +268,12 @@ def _scan(
         if stopping.is_set():
             raise Stopped()
         for post in batch:
-            if post.post_id in seen:
+            key = post.post_id.disk_id()
+            if key in seen:
                 known_streak += 1
                 continue
             known_streak = 0
-            seen.add(post.post_id)
+            seen.add(key)
             queue.append(post)
             papers += not is_not_paper(post.text, post.shown)
             if papers >= POSTS_PER_RUN:
@@ -266,12 +295,20 @@ def _download(
             return Failed(kind="failed", detail="no images found in the photo viewer")
         if is_incomplete(len(images), post.shown):  # nothing is written: the next run retries it
             return Incomplete(kind="incomplete", saved=len(images), shown=post.shown)
-        url = (
-            f"https://www.facebook.com/groups/{group}/posts/{post.post_id}/"
-            if post.post_id.isdigit()
-            else post.photo_url  # a single-photo post has no post id, only its photo's
+        match post.post_id:
+            case GroupPost(id=number):
+                url = f"https://www.facebook.com/groups/{group}/posts/{number}/"
+            case SinglePhoto():
+                url = post.photo_url  # it has no post page, only its photo's
+        write_post(
+            posts,
+            post_id=post.post_id.disk_id(),
+            url=url,
+            text=post.text,
+            images=images,
+            fetch=feed.fetch,
+            stopping=stopping,
         )
-        write_post(posts, post.post_id, url, post.text, images, feed.fetch, stopping)
         return Saved(kind="saved")
     except (RpcError, Stopped, TargetClosedError):
         raise

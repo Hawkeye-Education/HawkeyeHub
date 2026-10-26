@@ -17,7 +17,9 @@ from classify import classify_level, classify_subject, safe_name
 class FileRow:
     row_id: str  # the mark the Files tab's script left on the row, for its Download menu
     name: str  # the file name Facebook shows
-    href: str  # the row's link, as Facebook gave it
+    # The row's link, as Facebook gave it. None: the row has no link, so only its Download menu
+    # can save it.
+    href: str | None
 
 
 class FilesTab(Protocol):

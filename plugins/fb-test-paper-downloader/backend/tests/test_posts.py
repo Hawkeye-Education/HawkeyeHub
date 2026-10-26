@@ -29,7 +29,15 @@ def fetch(src: str) -> bytes:
 
 
 def write(posts: Path, post_id: str, text: str, fetcher: Callable[[str], bytes] = fetch) -> Path:
-    return write_post(posts, post_id, URL, text, list(IMAGES), fetcher, threading.Event())
+    return write_post(
+        posts,
+        post_id=post_id,
+        url=URL,
+        text=text,
+        images=list(IMAGES),
+        fetch=fetcher,
+        stopping=threading.Event(),
+    )
 
 
 def pdf_pages(pdf: Path) -> int:
@@ -110,7 +118,15 @@ def test_stopping_between_images_leaves_no_finished_post(tmp_path: Path) -> None
         return fetch(src)
 
     with pytest.raises(Stopped):
-        write_post(posts, "111", URL, "P1 Maths", list(IMAGES), stop_after_first, stopping)
+        write_post(
+            posts,
+            post_id="111",
+            url=URL,
+            text="P1 Maths",
+            images=list(IMAGES),
+            fetch=stop_after_first,
+            stopping=stopping,
+        )
 
     assert known_post_ids(posts) == set()
     assert [f for f in files_under(posts) if not f.startswith(".partial-")] == []
@@ -130,3 +146,33 @@ def test_a_post_left_half_written_by_a_killed_backend_is_written_afresh(tmp_path
         f"P1/數學/{folder.name}/paper.pdf",
         f"P1/數學/{folder.name}/post.json",
     ]
+
+
+def test_a_leftover_folder_with_no_post_json_under_the_post_s_name_is_replaced(
+    tmp_path: Path,
+) -> None:
+    posts = tmp_path / "posts"
+    leftover = posts / "P1" / "數學" / "P1 Maths_111"
+    leftover.mkdir(parents=True)
+    (leftover / "paper.pdf").write_bytes(b"half a copy")  # no post.json: not a done post
+
+    folder = write(posts, "111", "P1 Maths")
+
+    assert folder == leftover
+    assert known_post_ids(posts) == {"111"}
+    assert files_under(posts) == [
+        "P1/數學/P1 Maths_111/paper.pdf",
+        "P1/數學/P1 Maths_111/post.json",
+    ]
+    assert pdf_pages(folder / "paper.pdf") == 3
+
+
+def test_a_folder_holding_another_post_s_post_json_is_never_overwritten(tmp_path: Path) -> None:
+    posts = tmp_path / "posts"
+    other = write(posts, "222", "P1 Maths")
+    other.rename(posts / "P1" / "數學" / "P1 Maths_111")  # staff gave 222's folder 111's name
+
+    with pytest.raises(FileExistsError):
+        write(posts, "111", "P1 Maths")
+
+    assert known_post_ids(posts) == {"222"}

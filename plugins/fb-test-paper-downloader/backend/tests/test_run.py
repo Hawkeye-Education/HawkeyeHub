@@ -5,6 +5,7 @@ PLUGIN_STANDARD.md §9.2): no run can start without Facebook. Both set the same 
 """
 
 import io
+import json
 import threading
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
@@ -20,13 +21,16 @@ from update import (
     KNOWN_STREAK,
     POSTS_PER_RUN,
     FeedPost,
+    GroupId,
+    GroupPost,
     Progress,
+    SinglePhoto,
     UpdateResult,
     group_id,
     run_update,
 )
 
-GROUP = "460403882433823"
+GROUP = GroupId("460403882433823")
 
 
 def png() -> bytes:
@@ -40,7 +44,10 @@ PNG = png()
 
 def paper(post_id: str, text: str = "P3 數學 測驗", shown: int = 2) -> FeedPost:
     return FeedPost(
-        post_id=post_id, photo_url=f"https://fb/photo/?set=pcb.{post_id}", text=text, shown=shown
+        post_id=GroupPost(kind="post", id=post_id),
+        photo_url=f"https://fb/photo/?set=pcb.{post_id}",
+        text=text,
+        shown=shown,
     )
 
 
@@ -63,13 +70,14 @@ class FakeFeed:
             yield batch
 
     def images(self, post: FeedPost) -> list[str]:
-        self.opened.append(post.post_id)
-        if post.post_id in self.viewer:
-            shows = self.viewer[post.post_id]
+        key = post.post_id.disk_id()
+        self.opened.append(key)
+        if key in self.viewer:
+            shows = self.viewer[key]
             if isinstance(shows, Exception):
                 raise shows
             return shows
-        return [f"https://cdn/{post.post_id}/{i}" for i in range(post.shown)]
+        return [f"https://cdn/{key}/{i}" for i in range(post.shown)]
 
     def fetch(self, src: str) -> bytes:
         return self.fetcher(src)
@@ -110,14 +118,14 @@ class Run:
 
     def __call__(self, stop_at_known: bool = True) -> UpdateResult:
         return run_update(
-            self.feed,
-            self.tab,
-            self.output,
-            GROUP,
-            stop_at_known,
-            self.stopping,
-            self.notify,
-            0,
+            feed=self.feed,
+            tab=self.tab,
+            output=self.output,
+            group=GROUP,
+            stop_at_known=stop_at_known,
+            stopping=self.stopping,
+            notify=self.notify,
+            delay_seconds=0,
         )
 
     def notify(self, progress: Progress) -> None:
@@ -130,7 +138,15 @@ class Run:
 
 def done(post_id: str, posts: Path) -> None:
     """A post an earlier run saved."""
-    write_post(posts, post_id, "u", "P1 中文", ["x"], lambda src: PNG, threading.Event())
+    write_post(
+        posts,
+        post_id=post_id,
+        url="u",
+        text="P1 中文",
+        images=["x"],
+        fetch=lambda src: PNG,
+        stopping=threading.Event(),
+    )
 
 
 @pytest.mark.parametrize(
@@ -186,6 +202,23 @@ def test_saves_new_papers_newest_first_and_logs_one_line_per_post(tmp_path: Path
     assert saved.name == "P2 英文 默書_111"
 
 
+def test_a_single_photo_post_is_saved_under_its_photo_s_id_and_url(tmp_path: Path) -> None:
+    photo = FeedPost(
+        post_id=SinglePhoto(kind="photo", fbid="555"),
+        photo_url="https://fb/photo/?fbid=555&set=g.1",
+        text="P4 常識 工作紙",
+        shown=1,
+    )
+    run = Run(tmp_path, [[photo]])
+
+    run()
+
+    [folder] = (run.posts / "P4" / "常識").iterdir()
+    assert folder.name == "P4 常識 工作紙_photo_555"
+    assert json.loads((folder / "post.json").read_text(encoding="utf-8"))["url"] == photo.photo_url
+    assert known_post_ids(run.posts) == {"photo_555"}
+
+
 def test_posts_already_on_disk_are_never_downloaded_again(tmp_path: Path) -> None:
     run = Run(tmp_path, [[paper("111"), paper("222")]])
     done("111", run.posts)
@@ -200,7 +233,7 @@ def test_stop_at_known_ends_the_scan_at_posts_downloaded_before(tmp_path: Path) 
     batches = [[paper("1")], known, [paper("2")]]
     run = Run(tmp_path, batches)
     for post in known:
-        done(post.post_id, run.posts)
+        done(post.post_id.disk_id(), run.posts)
 
     run(stop_at_known=True)
 
@@ -212,7 +245,7 @@ def test_without_stop_at_known_the_scan_reaches_older_new_posts(tmp_path: Path) 
     known = [paper(str(1000 + i)) for i in range(KNOWN_STREAK)]
     run = Run(tmp_path, [[paper("1")], known, [paper("2")]])
     for post in known:
-        done(post.post_id, run.posts)
+        done(post.post_id.disk_id(), run.posts)
 
     run(stop_at_known=False)
 
@@ -268,22 +301,22 @@ def test_a_post_with_no_images_in_the_viewer_fails(tmp_path: Path) -> None:
 
 def test_bad_posts_in_a_row_stop_the_run(tmp_path: Path) -> None:
     bad = [paper(str(i)) for i in range(BAD_STREAK)]
-    run = Run(tmp_path, [[paper("ok"), *bad, paper("after")]])
+    run = Run(tmp_path, [[paper("900"), *bad, paper("901")]])
     for post in bad:
-        run.feed.viewer[post.post_id] = []
+        run.feed.viewer[post.post_id.disk_id()] = []
 
     result = run()
 
     assert result.outcome == "bad-streak"
-    assert "after" not in run.feed.opened
+    assert "901" not in run.feed.opened
 
 
 def test_a_saved_post_resets_the_bad_streak(tmp_path: Path) -> None:
     almost = [paper(str(i)) for i in range(BAD_STREAK - 1)]
     more = [paper(str(10 + i)) for i in range(BAD_STREAK - 1)]
-    run = Run(tmp_path, [[*almost, paper("ok"), *more]])
+    run = Run(tmp_path, [[*almost, paper("900"), *more]])
     for post in [*almost, *more]:
-        run.feed.viewer[post.post_id] = []
+        run.feed.viewer[post.post_id.disk_id()] = []
 
     assert run().outcome == "finished"
 

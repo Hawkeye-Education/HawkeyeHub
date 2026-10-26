@@ -40,6 +40,7 @@ def known_post_ids(posts: Path) -> set[str]:
 
 def write_post(
     posts: Path,
+    *,
     post_id: str,
     url: str,
     text: str,
@@ -73,12 +74,24 @@ def write_post(
             posts / classify_level(text) / classify_subject(text) / f"{post_title(text)}_{post_id}"
         )
         folder.parent.mkdir(parents=True, exist_ok=True)
+        _clear_leftover(folder)
         os.replace(partial, folder)
         return folder
     except BaseException:
         if partial.exists():
             shutil.rmtree(partial)
         raise
+
+
+def _clear_leftover(folder: Path) -> None:
+    """Removes a folder already at the post's name with no post.json in it (a copy cut short, or
+    one staff emptied): it is no done post, and os.replace cannot rename onto it. A folder that
+    holds a post.json is another post's (this one is not known), so it is never removed."""
+    if not folder.exists():
+        return
+    if (folder / "post.json").exists():
+        raise FileExistsError(f"{folder} already holds another post")
+    shutil.rmtree(folder)
 
 
 def _merge_pdf(paths: Sequence[Path], pdf: Path) -> None:

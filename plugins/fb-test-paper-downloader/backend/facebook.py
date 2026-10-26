@@ -12,6 +12,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import parse_qs, unquote, urlparse
 
 from files import FileRow
@@ -21,7 +22,8 @@ from playwright.sync_api import APIResponse, BrowserContext, Page
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from posts import Stopped
-from update import FeedPost, GroupId
+from pydantic import Field, TypeAdapter
+from update import FeedPost, GroupId, PostId
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +32,30 @@ IDLE_ROUNDS = 8  # scrolls in a row that reveal nothing new: the feed has ended
 CHECK_EVERY = 20  # scrolls between two checks for a sign-out, checkpoint or block
 VIEWER_CAP = 300  # images per post, against a viewer that never loops back
 RETRIES = 3  # Facebook's CDN sometimes drops connections
+RETRY_WAIT_SECONDS = 10  # times the attempt number squared
+
+# Waits, in seconds, as fb_papers.py tuned them against the live site.
+FEED_SETTLE = 5  # after opening the feed
+FILES_SETTLE = 4  # after opening the Files tab, or a file's post
+VIEWER_SETTLE = 3  # after opening a post's photo viewer
+SCROLL_WAIT = (2.0, 3.5)  # after each scroll, at random
+PHOTO_WAIT = (0.9, 1.6)  # between two photos in the viewer, at random
+FETCH_WAIT = (0.2, 0.5)  # after each image download, at random
+SEE_MORE_SETTLE = 2  # after a "See more" click
+POPUP_SETTLE = 1  # after closing a dialog
+STABLE_POLLS = 25  # polls of the viewer's image before giving up (~10 s)
+STABLE_POLL = 0.4  # between two polls
+
+# Timeouts, in milliseconds.
+IMAGE_TIMEOUT = 60_000
+FILE_TIMEOUT = 120_000
+MENU_TIMEOUT = 5_000
+MENU_DOWNLOAD_TIMEOUT = 90_000
+NEW_TAB_DOWNLOAD_TIMEOUT = 45_000
+CLICK_TIMEOUT = 3_000
+POPUP_CLICK_TIMEOUT = 2_000
+BODY_TEXT_TIMEOUT = 3_000
+NEXT_PHOTO_TIMEOUT = 6_000
 
 _BLOCKED = (
     "暫時被封鎖",
@@ -52,11 +78,11 @@ _JS_FEED_POSTS = r"""
     const photoLinks = [...unit.querySelectorAll('a[href*="/photo"]')];
     for (const a of photoLinks) {
       const m = a.href.match(/[?&]set=(?:pcb|gm|g)\.(\d+)/);
-      if (m) { postId = m[1]; photoUrl = a.href; break; }
+      if (m) { postId = { kind: 'post', id: m[1] }; photoUrl = a.href; break; }
     }
     if (!postId && photoLinks.length) {
       const m = photoLinks[0].href.match(/[?&]fbid=(\d+)/);
-      if (m) { postId = 'photo_' + m[1]; photoUrl = photoLinks[0].href; }
+      if (m) { postId = { kind: 'photo', fbid: m[1] }; photoUrl = photoLinks[0].href; }
     }
     if (postId) {
       const msg = unit.querySelector(
@@ -139,7 +165,7 @@ _JS_FILE_ROWS = r"""
     row.setAttribute('data-fbp-row', id);
     if (btn) btn.setAttribute('data-fbp-more', id);
     const a = el.closest('a[href]') || row.querySelector('a[href]');
-    out.push({ rowId: id, name: t, href: a ? a.href : '' });
+    out.push({ rowId: id, name: t, href: a ? a.href : null });
   }
   return out;
 }
@@ -151,16 +177,21 @@ class _FileItem(Model):
 
     row_id: str
     name: str
-    href: str  # empty when the row has no link: only its Download menu can save it
+    href: Annotated[str, Field(min_length=1)] | None  # None: the row has no link
 
 
 class _FeedItem(Model):
     """What _JS_FEED_POSTS returns for one post: parsed, since the page is Facebook's."""
 
-    post_id: str
+    post_id: PostId
     photo_url: str
     text: str
     shown: int
+
+
+# What the other scripts return, parsed for the same reason.
+_LINKS = TypeAdapter(list[str])
+_IMAGE = TypeAdapter(str | None)  # None: no photo on screen yet
 
 
 class Facebook:
@@ -174,9 +205,7 @@ class Facebook:
 
     def scan(self) -> Iterator[Sequence[FeedPost]]:
         page = self._page
-        _retry(lambda: page.goto(f"{BASE}/groups/{self._group}/?sorting_setting=CHRONOLOGICAL"))
-        time.sleep(5)
-        self._check()
+        self._open(f"{BASE}/groups/{self._group}/?sorting_setting=CHRONOLOGICAL", FEED_SETTLE)
         _dismiss_popups(page)
         idle = rounds = 0
         while idle < IDLE_ROUNDS:
@@ -185,17 +214,13 @@ class Facebook:
             idle = 0 if items else idle + 1
             yield [FeedPost(i.post_id, i.photo_url, i.text, i.shown) for i in items]
             rounds += 1
-            page.mouse.wheel(0, 5000)
-            page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
-            time.sleep(random.uniform(2.0, 3.5))
+            _scroll_down(page)
             if rounds % CHECK_EVERY == 0:
                 self._check()
 
     def images(self, post: FeedPost) -> list[str]:
         page = self._page
-        _retry(lambda: page.goto(post.photo_url))
-        time.sleep(3)
-        self._check()
+        self._open(post.photo_url, VIEWER_SETTLE)
         srcs: list[str] = []
         seen_photos: set[str] = set()
         seen_images: set[str] = set()
@@ -203,7 +228,9 @@ class Facebook:
         for _ in range(VIEWER_CAP):
             if self._stopping.is_set():
                 raise Stopped()
-            photo = parse_qs(urlparse(page.url).query).get("fbid", [page.url])[0]
+            fbids = parse_qs(urlparse(page.url).query).get("fbid")
+            # A viewer URL with no fbid names its photo in the path: the whole URL is its id.
+            photo = page.url if fbids is None else fbids[0]
             if photo in seen_photos:
                 break  # looped back to the first photo
             src = self._main_image(prev, seen_images)
@@ -215,21 +242,19 @@ class Facebook:
             prev = src
             if not _next_photo(page):
                 break
-            time.sleep(random.uniform(0.9, 1.6))
+            time.sleep(random.uniform(*PHOTO_WAIT))
         return srcs
 
     def fetch(self, src: str) -> bytes:
-        response = _retry(lambda: self._window.request.get(src, timeout=60_000))
+        response = _retry(lambda: self._window.request.get(src, timeout=IMAGE_TIMEOUT))
         if not response.ok:
             raise RuntimeError(f"the image answered HTTP {response.status}")
-        time.sleep(random.uniform(0.2, 0.5))
+        time.sleep(random.uniform(*FETCH_WAIT))
         return response.body()
 
     def file_rows(self) -> Iterator[Sequence[FileRow]]:
         page = self._page
-        _retry(lambda: page.goto(f"{BASE}/groups/{self._group}/files/files"))
-        time.sleep(4)
-        self._check()
+        self._open(f"{BASE}/groups/{self._group}/files/files", FILES_SETTLE)
         _dismiss_popups(page)
         idle = 0
         while idle < IDLE_ROUNDS:
@@ -237,37 +262,37 @@ class Facebook:
             items = [_FileItem.model_validate(item) for item in raw]
             idle = 0 if items else idle + 1
             yield [FileRow(i.row_id, i.name, i.href) for i in items]
-            page.mouse.wheel(0, 5000)
-            page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
-            time.sleep(random.uniform(2.0, 3.5))
+            _scroll_down(page)
             more = page.get_by_role("button", name=re.compile(r"^(查看更多|顯示更多|See more)$"))
             if more.count():
                 try:
-                    more.first.click(timeout=3000)
-                    time.sleep(2)
+                    more.first.click(timeout=CLICK_TIMEOUT)
+                    time.sleep(SEE_MORE_SETTLE)
                 except PlaywrightTimeout:
                     pass  # the button went away as the list grew: the next scroll goes on
             self._check()
 
     def save_file(self, row: FileRow, to: Path) -> None:
         """Tries each route fb_papers.py found Facebook to need, most direct first."""
+        if row.href is None:
+            if self._save_via_menu(row.row_id, to):
+                return
+            raise RuntimeError("the row has no link and its Download menu did not work")
         href = _resolve_href(row.href)
-        if href and "facebook.com/groups/" not in href and self._save_via_request(href, to):
+        if "facebook.com/groups/" not in href and self._save_via_request(href, to):
             return
         if self._save_via_menu(row.row_id, to):
             return
-        if (
-            href
-            and ("/permalink/" in href or "/posts/" in href)
-            and self._save_via_post_page(href, row.name, to)
+        if ("/permalink/" in href or "/posts/" in href) and self._save_via_post_page(
+            href, row.name, to
         ):
             return
-        if href and self._save_via_new_tab(href, to):
+        if self._save_via_new_tab(href, to):
             return
         raise RuntimeError("no download route worked")
 
     def _save_via_request(self, url: str, to: Path) -> bool:
-        response = _retry(lambda: self._window.request.get(url, timeout=120_000))
+        response = _retry(lambda: self._window.request.get(url, timeout=FILE_TIMEOUT))
         if not response.ok:
             return False
         body = response.body()
@@ -289,8 +314,8 @@ class Facebook:
             .first
         )
         try:
-            item.wait_for(timeout=5000)
-            with page.expect_download(timeout=90_000) as download:
+            item.wait_for(timeout=MENU_TIMEOUT)
+            with page.expect_download(timeout=MENU_DOWNLOAD_TIMEOUT) as download:
                 item.click()
             download.value.save_as(to)
             return True
@@ -303,9 +328,9 @@ class Facebook:
         tab = self._window.new_page()
         try:
             _retry(lambda: tab.goto(href))
-            time.sleep(4)
-            links: list[str] = tab.evaluate(
-                "() => [...document.querySelectorAll('a[href]')].map(a => a.href)"
+            time.sleep(FILES_SETTLE)
+            links = _LINKS.validate_python(
+                tab.evaluate("() => [...document.querySelectorAll('a[href]')].map(a => a.href)")
             )
         finally:
             tab.close()
@@ -321,13 +346,15 @@ class Facebook:
     def _save_via_new_tab(self, href: str, to: Path) -> bool:
         tab = self._window.new_page()
         try:
-            with tab.expect_download(timeout=45_000) as download:
+            with tab.expect_download(timeout=NEW_TAB_DOWNLOAD_TIMEOUT) as download:
                 try:
                     tab.goto(href)
-                except TargetClosedError:
-                    raise
-                except PlaywrightError:
-                    pass  # Playwright reports "Download is starting" as a failed navigation
+                except PlaywrightError as e:
+                    # A link that starts a download fails its navigation with this message: read
+                    # in Playwright 1.64's driver (coreBundle.js, CRPage _navigate), whose own
+                    # download handling checks for the same text. Anything else is a real failure.
+                    if "Download is starting" not in str(e):
+                        raise
             download.value.save_as(to)
             return True
         except PlaywrightTimeout:
@@ -338,14 +365,20 @@ class Facebook:
     def _main_image(self, prev: str | None, seen: set[str]) -> str | None:
         """This photo's image once it is stable (up to ~10 s), or None when it never changes."""
         page = self._page
-        for _ in range(25):
-            src: str | None = page.evaluate(_JS_MAIN_IMAGE)
+        for _ in range(STABLE_POLLS):
+            src = _IMAGE.validate_python(page.evaluate(_JS_MAIN_IMAGE))
             if src is not None and src != prev and _image_key(src) not in seen:
-                time.sleep(0.4)  # make sure it is stable, not mid-transition
-                if page.evaluate(_JS_MAIN_IMAGE) == src:
+                time.sleep(STABLE_POLL)  # make sure it is stable, not mid-transition
+                if _IMAGE.validate_python(page.evaluate(_JS_MAIN_IMAGE)) == src:
                     return src
-            time.sleep(0.4)
+            time.sleep(STABLE_POLL)
         return None
+
+    def _open(self, url: str, settle: float) -> None:
+        """Opens `url` in the run's tab, waits `settle` seconds, then checks it was let in."""
+        _retry(lambda: self._page.goto(url))
+        time.sleep(settle)
+        self._check()
 
     def _check(self) -> None:
         """Ends the run when Facebook has signed staff out, wants a checkpoint, or blocked them."""
@@ -355,8 +388,9 @@ class Facebook:
         if "/checkpoint/" in url:
             raise RpcError("checkpoint", f"Facebook is showing a security checkpoint at {url}")
         try:
-            text = self._page.locator("body").inner_text(timeout=3000)[:3000]
+            text = self._page.locator("body").inner_text(timeout=BODY_TEXT_TIMEOUT)[:3000]
         except PlaywrightTimeout:  # a page still loading cannot say it is blocked
+            log.info("%s was still loading, so it was not checked for a block", url)
             return
         if any(s in text for s in _BLOCKED):
             raise RpcError("blocked", "Facebook says this account is temporarily blocked")
@@ -364,19 +398,19 @@ class Facebook:
 
 def _resolve_href(href: str) -> str:
     """The target of an l.facebook.com/l.php?u=... redirect link, or the link itself."""
-    if not href:
-        return href
     u = urlparse(href)
     if u.netloc.startswith("l.facebook.com") or u.path == "/l.php":
-        target = parse_qs(u.query).get("u", [""])[0]
-        return unquote(target) if target else href
+        # parse_qs decodes values and drops blank ones, so a list here holds the target.
+        targets = parse_qs(u.query).get("u")
+        return href if targets is None else targets[0]
     return href
 
 
 def _looks_like_html(response: APIResponse, body: bytes) -> bool:
     head = body[:200].lstrip().lower()
-    content_type = response.headers.get("content-type", "").lower()
-    return "text/html" in content_type or head.startswith((b"<!doctype", b"<html"))
+    content_type = response.headers.get("content-type")  # None: the server sent no type
+    is_html = content_type is not None and "text/html" in content_type.lower()
+    return is_html or head.startswith((b"<!doctype", b"<html"))
 
 
 def _image_key(src: str) -> str:
@@ -388,7 +422,7 @@ def _next_photo(page: Page) -> bool:
     old = page.url
     page.keyboard.press("ArrowRight")
     try:
-        page.wait_for_url(lambda u: u != old, timeout=6000)
+        page.wait_for_url(lambda u: u != old, timeout=NEXT_PHOTO_TIMEOUT)
         return True
     except PlaywrightTimeout:
         pass  # the arrow key did nothing: try the viewer's Next button
@@ -399,11 +433,18 @@ def _next_photo(page: Page) -> bool:
     if not nxt.count():
         return False
     try:
-        nxt.first.click(timeout=3000)
-        page.wait_for_url(lambda u: u != old, timeout=6000)
+        nxt.first.click(timeout=CLICK_TIMEOUT)
+        page.wait_for_url(lambda u: u != old, timeout=NEXT_PHOTO_TIMEOUT)
         return True
     except PlaywrightTimeout:
         return False
+
+
+def _scroll_down(page: Page) -> None:
+    """Scrolls to the bottom so Facebook loads more, then gives it time to."""
+    page.mouse.wheel(0, 5000)
+    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+    time.sleep(random.uniform(*SCROLL_WAIT))
 
 
 def _dismiss_popups(page: Page) -> None:
@@ -422,8 +463,8 @@ def _dismiss_popups(page: Page) -> None:
         if target is None:
             return
         try:
-            target.first.click(timeout=2000)
-            time.sleep(1)
+            target.first.click(timeout=POPUP_CLICK_TIMEOUT)
+            time.sleep(POPUP_SETTLE)
         except PlaywrightTimeout:
             page.keyboard.press("Escape")
             return
@@ -438,7 +479,7 @@ def _retry[T](action: Callable[[], T]) -> T:
         except PlaywrightError as e:
             if attempt == RETRIES:
                 raise
-            wait = 10 * attempt**2
+            wait = RETRY_WAIT_SECONDS * attempt**2
             log.warning("network hiccup (%s), retrying in %ss", str(e).splitlines()[0], wait)
             time.sleep(wait)
     raise AssertionError("unreachable: the last attempt returns or raises")
