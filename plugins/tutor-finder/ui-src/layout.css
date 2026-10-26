@@ -22,7 +22,7 @@ main {
   max-width: 40rem;
 }
 
-/* The filters' column (#177) beside the table and its tally. */
+/* The filters' column beside the table and its tally. */
 .layout {
   display: grid;
   grid-template-columns: 16rem minmax(0, 1fr);

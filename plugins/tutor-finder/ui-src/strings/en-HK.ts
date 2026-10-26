@@ -10,6 +10,21 @@ export const enHK = {
   loading: "Reading the tutor sheet…",
   loadFailed: "The tutor sheet couldn't be read.",
   refresh: "Refresh",
+  filters: {
+    level: "Level",
+    allLevels: "All levels",
+    method: {
+      title: "How they teach",
+      "face-to-face": "Face-to-face",
+      online: "Online",
+    },
+    languages: {
+      title: "Language",
+      Cantonese: "Cantonese",
+      English: "English",
+      Mandarin: "Mandarin",
+    },
+  },
   column: {
     name: "Name",
     price: "Offerings & price",

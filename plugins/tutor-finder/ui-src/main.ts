@@ -10,6 +10,7 @@ import {
   readSheet,
   type ServiceAccountKey,
 } from "./google";
+import { applyFilters, createFilters } from "./filters";
 import { t } from "./i18n";
 import { parseRows, type Tutor } from "./parsing";
 import { createTable } from "./table";
@@ -44,12 +45,14 @@ byId("h1", "title").textContent = t("title");
 refresh.textContent = t("refresh");
 
 let key: ServiceAccountKey | null = null; // null: no usable key stored yet
-/** The roster in memory: what the table shows, and what the filters (#177) will narrow. */
+/** The roster in memory: what the filters narrow and the table shows. */
 let tutors: readonly Tutor[] = [];
+const filters = createFilters(byId("aside", "filters"), showRoster);
 
 function showRoster(): void {
-  table.show(tutors.map((tutor) => ({ tutor, offerings: tutor.offerings })));
-  tally.textContent = t("tally", { count: tutors.length });
+  const shown = applyFilters(tutors, filters());
+  table.show(shown);
+  tally.textContent = t("tally", { count: shown.length });
 }
 
 /** Reads the sheet with `key` and shows it. Every open does this once; Refresh does it again. */
