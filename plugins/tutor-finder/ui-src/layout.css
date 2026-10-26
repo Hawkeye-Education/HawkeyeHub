@@ -7,3 +7,63 @@ main {
   flex-direction: column;
   gap: var(--hub-space-3);
 }
+.stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hub-space-1);
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hub-space-3);
+}
+#setup {
+  max-width: 40rem;
+}
+
+/* The filters' column (#177) beside the table and its tally. */
+.layout {
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr);
+  gap: var(--hub-space-4);
+  align-items: start;
+}
+.layout[hidden] {
+  display: none;
+}
+.scroller {
+  overflow-x: auto;
+}
+
+/* The results table (source SPEC §5): dense, and nothing in it truncates or collapses. */
+#table {
+  width: 100%;
+  border-collapse: collapse;
+}
+#table th,
+#table td {
+  padding: var(--hub-space-1) var(--hub-space-2);
+  text-align: start;
+  vertical-align: top;
+  border-bottom: 1px solid var(--hub-color-line);
+}
+#table th button {
+  white-space: nowrap;
+}
+.offering {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr) auto;
+  gap: var(--hub-space-2);
+}
+.muted,
+#table tr.gone {
+  color: var(--hub-color-fg-muted);
+}
+.muted {
+  font-size: var(--hub-text-sm);
+}
+.cheapest {
+  color: var(--hub-color-accent);
+  font-weight: var(--hub-weight-strong);
+}

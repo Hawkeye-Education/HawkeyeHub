@@ -1,7 +1,7 @@
 {
   "id": "tutor-finder",
   "version": "0.1.0",
-  "hubApi": "^1.3.0",
+  "hubApi": "^1.4.0",
   "name": "Tutor Finder",
   "description": "Find tutors on the tutor sheet by level, how they teach, district and language, and draft the WhatsApp messages for a client.",
   "platforms": ["win32-x64", "darwin-arm64"],
