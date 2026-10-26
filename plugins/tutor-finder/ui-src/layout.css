@@ -1,0 +1,9 @@
+/* Layout only (PLUGIN_STANDARD.md §4.3): spacing from --hub-* tokens, never colour, font, radius or shadow. */
+main {
+  padding: var(--hub-space-4);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hub-space-3);
+}

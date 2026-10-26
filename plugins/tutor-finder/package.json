@@ -1,0 +1,19 @@
+{
+  "name": "tutor-finder",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@hawkeye-hub/fake-hub": "workspace:*",
+    "@hawkeye-hub/hub-api": "workspace:*",
+    "happy-dom": "20.14.6",
+    "i18next": "26.4.2",
+    "vite": "7.3.6",
+    "vitest": "5.0.5"
+  }
+}
