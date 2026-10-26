@@ -39,25 +39,21 @@ export function parseKey(text: string): KeyParse {
     : { kind: "invalid" };
 }
 
-/** Google answered a step with an HTTP error. The body is never kept: it may echo sheet data. */
-export class SheetReadFailed extends Error {
-  constructor(
-    readonly step: "token" | "values",
-    readonly status: number,
-  ) {
-    super(`Google answered the ${step} request with HTTP ${String(status)}`);
-  }
-}
-
 /** Why a read failed, as staff can act on it: replace the key, share the sheet, or try again. */
 export type ReadFailure = "keyRejected" | "noAccess" | "unreachable";
 
-/** What `readSheet`'s rejection means for staff. */
-export function readFailure(e: unknown): ReadFailure {
-  // Anything but an HTTP error is fetch's TypeError (no network) or a body that isn't Google's
-  // shape (a portal page, a cut-off response): both worth a Retry.
-  if (!(e instanceof SheetReadFailed)) return "unreachable";
-  const { step, status } = e;
+/** A read failed in a way staff can act on. Anything else `readSheet` throws is a bug, and
+ * propagates. No response body is kept: it may echo sheet data. */
+export class SheetReadFailed extends Error {
+  constructor(readonly failure: ReadFailure) {
+    super(`The tutor sheet read failed: ${failure}`);
+  }
+}
+
+type Step = "token" | "values";
+
+/** What Google's HTTP error at `step` means for staff. */
+function httpFailure(step: Step, status: number): ReadFailure {
   // The token endpoint answers a revoked, deleted or garbled key with 400 invalid_grant, or 401.
   if (step === "token")
     return status === 400 || status === 401 ? "keyRejected" : "unreachable";
@@ -65,6 +61,24 @@ export function readFailure(e: unknown): ReadFailure {
   // The service account was never given the sheet, or the sheet is gone: 403 or 404.
   if (status === 403 || status === 404) return "noAccess";
   return "unreachable"; // 5xx, and 429 rate limiting
+}
+
+/** `fetch` for one step, its failures as SheetReadFailed. */
+async function call(
+  step: Step,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (e) {
+    // fetch rejects with a TypeError when the network fails (Fetch Standard, "network error").
+    if (e instanceof TypeError) throw new SheetReadFailed("unreachable");
+    throw e;
+  }
+  if (!res.ok) throw new SheetReadFailed(httpFailure(step, res.status));
+  return res;
 }
 
 const Token = z.object({ access_token: z.string().min(1) });
@@ -77,11 +91,11 @@ const ValueRange = z.object({
 /** The whole tab as the Sheets API value grid, header row first. */
 export async function readSheet(key: ServiceAccountKey): Promise<string[][]> {
   const token = await accessToken(key);
-  const res = await fetch(
+  const res = await call(
+    "values",
     `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(RANGE)}`,
     { headers: { authorization: `Bearer ${token}` } },
   );
-  if (!res.ok) throw new SheetReadFailed("values", res.status);
   return ValueRange.parse(await res.json()).values ?? []; // absent `values`: an empty tab
 }
 
@@ -100,28 +114,43 @@ async function accessToken(key: ServiceAccountKey): Promise<string> {
   ]
     .map((part) => base64url(new TextEncoder().encode(JSON.stringify(part))))
     .join(".");
-  const signingKey = await crypto.subtle.importKey(
-    "pkcs8",
-    pemToDer(key.private_key),
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false, // script can never read the key back out of the CryptoKey
-    ["sign"],
-  );
+  const signingKey = await importKey(key.private_key);
   const signature = await crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
     signingKey,
     new TextEncoder().encode(unsigned),
   );
   // A form-urlencoded POST is a CORS simple request: no preflight.
-  const res = await fetch(TOKEN_URL, {
+  const res = await call("token", TOKEN_URL, {
     method: "POST",
     body: new URLSearchParams({
       grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
       assertion: `${unsigned}.${base64url(new Uint8Array(signature))}`,
     }),
   });
-  if (!res.ok) throw new SheetReadFailed("token", res.status);
   return Token.parse(await res.json()).access_token;
+}
+
+/** The key's private_key as a signing key. One that isn't base64 PKCS#8 RSA is a key that isn't valid. */
+async function importKey(pem: string): Promise<CryptoKey> {
+  try {
+    return await crypto.subtle.importKey(
+      "pkcs8",
+      pemToDer(pem),
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false, // script can never read the key back out of the CryptoKey
+      ["sign"],
+    );
+  } catch (e) {
+    // atob throws an InvalidCharacterError and importKey a DataError (MDN), by name: the
+    // DOMException can come from another realm, as Node's WebCrypto under test does. A test pins it.
+    if (
+      e instanceof Error &&
+      (e.name === "InvalidCharacterError" || e.name === "DataError")
+    )
+      throw new SheetReadFailed("keyRejected");
+    throw e;
+  }
 }
 
 /** A PKCS#8 PEM's DER bytes: every `-----…-----` line and all whitespace removed. */

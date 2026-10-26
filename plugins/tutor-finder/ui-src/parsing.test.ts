@@ -42,6 +42,10 @@ describe("3.1 offerings", () => {
     ["Primary Maths     HK$300", 300],
     ["Primary Maths\t$1,200", 1200],
     ["Primary Maths 350", 350], // bare number fallback
+    // FORMATTED_VALUE: the Sheets API sends a currency-formatted cell as it is displayed.
+    ["Primary Maths: $400.00", 400],
+    ["Primary Maths HK$1,200.00", 1200],
+    ["Primary Maths 1,200.00", 1200],
   ])("the price in %j anchors on the currency marker", (line, price) => {
     expect(parseOfferings("Primary Maths", line)[0]?.price).toBe(price);
   });
@@ -225,6 +229,16 @@ describe("2 and 4.5 the sheet as a whole", () => {
       intro: "中文介紹",
       remark: "Punctual",
     });
+  });
+
+  test("a tutor with no phone, remark or introduction has none, and a phone loses its +852", () => {
+    const [blank, prefixed] = parseRows([
+      [...HEADER],
+      row({ Phone: " ", "Interview remark": "  " }),
+      row({ Phone: "+852 6777 0000" }),
+    ]);
+    expect(blank).toMatchObject({ phone: null, remark: null, intro: null });
+    expect(prefixed?.phone).toBe("6777 0000");
   });
 
   test("an empty sheet has no tutors", () => {
