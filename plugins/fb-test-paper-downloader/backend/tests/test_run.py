@@ -10,6 +10,7 @@ from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
 import pytest
+from files import FileRow
 from hawkeye_hub import RpcError
 from PIL import Image
 from playwright._impl._errors import TargetClosedError
@@ -50,11 +51,13 @@ class FakeFeed:
         self.batches = batches
         self.stopping = stopping
         self.rounds = 0
+        self.scanned = False
         self.opened: list[str] = []
         self.viewer: dict[str, list[str] | Exception] = {}  # what opening a post gives
         self.fetcher: Callable[[str], bytes] = lambda src: PNG
 
     def scan(self) -> Iterator[Sequence[FeedPost]]:
+        self.scanned = True
         for batch in self.batches:
             self.rounds += 1
             yield batch
@@ -72,17 +75,49 @@ class FakeFeed:
         return self.fetcher(src)
 
 
+class FakeFilesTab:
+    """Shows `names` in one scroll round. Saving a name in `fails` raises what it maps to."""
+
+    def __init__(self, names: Sequence[str]) -> None:
+        self.rows = [
+            FileRow(row_id=f"r{i}", name=n, href=f"https://fb/{i}") for i, n in enumerate(names)
+        ]
+        self.saved: list[str] = []
+        self.fails: dict[str, BaseException] = {}
+
+    def file_rows(self) -> Iterator[Sequence[FileRow]]:
+        yield self.rows
+
+    def save_file(self, row: FileRow, to: Path) -> None:
+        if row.name in self.fails:
+            to.write_bytes(b"half")
+            raise self.fails[row.name]
+        to.write_bytes(row.name.encode())
+        self.saved.append(row.name)
+
+
 class Run:
-    def __init__(self, tmp_path: Path, batches: Sequence[Sequence[FeedPost]]) -> None:
+    def __init__(
+        self, tmp_path: Path, batches: Sequence[Sequence[FeedPost]], files: Sequence[str] = ()
+    ) -> None:
+        self.output = tmp_path
         self.posts = tmp_path / "posts"
         self.stopping = threading.Event()
         self.feed = FakeFeed(batches, self.stopping)
+        self.tab = FakeFilesTab(files)
         self.progress: list[Progress] = []
         self.on_progress: Callable[[Progress], None] = lambda p: None
 
     def __call__(self, stop_at_known: bool = True) -> UpdateResult:
         return run_update(
-            self.feed, self.posts, GROUP, stop_at_known, self.stopping, self.notify, 0
+            self.feed,
+            self.tab,
+            self.output,
+            GROUP,
+            stop_at_known,
+            self.stopping,
+            self.notify,
+            0,
         )
 
     def notify(self, progress: Progress) -> None:
@@ -125,7 +160,14 @@ def test_saves_new_papers_newest_first_and_logs_one_line_per_post(tmp_path: Path
     result = run()
 
     assert result == UpdateResult(
-        saved=2, skipped_not_paper=1, incomplete=0, failed=0, outcome="finished"
+        files_saved=0,
+        files_known=0,
+        files_failed=0,
+        saved=2,
+        skipped_not_paper=1,
+        incomplete=0,
+        failed=0,
+        outcome="finished",
     )
     assert run.results() == [
         ("P2 英文 默書", "saved"),
@@ -258,7 +300,14 @@ def test_cancel_or_shutdown_mid_post_keeps_no_partial_post_and_stops(tmp_path: P
     result = run()
 
     assert result == UpdateResult(
-        saved=0, skipped_not_paper=0, incomplete=0, failed=0, outcome="cancelled"
+        files_saved=0,
+        files_known=0,
+        files_failed=0,
+        saved=0,
+        skipped_not_paper=0,
+        incomplete=0,
+        failed=0,
+        outcome="cancelled",
     )
     assert run.feed.opened == ["111"]
     assert known_post_ids(run.posts) == set()
@@ -312,3 +361,85 @@ def test_stopped_is_what_a_viewer_raises_when_stopping(tmp_path: Path) -> None:
     run.feed.viewer["111"] = Stopped()
 
     assert run().outcome == "cancelled"
+
+
+def files_under(folder: Path) -> list[str]:
+    return sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file())
+
+
+def file_results(run: Run) -> list[tuple[int, int, str, str]]:
+    return [(p.done, p.total, p.item, p.result.kind) for p in run.progress if p.phase == "files"]
+
+
+def test_the_files_tab_is_saved_by_level_and_subject_before_the_feed_scan(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111")]], files=["P.4考試二.數學卷.pdf", "小六 英文.docx"])
+
+    result = run()
+
+    assert files_under(tmp_path / "files") == [
+        "P4/數學/P.4考試二.數學卷.pdf",
+        "P6/英文/小六 英文.docx",
+    ]
+    assert file_results(run) == [
+        (1, 2, "P.4考試二.數學卷.pdf", "saved"),
+        (2, 2, "小六 英文.docx", "saved"),
+    ]
+    assert [p.phase for p in run.progress] == ["files", "files", "scan", "posts"]
+    assert (result.files_saved, result.files_known, result.files_failed, result.saved) == (
+        2,
+        0,
+        0,
+        1,
+    )
+
+
+def test_files_already_on_disk_are_skipped_and_logged_as_such(tmp_path: Path) -> None:
+    run = Run(tmp_path, [], files=["P1 中文.pdf", "P2 數學.pdf"])
+    (tmp_path / "files" / "P1" / "中文").mkdir(parents=True)
+    (tmp_path / "files" / "P1" / "中文" / "P1 中文.pdf").write_bytes(b"from an earlier run")
+
+    result = run()
+
+    assert run.tab.saved == ["P2 數學.pdf"]
+    assert file_results(run) == [
+        (1, 2, "P1 中文.pdf", "skipped-known"),
+        (2, 2, "P2 數學.pdf", "saved"),
+    ]
+    assert (result.files_saved, result.files_known) == (1, 1)
+
+
+def test_a_failed_file_is_reported_leaves_nothing_and_the_run_goes_on(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111")]], files=["P1 中文.pdf", "P2 數學.pdf"])
+    run.tab.fails["P1 中文.pdf"] = RuntimeError("no download route worked")
+
+    result = run()
+
+    [first, _] = [p for p in run.progress if p.phase == "files"]
+    assert first.result.kind == "failed"
+    assert "no download route worked" in first.result.detail
+    assert files_under(tmp_path / "files") == ["P2/數學/P2 數學.pdf"]
+    assert (result.files_failed, result.files_saved, result.saved) == (1, 1, 1)
+
+
+def test_cancel_between_files_stops_before_the_next_and_the_feed_scan(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111")]], files=["P1 中文.pdf", "P2 數學.pdf"])
+    run.on_progress = lambda p: run.stopping.set()
+
+    result = run()
+
+    assert run.tab.saved == ["P1 中文.pdf"]
+    assert not run.feed.scanned
+    assert (result.outcome, result.files_saved) == ("cancelled", 1)
+
+
+def test_signed_out_checkpoint_and_blocked_in_the_files_tab_stop_the_run(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111")]], files=["P1 中文.pdf", "P2 數學.pdf"])
+    run.tab.fails["P1 中文.pdf"] = RpcError("signed-out", "Facebook sent Edge to /login")
+
+    with pytest.raises(RpcError) as raised:
+        run()
+
+    assert raised.value.reason == "signed-out"
+    assert run.tab.saved == []
+    assert not run.feed.scanned
+    assert files_under(tmp_path) == []

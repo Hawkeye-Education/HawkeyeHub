@@ -11,6 +11,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
+APIResponse = object
 Cookie = dict
 BrowserContext = object
 Page = object
