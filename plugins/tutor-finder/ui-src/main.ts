@@ -12,7 +12,7 @@ import {
   type ReadFailure,
   type ServiceAccountKey,
 } from "./google";
-import { applyFilters, createFilters } from "./filters";
+import { createFilters } from "./filters";
 import { t } from "./i18n";
 import { parseRows, type Tutor } from "./parsing";
 import { createTable } from "./table";
@@ -60,14 +60,18 @@ refresh.textContent = t("refresh");
 let key: ServiceAccountKey | null = null; // null: no usable key stored yet
 /** The roster in memory: what the filters narrow and the table shows. */
 let tutors: readonly Tutor[] = [];
-const filters = createFilters(byId("aside", "filters"), showRoster);
+const filter = createFilters(byId("aside", "filters"), showRoster);
 /** Whether a read has worked since the Plugin opened, so a failed one leaves its table, marked stale. */
 let loaded = false;
 
 function showRoster(): void {
-  const shown = applyFilters(tutors, filters());
+  const { shown, suppressed } = filter(tutors);
   table.show(shown);
-  tally.textContent = t("tally", { count: shown.length });
+  const count = t("tally", { count: shown.length });
+  tally.textContent =
+    suppressed === 0
+      ? count
+      : `${count} · ${t("suppressed", { count: suppressed })}`;
 }
 
 /** Reads the sheet with `key` and shows it. Every open does this once; Refresh and Retry do it again. */

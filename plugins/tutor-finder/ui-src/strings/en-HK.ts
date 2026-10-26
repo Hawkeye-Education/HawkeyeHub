@@ -29,6 +29,15 @@ export const enHK = {
       "face-to-face": "Face-to-face",
       online: "Online",
     },
+    district: {
+      title: "District",
+      why: "A district means the tutor travels to the student, so it applies to Face-to-face only.",
+      map: "Hong Kong districts",
+      ridge: "Urban core · rifted south to thumb size",
+      region: "+ {{region}}",
+      none: "Include tutors with no district recorded",
+      noneHint: "{{count}} can travel but never filled the field",
+    },
     languages: {
       title: "Language",
       Cantonese: "Cantonese",
@@ -49,4 +58,5 @@ export const enHK = {
   status: { noLongerAvailable: "No longer available" },
   tally_one: "{{count}} tutor",
   tally_other: "{{count}} tutors",
+  suppressed: "{{count}} online-only hidden by district",
 };

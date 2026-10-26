@@ -82,3 +82,82 @@ main {
   color: var(--hub-color-accent);
   font-weight: var(--hub-weight-strong);
 }
+
+/* The district map (source SPEC §4.3): a Plugin-drawn widget, so every visual is a --hub-* token.
+   Sizes are in viewBox units. */
+.map {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+fieldset:disabled .map {
+  opacity: 0.5;
+}
+.plate {
+  fill: var(--hub-color-surface-raised);
+  stroke: var(--hub-color-line);
+  stroke-width: 0.5;
+  stroke-linejoin: round;
+  cursor: pointer;
+}
+fieldset:disabled .plate {
+  cursor: default;
+}
+.plate:focus-visible {
+  outline: none;
+  stroke: var(--hub-color-focus);
+  stroke-width: 0.85;
+}
+/* Zero-match districts: pale and dashed, but still tappable. */
+.plate.zero {
+  fill: var(--hub-color-surface);
+  stroke-dasharray: 1.6 1.4;
+}
+.plate.sel {
+  fill: var(--hub-color-accent);
+  stroke: var(--hub-color-accent);
+  stroke-dasharray: none;
+}
+.lead {
+  fill: none;
+  stroke: var(--hub-color-fg-muted);
+  stroke-width: 0.3;
+  stroke-dasharray: 1.1 1.3;
+}
+.ridge {
+  stroke: var(--hub-color-fg-muted);
+  stroke-width: 0.35;
+  stroke-dasharray: 3.2 2.2;
+}
+.ridge-label,
+.plate-name,
+.plate-count {
+  font-family: var(--hub-font-body);
+  text-anchor: middle;
+  pointer-events: none;
+}
+.ridge-label {
+  font-size: 2.6px;
+  fill: var(--hub-color-fg-muted);
+}
+.plate-name {
+  font-size: 2.9px;
+  fill: var(--hub-color-fg);
+}
+.plate-count {
+  font-size: 3.6px;
+  font-weight: var(--hub-weight-strong);
+  fill: var(--hub-color-fg-muted);
+}
+.plate-name.zero,
+.plate-count.zero {
+  opacity: 0.6;
+}
+.plate-name.sel,
+.plate-count.sel {
+  fill: var(--hub-color-on-accent);
+}
+#filters small {
+  display: block;
+}
