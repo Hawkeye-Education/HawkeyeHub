@@ -11,5 +11,5 @@ We chose folders over a Hub-run record database (JSON collections with query and
 - Uninstall with "also delete my data" removes the Plugin Data folder, the Plugin UI's partition, the Hub's per-Plugin settings, and every Shared Store the Plugin was the last installed declarer of. "Keep data" keeps all of it. Files written to folders staff chose are never touched.
 - Plugins migrate their own Plugin Data forward only, at open; the Hub runs no migrations. There is no rollback (ADR 0005), so no Plugin meets data from a newer version of itself.
 - The Hub runs as a single instance per OS user, and each Plugin is open at most once, so Plugin Data never has concurrent writers.
-- The Hub's own records are JSON files in app data, with secrets encrypted by `safeStorage`. Assistant conversations are not stored, and Plugins get no secret storage.
+- The Hub's own records are JSON files in app data, with secrets encrypted by `safeStorage`. Assistant conversations are not stored. Plugins keep secrets as encrypted Plugin Data (ADR 0013).
 - If two Plugins ever need queries or merge-safe records, a record store can be added beside folders as a new Hub API version.
