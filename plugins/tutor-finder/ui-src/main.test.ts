@@ -377,6 +377,142 @@ test("the roster never reaches console or web storage, and the Plugin is never B
   expect(fake.busy.state).toEqual({ kind: "idle" });
 });
 
+// --- Filters (source SPEC §4) -----------------------------------------------------------------
+
+/** Sets a filter control and fires the change event staff would. */
+function change(el: HTMLInputElement | HTMLSelectElement, value: string): void {
+  el.value = value;
+  el.dispatchEvent(new Event("change"));
+}
+function tick(el: HTMLInputElement, checked: boolean): void {
+  el.checked = checked;
+  el.dispatchEvent(new Event("change"));
+}
+// The test names the element type it knows the filters give that selector.
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
+const filter = <T extends HTMLElement>(selector: string): T => {
+  const el = $("filters").querySelector<T>(selector);
+  if (el === null) throw new Error(`no ${selector} in #filters`);
+  return el;
+};
+const level = (): HTMLSelectElement => filter("select");
+const method = (value: string): HTMLInputElement =>
+  filter(`input[type=radio][value=${value}]`);
+const language = (name: string): HTMLInputElement =>
+  filter(`input[type=checkbox][value=${name}]`);
+
+test("the filters sit in order: level, how they teach, language", async () => {
+  await openWithKey([ROWS]);
+
+  const controls = [...$("filters").querySelectorAll("select, input")].map(
+    (c) => (c instanceof HTMLInputElement ? `${c.type}:${c.value}` : "select"),
+  );
+  expect(controls).toEqual([
+    "select",
+    "radio:face-to-face",
+    "radio:online",
+    "checkbox:Cantonese",
+    "checkbox:English",
+    "checkbox:Mandarin",
+  ]);
+  expect([...level().options].map((o) => o.textContent)).toEqual([
+    "All levels",
+    "Primary",
+    "Secondary",
+    "HKDSE",
+    "IGCSE",
+    "GCSE",
+    "IB",
+    "A-Level",
+    "University",
+    "SAT",
+    "AP",
+    "IELTS",
+  ]);
+  expect(level().value).toBe("");
+  expect(method("online").checked).toBe(true);
+  expect($("filters").textContent).toContain("How they teach");
+});
+
+test("a level shows only tutors with a matching offering, and only those offerings; unlevelled ones match every level", async () => {
+  const eve = [
+    "Eve",
+    "Ho",
+    "65550000",
+    "Female",
+    "Online",
+    "",
+    "English",
+    "Piano",
+    "Piano $200",
+  ];
+  await openWithKey([[...ROWS, eve]]);
+
+  change(level(), "IB");
+  expect(names()).toEqual(["Miss Ho", "Mr Chan", "Miss Au"]);
+  const chan = rows()[1];
+  expect(
+    [...(chan?.querySelectorAll(".offering") ?? [])].map((o) => o.textContent),
+  ).toEqual(["IBIB PhysicsHK$500"]);
+  expect($("tally").textContent).toBe("3 tutors");
+
+  change(level(), "IELTS");
+  expect(names()).toEqual(["Miss Ho", "Miss Bo"]);
+
+  change(level(), "");
+  expect(names()).toEqual(["Miss Ho", "Miss Bo", "Mr Chan", "Miss Au"]);
+});
+
+test("Face-to-face keeps only tutors who travel; Online, the default, is everyone", async () => {
+  await openWithKey([ROWS]);
+
+  tick(method("face-to-face"), true);
+  expect(names()).toEqual(["Mr Chan"]);
+  expect($("tally").textContent).toBe("1 tutor");
+
+  tick(method("online"), true);
+  expect(names()).toEqual(["Miss Bo", "Mr Chan", "Miss Au"]);
+});
+
+test("languages match a tutor who speaks any ticked one", async () => {
+  await openWithKey([ROWS]);
+
+  tick(language("Mandarin"), true);
+  expect(names()).toEqual(["Miss Bo"]);
+  tick(language("Cantonese"), true);
+  expect(names()).toEqual(["Miss Bo", "Mr Chan"]);
+  tick(language("Mandarin"), false);
+  expect(names()).toEqual(["Mr Chan"]);
+  expect($("tally").textContent).toBe("1 tutor");
+  tick(language("Cantonese"), false);
+  expect(names()).toHaveLength(3);
+});
+
+test("filters combine, and Refresh keeps them", async () => {
+  const dee = [
+    "Dee",
+    "Ng",
+    "64440000",
+    "Female",
+    "Face-to-face",
+    "Tai Po",
+    "English",
+    "IB Chemistry",
+    "IB Chemistry $350",
+  ];
+  await openWithKey([ROWS, [...ROWS, dee]]);
+
+  change(level(), "IB");
+  tick(language("English"), true);
+  tick(method("face-to-face"), true);
+  expect(names()).toEqual(["Mr Chan"]);
+
+  $("refresh").click();
+  await vi.waitFor(() => {
+    expect(names()).toEqual(["Miss Ng", "Mr Chan"]);
+  });
+});
+
 // --- When the read fails ------------------------------------------------------------------------
 
 /** The buttons the failure message offers, by their text. */
