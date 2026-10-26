@@ -1,7 +1,7 @@
 // Export diagnostics from Hub Settings (#28): the save dialog's file holds every log plus
 // system.json, and cancelling it writes nothing.
 
-import { existsSync, mkdtempSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
@@ -12,6 +12,7 @@ import {
   EXPORT_DIAGNOSTICS_WORDS,
   expect,
   fixtureInstall,
+  HUB_DIR,
   installFixturePlugins,
   launchHub,
   linesOf,
@@ -100,7 +101,7 @@ test("Export diagnostics in Hub Settings saves every log and system.json, with a
       pluginLine("ui", "ui three"),
     ]);
     expect(JSON.parse(entries["system.json"] ?? "")).toEqual({
-      hubVersion: "0.1.0",
+      hubVersion: hubVersion(),
       os: {
         name: process.platform,
         version: expect.any(String),
@@ -134,3 +135,13 @@ test("cancelling the save dialog writes nothing", async ({ hub }) => {
   await hub.evaluate(() => new Promise((resolve) => setTimeout(resolve)));
   expect(readdirSync(folder)).toEqual([]);
 });
+
+/** The Hub's own version, read from package.json so a version bump doesn't break this test. */
+function hubVersion(): string {
+  const { version } = JSON.parse(
+    readFileSync(join(HUB_DIR, "package.json"), "utf8"),
+  ) as {
+    version: string;
+  };
+  return version;
+}
