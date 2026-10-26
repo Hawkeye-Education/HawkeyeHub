@@ -108,9 +108,18 @@ function el(
   return node;
 }
 
-/** The table drawn into `table`; `show` redraws it with new rows, keeping the sort staff chose. */
-export function createTable(table: HTMLTableElement): {
+/**
+ * The table drawn into `table`; `show` redraws it with new rows, keeping the sort staff chose, and
+ * `sorted` puts any rows in that order. Each row's checkbox adds or removes the tutor's sheet row in
+ * `selection`, then calls `selected`.
+ */
+export function createTable(
+  table: HTMLTableElement,
+  selection: Set<number>,
+  selected: () => void,
+): {
   show(rows: readonly ShownTutor[]): void;
+  sorted(rows: readonly ShownTutor[]): ShownTutor[];
 } {
   const price = new Intl.NumberFormat(window.hub.displayLanguage, {
     style: "currency",
@@ -124,6 +133,10 @@ export function createTable(table: HTMLTableElement): {
   function header(): HTMLTableSectionElement {
     const head = document.createElement("thead");
     const tr = head.insertRow();
+    const pick = document.createElement("th");
+    pick.scope = "col";
+    pick.textContent = t("column.select");
+    tr.append(pick);
     for (const c of COLUMNS) {
       const th = document.createElement("th");
       th.scope = "col";
@@ -165,6 +178,17 @@ export function createTable(table: HTMLTableElement): {
     const { tutor } = row;
     const tr = tbody.insertRow();
     if (tutor.status.kind === "no-longer-available") tr.className = "gone";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = selection.has(tutor.row);
+    box.setAttribute("aria-label", t("select", { name: tutor.name }));
+    box.addEventListener("change", () => {
+      if (box.checked) selection.add(tutor.row);
+      else selection.delete(tutor.row);
+      selected();
+    });
+    const pick = el("td", "", "pick");
+    pick.append(box);
     const name = el("td", "");
     name.append(el("div", tutor.name), el("div", tutor.fullName, "muted"));
     const district = el(
@@ -173,6 +197,7 @@ export function createTable(table: HTMLTableElement): {
     );
     if (tutor.zoomOnly) district.append(el("div", t("zoomOnly"), "muted"));
     tr.append(
+      pick,
       name,
       offeringsCell(row.offerings),
       district,
@@ -193,5 +218,6 @@ export function createTable(table: HTMLTableElement): {
       shown = rows;
       draw();
     },
+    sorted: (rows) => sortRows(rows, column, dir),
   };
 }
