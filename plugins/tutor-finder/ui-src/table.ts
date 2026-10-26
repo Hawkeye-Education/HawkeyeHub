@@ -3,7 +3,7 @@
 // sort. It only draws what it is given; which tutors and offerings match is the filters' job.
 
 import { t } from "./i18n";
-import { DISTRICTS, type Offering, type Tutor } from "./parsing";
+import type { Offering, SheetRow, Tutor } from "./parsing";
 
 /** A tutor as the table shows them, with the offerings that match the filters. */
 export interface ShownTutor {
@@ -28,22 +28,23 @@ export function cheapest(offerings: readonly Offering[]): number | null {
   return prices.length === 0 ? null : Math.min(...prices);
 }
 
-/** What a column sorts by. null: nothing to sort on, which sorts last whichever way. */
+/** What a column sorts by. null: nothing to sort on, which sorts after every value, so last
+ * ascending and first descending, as the source app sorts blanks. */
 function sortKey(row: ShownTutor, column: Column): string | number | null {
   const { tutor } = row;
   switch (column) {
     case "name":
-      return tutor.name.replace(/^(Mr|Miss) /, ""); // by surname, as staff read the column
+      return tutor.surname;
     case "price":
       return cheapest(row.offerings);
     case "district":
-      return tutor.district === null ? null : DISTRICTS[tutor.district].en;
+      return tutor.district === null ? null : t(`district.${tutor.district}`);
     case "lang":
       return initials(tutor);
     case "status":
-      return tutor.status.kind === "available" ? null : statusText(tutor);
+      return statusText(tutor);
     case "remark":
-      return tutor.remark === "" ? null : tutor.remark;
+      return tutor.remark;
     default:
       return column satisfies never;
   }
@@ -54,12 +55,14 @@ function compareKeys(
   b: string | number | null,
   dir: Direction,
 ): number {
-  if (a === null || b === null)
-    return (a === null ? 1 : 0) - (b === null ? 1 : 0);
   const order =
-    typeof a === "number" && typeof b === "number"
-      ? a - b
-      : String(a).localeCompare(String(b), undefined, { sensitivity: "base" });
+    a === null || b === null
+      ? (a === null ? 1 : 0) - (b === null ? 1 : 0)
+      : typeof a === "number" && typeof b === "number"
+        ? a - b
+        : String(a).localeCompare(String(b), undefined, {
+            sensitivity: "base",
+          });
   return order * dir;
 }
 
@@ -84,10 +87,11 @@ function initials(tutor: Tutor): string {
   return tutor.languages.map((l) => l.charAt(0)).join("");
 }
 
-function statusText(tutor: Tutor): string {
+/** null: available, which the column leaves blank. */
+function statusText(tutor: Tutor): string | null {
   switch (tutor.status.kind) {
     case "available":
-      return "";
+      return null;
     case "no-longer-available":
       return t("status.noLongerAvailable");
     case "other":
@@ -97,9 +101,10 @@ function statusText(tutor: Tutor): string {
   }
 }
 
-function el(
+/** A `<tag>` holding `text`; null: an empty one. */
+function element(
   tag: keyof HTMLElementTagNameMap,
-  text: string,
+  text: string | null,
   ...classes: string[]
 ): HTMLElement {
   const node = document.createElement(tag);
@@ -115,7 +120,7 @@ function el(
  */
 export function createTable(
   table: HTMLTableElement,
-  selection: Set<number>,
+  selection: Set<SheetRow>,
   selected: () => void,
 ): {
   show(rows: readonly ShownTutor[]): void;
@@ -142,7 +147,7 @@ export function createTable(
       th.scope = "col";
       if (c === column)
         th.setAttribute("aria-sort", dir === 1 ? "ascending" : "descending");
-      const button = el("button", t(`column.${c}`));
+      const button = element("button", t(`column.${c}`));
       button.dataset["column"] = c;
       button.addEventListener("click", () => {
         dir = c === column ? (dir === 1 ? -1 : 1) : 1;
@@ -159,13 +164,13 @@ export function createTable(
     const low = cheapest(offerings);
     const td = document.createElement("td");
     for (const o of offerings) {
-      const line = el("div", "", "offering");
+      const line = element("div", null, "offering");
       line.append(
-        el("span", o.level ?? t("unlevelled"), "muted"),
-        el("span", o.text),
-        el(
+        element("span", o.level ?? t("unlevelled"), "muted"),
+        element("span", o.text),
+        element(
           "span",
-          o.price === null ? "—" : price.format(o.price),
+          o.price === null ? t("blank") : price.format(o.price),
           ...(o.price !== null && o.price === low ? ["cheapest"] : []),
         ),
       );
@@ -187,23 +192,26 @@ export function createTable(
       else selection.delete(tutor.row);
       selected();
     });
-    const pick = el("td", "", "pick");
+    const pick = element("td", null, "pick");
     pick.append(box);
-    const name = el("td", "");
-    name.append(el("div", tutor.name), el("div", tutor.fullName, "muted"));
-    const district = el(
-      "td",
-      tutor.district === null ? "—" : DISTRICTS[tutor.district].en,
+    const name = element("td", null);
+    name.append(
+      element("div", tutor.name),
+      element("div", tutor.fullName, "muted"),
     );
-    if (tutor.zoomOnly) district.append(el("div", t("zoomOnly"), "muted"));
+    const district = element(
+      "td",
+      tutor.district === null ? t("blank") : t(`district.${tutor.district}`),
+    );
+    if (tutor.zoomOnly) district.append(element("div", t("zoomOnly"), "muted"));
     tr.append(
       pick,
       name,
       offeringsCell(row.offerings),
       district,
-      el("td", initials(tutor)),
-      el("td", statusText(tutor)),
-      el("td", tutor.remark),
+      element("td", initials(tutor)),
+      element("td", statusText(tutor)),
+      element("td", tutor.remark),
     );
   }
 

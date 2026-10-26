@@ -2,30 +2,31 @@
 // (`<level>導師`, the `---` divider, the `+852` lines) are the client-facing text and stay word for
 // word whatever the Display Language. Pure: tutors in, text out, nothing logged.
 
-import type { Level, Offering, Tutor } from "./parsing";
+import type { Level } from "./parsing";
 import { cheapest, type ShownTutor } from "./table";
 
-/** The tutor's offerings that match `level`; an unlevelled one matches every level (SPEC §3.4). */
-export function matching(tutor: Tutor, level: Level | null): Offering[] {
-  return level === null
-    ? tutor.offerings
-    : tutor.offerings.filter((o) => o.level === level || o.level === null);
+/** The level the profile names: the cheapest matching offering's, else any matching one's, else
+ * any of the tutor's. null: no offering has a level at all. */
+function profileLevel({ tutor, offerings }: ShownTutor): Level | null {
+  const price = cheapest(offerings);
+  const levelled = [
+    offerings.find((o) => o.price === price && o.level !== null),
+    offerings.find((o) => o.level !== null),
+    tutor.offerings.find((o) => o.level !== null),
+  ].find((o) => o !== undefined);
+  return levelled?.level ?? null; // undefined: none of the three found one
 }
 
-function profileBlock({ tutor, offerings }: ShownTutor): string {
-  // Level and price both come from the cheapest matching offering. Where the offering could not
-  // be levelled or priced, print $?/hr so the hole is visible, not silent.
+function profileBlock(shown: ShownTutor): string {
+  const { tutor, offerings } = shown;
+  // Where the offering could not be levelled or priced, the hole is visible, not silent.
   const price = cheapest(offerings);
-  const level =
-    offerings.find((o) => o.price === price && o.level !== null)?.level ??
-    offerings.find((o) => o.level !== null)?.level ??
-    tutor.offerings.find((o) => o.level !== null)?.level ??
-    ""; // the source prints a bare 導師 when no offering has a level at all
-  const shown = price === null ? "$?/hr" : `$${String(price)}/hr`;
+  const level = profileLevel(shown);
+  const title = level === null ? "導師" : `${level}導師`; // the source prints a bare 導師
+  const shownPrice = price === null ? "$?/hr" : `$${String(price)}/hr`;
   // No section skeleton: whatever the tutor left on the form, verbatim.
-  const intro =
-    tutor.intro === "" ? "(no self-introduction on file)" : tutor.intro;
-  return `${[tutor.name, `${level}導師`, shown].join(" | ")}\n${intro}`;
+  const intro = tutor.intro ?? "(no self-introduction on file)";
+  return `${[tutor.name, title, shownPrice].join(" | ")}\n${intro}`;
 }
 
 /** One block per tutor, joined by a `---` divider. */
@@ -33,12 +34,9 @@ export function profileMessage(selected: readonly ShownTutor[]): string {
   return selected.map(profileBlock).join("\n---\n");
 }
 
-/** One `<FirstName> <LastName>: +852 <number>` line per tutor. */
+/** One `<FirstName> <LastName>: +852 <number>` line per tutor; `?` where no number is on file. */
 export function phoneMessage(selected: readonly ShownTutor[]): string {
   return selected
-    .map(({ tutor }) => {
-      const number = tutor.phone.replace(/^\+?852\s*/, "").trim();
-      return `${tutor.fullName}: +852 ${number === "" ? "?" : number}`;
-    })
+    .map(({ tutor }) => `${tutor.fullName}: +852 ${tutor.phone ?? "?"}`)
     .join("\n");
 }

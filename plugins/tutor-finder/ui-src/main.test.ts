@@ -340,6 +340,47 @@ test("clicking a header sorts by that column and again reverses it, with No long
   expect(names()).toEqual(["Mr Chan", "Miss Bo", "Miss Au"]);
 });
 
+test("blanks sort last ascending and first descending, as the source app sorts them", async () => {
+  const eve = [
+    "Eve",
+    "Ho",
+    "65550000",
+    "Female",
+    "Online",
+    "",
+    "English",
+    "Piano",
+    "",
+  ];
+  await openWithKey([[...ROWS, eve]]);
+
+  expect(names()).toEqual(["Miss Bo", "Mr Chan", "Miss Ho", "Miss Au"]);
+  $<HTMLTableElement>("table")
+    .querySelector<HTMLButtonElement>("[data-column=price]")
+    ?.click();
+  expect(names()).toEqual(["Miss Ho", "Mr Chan", "Miss Bo", "Miss Au"]);
+});
+
+test("the name column sorts by last name, also for a tutor shown untitled", async () => {
+  const dee = [
+    "Dee",
+    "Aa",
+    "64440000",
+    "Prefer_not_to_say",
+    "Online",
+    "",
+    "English",
+    "SAT",
+    "SAT $400",
+  ];
+  await openWithKey([[...ROWS, dee]]);
+
+  $<HTMLTableElement>("table")
+    .querySelector<HTMLButtonElement>("[data-column=name]")
+    ?.click();
+  expect(names()).toEqual(["Dee Aa", "Miss Bo", "Mr Chan", "Miss Au"]);
+});
+
 test("Refresh reads the sheet again and shows what it holds now", async () => {
   const dee = [
     "Dee",
@@ -546,6 +587,30 @@ test.each([
   },
 );
 
+test("a stored key whose private_key can't be imported isn't valid, and Replace key leads to setup", async () => {
+  const fake = installFakeHub({ manifest, displayLanguage: "en-HK" });
+  fake.secrets.stored.set(
+    "google-service-account",
+    JSON.stringify({
+      type: "service_account",
+      client_email: EMAIL,
+      private_key:
+        "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n",
+    }),
+  );
+  const google = stubGoogle([ROWS]);
+  await open(fake);
+  await vi.waitFor(() => {
+    expect($("problem").hidden).toBe(false);
+  });
+
+  expect($("problem-message").textContent).toBe(
+    "The key isn't valid: Google refused it. Replace it with a current key for the service account.",
+  );
+  expect(actions()).toEqual(["Replace key"]);
+  expect(google.tokenRequests).toHaveLength(0);
+});
+
 test.each([403, 404])(
   "when values.get answers %i, the message names the key's client_email to share the sheet with",
   async (status) => {
@@ -625,6 +690,27 @@ test("Replace key under Settings leads to setup, and the new key replaces the ol
     new Map([["google-service-account", newKey]]),
   );
   expect(google.tokenRequests).toHaveLength(2);
+});
+
+test("Cancel on setup reached from Settings goes back to the roster, keeping the stored key", async () => {
+  const [fake] = await openWithKey([ROWS]);
+
+  $("settings-replace-key").click();
+  expect($("cancel-setup").hidden).toBe(false);
+  $("cancel-setup").click();
+
+  expect($("setup").hidden).toBe(true);
+  expect($("roster").hidden).toBe(false);
+  expect($("settings").hidden).toBe(false);
+  expect(names()).toEqual(["Miss Bo", "Mr Chan", "Miss Au"]);
+  expect(fake.secrets.stored.get("google-service-account")).toBe(keyJson);
+});
+
+test("first-run setup offers no Cancel, since there is no roster to go back to", async () => {
+  await open(installFakeHub({ manifest, displayLanguage: "en-HK" }));
+
+  expect($("setup").hidden).toBe(false);
+  expect($("cancel-setup").hidden).toBe(true);
 });
 
 test("a failed read logs nothing", async () => {

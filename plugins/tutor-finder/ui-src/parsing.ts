@@ -2,6 +2,8 @@
 // (ported from its app/parsing.py). Parse forgivingly: a tutor never disappears from search
 // because of a formatting quirk. Pure: rows in, records out, nothing logged.
 //
+import { z } from "zod";
+
 // JS `\b` is ASCII-only where Python's is Unicode, so a level word run straight into Chinese
 // ("IB數學") is found here where the source missed it. That is the forgiving direction.
 
@@ -53,7 +55,12 @@ export const REGIONS = [
 ] as const;
 export type Region = (typeof REGIONS)[number];
 
-/** The 18 districts (SPEC §3.3). The map draws every one, tutors or not. */
+/** The three tutoring_language values (SPEC §4.4). */
+export const LANGUAGES = ["Cantonese", "English", "Mandarin"] as const;
+export type Language = (typeof LANGUAGES)[number];
+
+/** The 18 districts (SPEC §3.3), with the names the sheet spells them in. The map draws every one,
+ * tutors or not; staff read the names from strings/en-HK.ts. */
 export const DISTRICTS = {
   central_western: {
     en: "Central and Western",
@@ -120,7 +127,7 @@ function strip(s: string, chars: string): string {
 }
 
 /** An offering or price label for exact matching: lowercase, no punctuation, no currency, no per-hour filler. */
-function norm(text: string): string {
+function normalised(text: string): string {
   return text
     .toLowerCase()
     .replace(/[:：;,.|()[\]/\\]/g, " ")
@@ -164,19 +171,19 @@ function matchPrice(
   offering: string,
   lines: readonly PriceLine[],
 ): PriceLine | null {
-  const target = norm(offering);
+  const target = normalised(offering);
   if (target !== "") {
-    const exact = lines.find((p) => norm(p.label) === target);
+    const exact = lines.find((line) => normalised(line.label) === target);
     if (exact !== undefined) return exact;
-    const contained = lines.find((p) => {
-      const label = norm(p.label);
+    const contained = lines.find((line) => {
+      const label = normalised(line.label);
       return label !== "" && (label.includes(target) || target.includes(label));
     });
     if (contained !== undefined) return contained;
   }
   const level = findLevel(target);
   if (level !== null) {
-    const sameLevel = lines.filter((p) => p.level === level);
+    const sameLevel = lines.filter((line) => line.level === level);
     if (sameLevel.length === 1 && sameLevel[0] !== undefined)
       return sameLevel[0];
   }
@@ -194,6 +201,19 @@ export function canonicalDistrict(raw: string): DistrictId | null {
   );
 }
 
+/** The tutor's offerings that match `level`; an unlevelled one matches every level: over-including
+ * costs a line, under-including loses a tutor (SPEC §3.4). null: All levels. */
+export function matching(tutor: Tutor, level: Level | null): Offering[] {
+  return level === null
+    ? tutor.offerings
+    : tutor.offerings.filter((o) => o.level === level || o.level === null);
+}
+
+/** The last name, or the first where there is none: what the name column sorts by. */
+function surname(first: string, last: string): string {
+  return last.trim() === "" ? first.trim() : last.trim();
+}
+
 /** Mr/Miss <LastName>; the untitled full name where gender is withheld; the first name where
  * there is no last name (SPEC §3.5). */
 export function displayName(
@@ -201,19 +221,18 @@ export function displayName(
   last: string,
   gender: string,
 ): string {
-  const surname = last.trim() === "" ? first.trim() : last.trim();
   switch (gender.trim()) {
     case "Male":
-      return `Mr ${surname}`;
+      return `Mr ${surname(first, last)}`;
     case "Female":
-      return `Miss ${surname}`;
+      return `Miss ${surname(first, last)}`;
     default:
       return fullName(first, last);
   }
 }
 
 function fullName(first: string, last: string): string {
-  return [first.trim(), last.trim()].filter((p) => p !== "").join(" ");
+  return [first.trim(), last.trim()].filter((part) => part !== "").join(" ");
 }
 
 /** The Status column, which is shown and never filtered on (SPEC §4.5). */
@@ -225,27 +244,42 @@ export type Status =
 // Statuses that never reach the roster at all (SPEC §4.5).
 const HIDDEN_STATUSES = new Set(["Blacklisted", "Can't reached"]);
 
+/** A tutor's row number in the sheet, header row being 1: the tutor's id for the Selection. */
+const SheetRow = z.number().int().min(2).brand<"SheetRow">();
+export type SheetRow = z.infer<typeof SheetRow>;
+
 export interface Tutor {
-  /** The tutor's row number in the sheet, header row being 1. */
-  row: number;
+  row: SheetRow;
   /** Mr/Miss <LastName>, as the table and profile message show it. */
   name: string;
+  /** The last name, else the first: what the name column sorts by, whatever the title. */
+  surname: string;
   /** <FirstName> <LastName>, as the phone list message shows it. */
   fullName: string;
-  /** Lives in Plugin UI memory only: never stored, never logged. */
-  phone: string;
+  /** The Hong Kong number without its +852. null: none on file. Lives in Plugin UI memory only:
+   * never stored, never logged. */
+  phone: string | null;
   /** null where the District cell is blank or unknown. */
   district: DistrictId | null;
   faceToFace: boolean;
   /** Doing face-to-face implies being able to teach online. */
   online: boolean;
   zoomOnly: boolean;
-  languages: string[];
+  /** Only the three the filter knows (SPEC §4.4). */
+  languages: Language[];
   offerings: Offering[];
   status: Status;
-  /** our_version_description, else Self_introduction_chi, else Self_introduction_eng. */
-  intro: string;
-  remark: string;
+  /** our_version_description, else Self_introduction_chi, else Self_introduction_eng. null: the
+   * tutor wrote none. */
+  intro: string | null;
+  /** null: the interview left no remark. */
+  remark: string | null;
+}
+
+/** A trimmed cell, or null where it is blank. */
+function filled(text: string): string | null {
+  const trimmed = text.trim();
+  return trimmed === "" ? null : trimmed;
 }
 
 /**
@@ -277,26 +311,31 @@ export function parseRows(rows: readonly (readonly string[])[]): Tutor[] {
       "Self_introduction_chi",
       "Self_introduction_eng",
     ]
-      .map((name) => cell(name).trim())
-      .find((text) => text !== "");
+      .map((name) => filled(cell(name)))
+      .find((text) => text !== null);
     return [
       {
-        row: i + 2,
+        row: SheetRow.parse(i + 2),
         name: displayName(first, last, cell("Gender")),
+        surname: surname(first, last),
         fullName: fullName(first, last),
-        phone: cell("Phone").trim(),
+        phone: filled(
+          cell("Phone")
+            .trim()
+            .replace(/^\+?852\s*/, ""),
+        ),
         district: canonicalDistrict(cell("District")),
         faceToFace,
         online,
         zoomOnly: online && !faceToFace,
+        // A form checkbox, so anything outside the three is not a language the filter offers.
         languages: cell("tutoring_language")
           .split(",")
-          .map((l) => l.trim())
-          .filter((l) => l !== ""),
+          .flatMap((l) => LANGUAGES.filter((known) => known === l.trim())),
         offerings: parseOfferings(cell("Subject"), cell("Expect Salary")),
         status: parseStatus(statusText),
-        intro: intro ?? "", // a tutor who wrote no introduction has an empty one
-        remark: cell("Interview remark").trim(),
+        intro: intro ?? null, // find's undefined: none of the three columns is filled
+        remark: filled(cell("Interview remark")),
       },
     ];
   });

@@ -7,67 +7,67 @@ import type { HubError } from "@hawkeye-hub/hub-api";
 import {
   KEY_SECRET,
   parseKey,
-  readFailure,
   readSheet,
+  SheetReadFailed,
   type ReadFailure,
   type ServiceAccountKey,
 } from "./google";
 import { createFilters } from "./filters";
 import { t } from "./i18n";
-import { matching, phoneMessage, profileMessage } from "./messages";
-import { parseRows, type Tutor } from "./parsing";
+import { phoneMessage, profileMessage } from "./messages";
+import { matching, parseRows, type SheetRow, type Tutor } from "./parsing";
 import { createTable } from "./table";
 
-/** The element `<tag id=id>`, which index.html always has. */
-function byId<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  id: string,
-): HTMLElementTagNameMap[K] {
-  const found = [...document.getElementsByTagName(tag)].find(
-    (el) => el.id === id,
-  );
-  if (found === undefined)
-    throw new Error(`index.html has no <${tag} id=${id}>`);
+/** The element `#id` of class `type`, which index.html always has. */
+function byId<T extends HTMLElement>(type: new () => T, id: string): T {
+  const found = document.getElementById(id);
+  if (!(found instanceof type))
+    throw new Error(`index.html has no ${type.name} #${id}`);
   return found;
 }
 
 const hub = window.hub;
-const status = byId("p", "status");
-const setup = byId("section", "setup");
-const keyFile = byId("input", "key-file");
-const setupError = byId("p", "setup-error");
-const roster = byId("section", "roster");
-const refresh = byId("button", "refresh");
-const tally = byId("p", "tally");
+const status = byId(HTMLParagraphElement, "status");
+const setup = byId(HTMLElement, "setup");
+const keyFile = byId(HTMLInputElement, "key-file");
+const setupError = byId(HTMLParagraphElement, "setup-error");
+const roster = byId(HTMLElement, "roster");
+const refresh = byId(HTMLButtonElement, "refresh");
+const tally = byId(HTMLParagraphElement, "tally");
 /** The Selection: the sheet rows of the tutors staff picked. It outlives every filter change. */
-const selection = new Set<number>();
-const table = createTable(byId("table", "table"), selection, showSelection);
-const writeMessages = byId("button", "write-messages");
-const messages = byId("section", "messages");
-const profileText = byId("textarea", "profile-message");
-const phoneText = byId("textarea", "phone-message");
-const settings = byId("details", "settings");
-const problem = byId("section", "problem");
-const problemMessage = byId("p", "problem-message");
-const stale = byId("p", "stale");
-const retry = byId("button", "retry");
-const replaceKey = byId("button", "replace-key");
+const selection = new Set<SheetRow>();
+const table = createTable(
+  byId(HTMLTableElement, "table"),
+  selection,
+  showSelection,
+);
+const writeMessages = byId(HTMLButtonElement, "write-messages");
+const messages = byId(HTMLElement, "messages");
+const profileText = byId(HTMLTextAreaElement, "profile-message");
+const phoneText = byId(HTMLTextAreaElement, "phone-message");
+const settings = byId(HTMLDetailsElement, "settings");
+const problem = byId(HTMLElement, "problem");
+const problemMessage = byId(HTMLParagraphElement, "problem-message");
+const stale = byId(HTMLParagraphElement, "stale");
+const retry = byId(HTMLButtonElement, "retry");
+const replaceKey = byId(HTMLButtonElement, "replace-key");
+const cancelSetup = byId(HTMLButtonElement, "cancel-setup");
 
-byId("summary", "settings-label").textContent = t("settings");
-byId("button", "settings-replace-key").textContent = t("replaceKey");
+byId(HTMLElement, "settings-label").textContent = t("settings");
+byId(HTMLButtonElement, "settings-replace-key").textContent = t("replaceKey");
 replaceKey.textContent = t("replaceKey");
 retry.textContent = t("retry");
 stale.textContent = t("failed.stale");
-byId("h1", "setup-title").textContent = t("setup.title");
-byId("p", "setup-hint").textContent = t("setup.hint");
-byId("span", "key-file-label").textContent = t("setup.file");
-byId("h1", "title").textContent = t("title");
+byId(HTMLHeadingElement, "setup-title").textContent = t("setup.title");
+byId(HTMLParagraphElement, "setup-hint").textContent = t("setup.hint");
+byId(HTMLSpanElement, "key-file-label").textContent = t("setup.file");
+byId(HTMLHeadingElement, "title").textContent = t("title");
 refresh.textContent = t("refresh");
+cancelSetup.textContent = t("cancel");
 
-let key: ServiceAccountKey | null = null; // null: no usable key stored yet
 /** The roster in memory: what the filters narrow and the table shows. */
 let tutors: readonly Tutor[] = [];
-const filters = createFilters(byId("aside", "filters"), showRoster);
+const filters = createFilters(byId(HTMLElement, "filters"), showRoster);
 /** Whether a read has worked since the Plugin opened, so a failed one leaves its table, marked stale. */
 let loaded = false;
 
@@ -79,6 +79,16 @@ function showRoster(): void {
     suppressed === 0
       ? count
       : `${count} · ${t("suppressed", { count: suppressed })}`;
+}
+
+/** Takes `key` as the one Refresh and Retry read with, and reads the sheet with it. */
+async function start(key: ServiceAccountKey): Promise<void> {
+  const reload = (): void => {
+    void load(key);
+  };
+  refresh.onclick = reload;
+  retry.onclick = reload;
+  await load(key);
 }
 
 /** Reads the sheet with `key` and shows it. Every open does this once; Refresh and Retry do it again. */
@@ -95,8 +105,9 @@ async function load(key: ServiceAccountKey): Promise<void> {
     roster.hidden = false;
     problem.hidden = true;
   } catch (e) {
-    // Not logged: Google's errors may echo sheet data.
-    showProblem(readFailure(e), key);
+    // Not logged: Google's errors may echo sheet data. Anything else is a bug, and propagates.
+    if (!(e instanceof SheetReadFailed)) throw e;
+    showProblem(e.failure, key);
   } finally {
     status.textContent = "";
     refresh.disabled = false;
@@ -134,14 +145,14 @@ function showSelection(): void {
 }
 showSelection();
 
-byId("button", "back").textContent = t("messages.back");
-byId("span", "profile-label").textContent = t("messages.profile");
-byId("span", "phones-label").textContent = t("messages.phones");
+byId(HTMLButtonElement, "back").textContent = t("messages.back");
+byId(HTMLSpanElement, "profile-label").textContent = t("messages.profile");
+byId(HTMLSpanElement, "phones-label").textContent = t("messages.phones");
 for (const [button, text] of [
   ["copy-profile", profileText],
   ["copy-phones", phoneText],
 ] as const) {
-  const copy = byId("button", button);
+  const copy = byId(HTMLButtonElement, button);
   copy.textContent = t("messages.copy");
   copy.addEventListener("click", () => {
     // The text as staff edited it. A refusal propagates: there is nothing to retry here.
@@ -166,7 +177,7 @@ writeMessages.addEventListener("click", () => {
   problem.hidden = true;
   messages.hidden = false;
 });
-byId("button", "back").addEventListener("click", () => {
+byId(HTMLButtonElement, "back").addEventListener("click", () => {
   messages.hidden = true;
   roster.hidden = false;
   problem.hidden = !problemShown;
@@ -179,14 +190,31 @@ function askForKey(): void {
   settings.hidden = true;
   settings.open = false;
   status.textContent = "";
+  cancelSetup.hidden = true;
   setup.hidden = false;
 }
 
-retry.addEventListener("click", () => {
-  if (key !== null) void load(key); // a failure is shown only after a key was read
-});
 replaceKey.addEventListener("click", askForKey);
-byId("button", "settings-replace-key").addEventListener("click", askForKey);
+byId(HTMLButtonElement, "settings-replace-key").addEventListener(
+  "click",
+  () => {
+    // The stored key still works here, so Cancel puts back whichever views were up.
+    const restore = [roster, problem, messages].map((view) => {
+      const hidden = view.hidden;
+      return (): void => {
+        view.hidden = hidden;
+      };
+    });
+    cancelSetup.onclick = () => {
+      setup.hidden = true;
+      setupError.textContent = "";
+      settings.hidden = false;
+      for (const view of restore) view();
+    };
+    askForKey();
+    cancelSetup.hidden = false;
+  },
+);
 
 keyFile.addEventListener("change", () => {
   void (async () => {
@@ -206,8 +234,7 @@ keyFile.addEventListener("change", () => {
       return;
     }
     setupError.textContent = "";
-    key = parsed.key;
-    await load(key);
+    await start(parsed.key);
   })();
 });
 
@@ -238,10 +265,6 @@ function refusal(e: unknown): string {
   }
 }
 
-refresh.addEventListener("click", () => {
-  if (key !== null) void load(key); // Refresh shows only once a key has loaded the roster
-});
-
 const stored = await hub.secrets.get(KEY_SECRET);
 switch (stored.kind) {
   case "missing":
@@ -251,10 +274,7 @@ switch (stored.kind) {
     // The stored text passed parseKey before it was saved; parsed again here, at the boundary.
     const parsed = parseKey(stored.value);
     if (parsed.kind === "invalid") askForKey();
-    else {
-      key = parsed.key;
-      await load(key);
-    }
+    else await start(parsed.key);
     break;
   }
   default:

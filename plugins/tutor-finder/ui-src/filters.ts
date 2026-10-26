@@ -5,18 +5,18 @@
 import { t } from "./i18n";
 import {
   DISTRICTS,
+  LANGUAGES,
   LEVELS,
   REGIONS,
+  matching,
   type DistrictId,
+  type Language,
   type Level,
   type Region,
   type Tutor,
 } from "./parsing";
 import { MAP_HEIGHT, PLATES, RIDGE } from "./plates";
 import type { ShownTutor } from "./table";
-
-/** The three tutoring_language values (SPEC §4.4). */
-export const LANGUAGES = ["Cantonese", "English", "Mandarin"] as const;
 
 /** Face-to-face: the tutor must travel to the client. Online: anyone will do, the default (SPEC §4.2). */
 const METHODS = ["face-to-face", "online"] as const;
@@ -25,16 +25,31 @@ type Method = (typeof METHODS)[number];
 // Object.keys is typed string[]; PLATES is a Record<DistrictId, …>, so its keys are exactly DistrictId.
 const DISTRICT_IDS = Object.keys(PLATES) as DistrictId[];
 
+/** Where a tutor may travel. Only Face-to-face can set it, and leaving it clears it (SPEC §4.3). */
+interface DistrictFilter {
+  /** The districts a tutor may travel to. */
+  districts: ReadonlySet<DistrictId>;
+  /** Also keep tutors who travel but recorded no district. */
+  noDistrict: boolean;
+}
+
+/** The district filter that narrows nothing. */
+const ANY_DISTRICT: DistrictFilter = {
+  districts: new Set(),
+  noDistrict: false,
+};
+
+/** Whether `filter` narrows the roster. */
+const narrows = (filter: DistrictFilter): boolean =>
+  filter.districts.size > 0 || filter.noDistrict;
+
 interface Filters {
   /** null: All levels. */
   level: Level | null;
   method: Method;
   /** Empty: no language filter. */
-  languages: ReadonlySet<string>;
-  /** The districts a tutor may travel to. Only Face-to-face can select one (SPEC §4.3). */
-  districts: ReadonlySet<DistrictId>;
-  /** Also keep tutors who travel but recorded no district. */
-  noDistrict: boolean;
+  languages: ReadonlySet<Language>;
+  district: DistrictFilter;
 }
 
 /** What the filters let through, and how many online-only tutors the district filter is hiding. */
@@ -43,24 +58,15 @@ export interface Filtered {
   suppressed: number;
 }
 
-/** Whether a district narrows the roster. Both are cleared on leaving Face-to-face, so this implies it. */
-const districtFilterOn = (f: Filters): boolean =>
-  f.districts.size > 0 || f.noDistrict;
-
 /** The tutors `filters` let through, each with only the offerings that match its level. */
 function applyFilters(
   tutors: readonly Tutor[],
   filters: Filters,
 ): ShownTutor[] {
-  const { level, method, languages, districts, noDistrict } = filters;
-  const districtOn = districtFilterOn(filters);
+  const { level, method, languages, district } = filters;
+  const districtOn = narrows(district);
   return tutors.flatMap((tutor) => {
-    // An unlevelled offering matches every level: over-including costs a line, under-including
-    // loses a tutor (SPEC §3.4).
-    const offerings =
-      level === null
-        ? tutor.offerings
-        : tutor.offerings.filter((o) => o.level === level || o.level === null);
+    const offerings = matching(tutor, level);
     const keep =
       (level === null || offerings.length > 0) &&
       (method === "online" || tutor.faceToFace) && // face-to-face implies online (SPEC §4.2)
@@ -68,7 +74,9 @@ function applyFilters(
       // Only Face-to-face selects a district, so an online-only tutor never satisfies one,
       // whatever their District cell says (SPEC §4.3).
       (!districtOn ||
-        (tutor.district === null ? noDistrict : districts.has(tutor.district)));
+        (tutor.district === null
+          ? district.noDistrict
+          : district.districts.has(tutor.district)));
     return keep ? [{ tutor, offerings }] : [];
   });
 }
@@ -99,14 +107,15 @@ function choice(
   return [label, input];
 }
 
-function svg<K extends keyof SVGElementTagNameMap>(
+/** An SVG `<tag>` with `attrs` set. */
+function svgElement<K extends keyof SVGElementTagNameMap>(
   tag: K,
   attrs: Record<string, string | number>,
 ): SVGElementTagNameMap[K] {
-  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  const created = document.createElementNS("http://www.w3.org/2000/svg", tag);
   for (const [name, value] of Object.entries(attrs))
-    el.setAttribute(name, String(value));
-  return el;
+    created.setAttribute(name, String(value));
+  return created;
 }
 
 /** The filter column: `apply` narrows a roster and redraws the district counts for it. */
@@ -123,9 +132,8 @@ export function createFilters(
 ): FilterColumn {
   let level: Level | null = null;
   let method: Method = "online";
-  const languages = new Set<string>();
-  const districts = new Set<DistrictId>();
-  let noDistrict = false;
+  const languages = new Set<Language>();
+  let district = ANY_DISTRICT;
 
   // A native <select> deliberately: the control to change if multi-level matching is wanted (SPEC §4.1).
   const levelLabel = document.createElement("label");
@@ -162,8 +170,7 @@ export function createFilters(
       method = value;
       // A district means the tutor travels, so leaving Face-to-face clears it (SPEC §4.3).
       if (method !== "face-to-face") {
-        districts.clear();
-        noDistrict = false;
+        district = ANY_DISTRICT;
         noDistrictBox.checked = false;
       }
       changed();
@@ -172,39 +179,49 @@ export function createFilters(
   });
 
   // The district map: plates drawn by the Plugin, coloured by layout.css from --hub-* tokens only.
-  const map = svg("svg", {
+  // Stroke widths, dashes and label sizes are viewBox geometry, so they are set here, not in CSS.
+  const map = svgElement("svg", {
     class: "map",
     viewBox: `-2 -2 104 ${String(MAP_HEIGHT)}`,
     role: "group",
     "aria-label": t("filters.district.map"),
   });
-  const leads = svg("g", {});
-  const shapes = svg("g", {});
-  const labels = svg("g", { "aria-hidden": "true" });
-  const toggle = (id: DistrictId): void => {
-    if (method !== "face-to-face") return; // the map is inert until Face-to-face arms it
-    if (districts.has(id)) districts.delete(id);
-    else districts.add(id);
+  const leads = svgElement("g", {});
+  const shapes = svgElement("g", {});
+  const labels = svgElement("g", { "aria-hidden": "true" });
+  /** Sets the selected districts, keeping noDistrict. */
+  const selectDistricts = (districts: ReadonlySet<DistrictId>): void => {
+    district = { ...district, districts };
     changed();
   };
+  const toggle = (id: DistrictId): void => {
+    if (method !== "face-to-face") return; // the map is inert until Face-to-face arms it
+    const districts = new Set(district.districts);
+    if (districts.has(id)) districts.delete(id);
+    else districts.add(id);
+    selectDistricts(districts);
+  };
   const plates = DISTRICT_IDS.map((id) => {
-    const p = PLATES[id];
-    if (p.lead !== null)
+    const plate = PLATES[id];
+    if (plate.lead !== null)
       leads.append(
-        svg("line", {
+        svgElement("line", {
           class: "lead",
-          x1: p.lead[0],
-          y1: p.lead[1],
-          x2: p.cx,
-          y2: p.top,
+          x1: plate.lead[0],
+          y1: plate.lead[1],
+          x2: plate.cx,
+          y2: plate.top,
+          "stroke-width": 0.3,
+          "stroke-dasharray": "1.1 1.3",
         }),
       );
-    const shape = svg("path", {
+    const shape = svgElement("path", {
       class: "plate",
-      d: p.d,
+      d: plate.d,
       "data-district": id,
       role: "button",
-      "aria-label": DISTRICTS[id].en,
+      "aria-label": t(`district.${id}`),
+      "stroke-width": 0.5,
     });
     shape.addEventListener("click", () => {
       toggle(id);
@@ -215,22 +232,41 @@ export function createFilters(
       toggle(id);
     });
     shapes.append(shape);
-    const name = svg("text", { class: "plate-name", x: p.cx, y: p.cy });
-    name.textContent = p.short;
-    const count = svg("text", { class: "plate-count", x: p.cx, y: p.cy + 4 });
+    const name = svgElement("text", {
+      class: "plate-name",
+      x: plate.cx,
+      y: plate.cy,
+      "font-size": 2.9,
+    });
+    name.textContent = t(`plate.${id}`);
+    const count = svgElement("text", {
+      class: "plate-count",
+      x: plate.cx,
+      y: plate.cy + 4,
+      "font-size": 3.6,
+    });
     labels.append(name, count);
     return { id, shape, name, count };
   });
-  const ridgeLabel = svg("text", {
+  const ridgeLabel = svgElement("text", {
     class: "ridge-label",
     x: 50,
     y: RIDGE - 1.6,
+    "font-size": 2.6,
   });
   ridgeLabel.textContent = t("filters.district.ridge");
   map.append(
     leads,
     shapes,
-    svg("line", { class: "ridge", x1: 0, y1: RIDGE, x2: 100, y2: RIDGE }),
+    svgElement("line", {
+      class: "ridge",
+      x1: 0,
+      y1: RIDGE,
+      x2: 100,
+      y2: RIDGE,
+      "stroke-width": 0.35,
+      "stroke-dasharray": "3.2 2.2",
+    }),
     ridgeLabel,
     labels,
   );
@@ -238,14 +274,17 @@ export function createFilters(
   const regionButtons = REGIONS.map((region: Region) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = t("filters.district.region", { region });
+    button.textContent = t("filters.district.region", {
+      region: t(`region.${region}`),
+    });
     button.addEventListener("click", () => {
       // Adds the whole region, or takes it away again once all of it is selected.
       const ids = DISTRICT_IDS.filter((id) => DISTRICTS[id].region === region);
+      const districts = new Set(district.districts);
       if (ids.every((id) => districts.has(id)))
         for (const id of ids) districts.delete(id);
       else for (const id of ids) districts.add(id);
-      changed();
+      selectDistricts(districts);
     });
     return button;
   });
@@ -264,7 +303,7 @@ export function createFilters(
   noDistrictHint.className = "muted";
   noDistrictLabel.lastElementChild?.append(noDistrictHint);
   noDistrictBox.addEventListener("change", () => {
-    noDistrict = noDistrictBox.checked;
+    district = { ...district, noDistrict: noDistrictBox.checked };
     changed();
   });
 
@@ -302,20 +341,13 @@ export function createFilters(
   );
 
   const apply = (tutors: readonly Tutor[]): Filtered => {
-    const filters: Filters = {
-      level,
-      method,
-      languages,
-      districts,
-      noDistrict,
-    };
+    const filters: Filters = { level, method, languages, district };
     const armed = method === "face-to-face";
     // What each plate would add: the tutors who travel and match every other filter.
     const travellers = applyFilters(tutors, {
       ...filters,
       method: "face-to-face",
-      districts: new Set(),
-      noDistrict: false,
+      district: ANY_DISTRICT,
     });
     // The fieldset dims the map; each control is disabled too, as `.disabled` reads only its own.
     districtSet.disabled = !armed;
@@ -323,29 +355,28 @@ export function createFilters(
       control.disabled = !armed;
     why.hidden = armed;
     for (const { id, shape, name, count } of plates) {
-      const n = travellers.filter((s) => s.tutor.district === id).length;
-      const selected = districts.has(id);
+      const matches = travellers.filter((s) => s.tutor.district === id).length;
+      const selected = district.districts.has(id);
       // Zero-match districts stay tappable: the map never blocks a tap it could explain.
-      for (const el of [shape, name, count]) {
-        el.classList.toggle("sel", selected);
-        el.classList.toggle("zero", n === 0);
+      for (const part of [shape, name, count]) {
+        part.classList.toggle("sel", selected);
+        part.classList.toggle("zero", matches === 0);
       }
       shape.setAttribute("aria-pressed", String(selected));
       shape.setAttribute("aria-disabled", String(!armed));
       shape.setAttribute("tabindex", armed ? "0" : "-1");
-      count.textContent = String(n);
+      count.textContent = String(matches);
     }
     noDistrictHint.textContent = t("filters.district.noneHint", {
       count: travellers.filter((s) => s.tutor.district === null).length,
     });
 
     // What the district filter costs: tutors matching level and language who cannot travel.
-    const suppressed = districtFilterOn(filters)
+    const suppressed = narrows(district)
       ? applyFilters(tutors, {
           ...filters,
           method: "online",
-          districts: new Set(),
-          noDistrict: false,
+          district: ANY_DISTRICT,
         }).filter((s) => s.tutor.zoomOnly).length
       : 0;
     return { shown: applyFilters(tutors, filters), suppressed };

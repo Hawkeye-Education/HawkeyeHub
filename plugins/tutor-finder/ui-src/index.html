@@ -40,6 +40,10 @@
           <input id="key-file" type="file" accept=".json,application/json" />
         </label>
         <p id="setup-error" role="alert"></p>
+        <!-- Only when reached from Settings: the stored key still works, so staff can go back. -->
+        <div class="row">
+          <button id="cancel-setup" type="button" hidden></button>
+        </div>
       </section>
 
       <section id="roster" class="layout" hidden>
