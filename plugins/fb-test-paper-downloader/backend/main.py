@@ -61,14 +61,14 @@ def update(ctx: Context, p: Update) -> UpdateResult:
             try:
                 facebook = Facebook(window, group, stopping)
                 return run_update(
-                    facebook,
-                    facebook,
-                    p.output,
-                    group,
-                    p.stop_at_known,
-                    stopping,
-                    lambda progress: ctx.notify("progress", progress),
-                    DELAY_SECONDS,
+                    feed=facebook,
+                    tab=facebook,
+                    output=p.output,
+                    group=group,
+                    stop_at_known=p.stop_at_known,
+                    stopping=stopping,
+                    notify=lambda progress: ctx.notify("progress", progress),
+                    delay_seconds=DELAY_SECONDS,
                 )
             finally:
                 # A no-op once staff have closed it (BrowserContext.close returns when
