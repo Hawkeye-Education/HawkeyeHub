@@ -7,6 +7,7 @@ export const zhHK: typeof enHK = {
   save: "儲存 Word 文件",
   busy: "正在擷取收據。現在關閉會失去這次的結果。",
   summary: "完成：已擷取 {{total}} 張相片中的 {{receipts}} 張。",
+  fallback: "找不到收據：保留整張相片",
   failed: {
     unsupported: "不是 JPEG 或 PNG",
     unreadable: "無法讀取",

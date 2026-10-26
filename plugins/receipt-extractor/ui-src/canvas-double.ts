@@ -1,8 +1,9 @@
-// Test doubles of Chromium's `createImageBitmap` and `OffscreenCanvas` for happy-dom, which has
-// neither. They decode and encode with Skia through @napi-rs/canvas, which, like Chromium, turns a
+// Test doubles of Chromium's `createImageBitmap`, `OffscreenCanvas` and `Worker` for happy-dom, which has
+// none. They decode and encode with Skia through @napi-rs/canvas, which, like Chromium, turns a
 // photo upright by its EXIF orientation (probed: an orientation-6 40×20 JPEG loads as 20×40).
 
 import { createCanvas, loadImage, type Image } from "@napi-rs/canvas";
+import { cropBox, type Crop, type Pixels } from "./crop";
 
 class FakeOffscreenCanvas {
   readonly #canvas;
@@ -44,15 +45,66 @@ async function fakeCreateImageBitmap(
   return Object.assign(image, { close: () => undefined });
 }
 
+/** A double of the crop's Web Worker (happy-dom has none): it answers on a later task, as one would. */
+class FakeCropWorker {
+  onmessage: ((event: { data: Crop }) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+
+  constructor(url: URL, options: { type: string }) {
+    if (!url.pathname.endsWith("/crop.worker.ts") || options.type !== "module")
+      throw new Error(
+        `double runs the crop's module worker only, not ${url.href}`,
+      );
+  }
+
+  postMessage(pixels: Pixels): void {
+    setTimeout(() => this.onmessage?.({ data: cropBox(pixels) }));
+  }
+
+  terminate(): void {
+    // nothing runs
+  }
+}
+
 /** Puts the doubles on `globalThis`, where the Plugin UI finds Chromium's. */
 export function installCanvasDouble(): void {
   Object.assign(globalThis, {
     OffscreenCanvas: FakeOffscreenCanvas,
     createImageBitmap: fakeCreateImageBitmap,
+    Worker: FakeCropWorker,
   });
 }
 
-/** A synthetic receipt photo: white paper with a dark block on its left half. */
+interface Block {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A synthetic PNG: white paper with each block painted black. */
+export function paper(
+  name: string,
+  width: number,
+  height: number,
+  blocks: Block[],
+): File {
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#000000";
+  for (const b of blocks) ctx.fillRect(b.x, b.y, b.width, b.height);
+  return new File([Uint8Array.from(canvas.encodeSync("png"))], name, {
+    type: "image/png",
+  });
+}
+
+/**
+ * A synthetic receipt photo: white paper with a dark block inset by the crop's pad, 1.5% of the
+ * longer side, so the auto-crop keeps the whole photo. The pad must be at least 7 px (a longer
+ * side of 467 px or more), or the crop's dilation reaches the edge and the crop trims the photo.
+ */
 export function photo(
   name: string,
   width: number,
@@ -65,7 +117,12 @@ export function photo(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "#000000";
-  ctx.fillRect(0, 0, width / 2, height);
+  const pad = Math.floor(Math.max(width, height) * 0.015);
+  if (pad < 7)
+    throw new Error(
+      `a ${String(width)} × ${String(height)} photo is too small`,
+    );
+  ctx.fillRect(pad, pad, width - 2 * pad, height - 2 * pad);
   const encoded =
     format === "jpeg"
       ? canvas.encodeSync("jpeg", 95)
