@@ -20,12 +20,40 @@ from classify import classify_level, classify_subject, is_incomplete, is_not_pap
         ("小二數", "P2", "數學"),
         ("p5 21-22 英 中閱 中作", "P5", "英文"),
         ("P6 Reading & Writing", "P6", "英文"),
+        ("P1_ChinTest", "P1", "中文"),
+        ("小三英默書", "P3", "英文"),
+        ("P4數 卷", "P4", "數學"),
+        # the spec's own examples, word for word
+        ("P.1_EngTest", "P1", "英文"),
+        ("P1 Chin Test", "P1", "中文"),
+        ("一年级", "P1", "其他"),
+        ("六年级", "P6", "其他"),
+        ("小一數", "P1", "數學"),
+        ("英 中閱", "未分級", "英文"),
+        ("Reading & Writing", "未分級", "英文"),
         # nothing to go on
         ("請問有冇答案", "未分級", "其他"),
     ],
 )
 def test_classifies_level_and_subject(text: str, level: str, subject: str) -> None:
     assert (classify_level(text), classify_subject(text)) == (level, subject)
+
+
+@pytest.mark.parametrize(
+    ("text", "subject"),
+    [
+        # 數 and 英 inside another word are not the subject
+        ("分數比較", "其他"),
+        ("數量", "其他"),
+        ("數字遊戲", "其他"),
+        ("英華小學", "其他"),
+        ("英皇書院 小六 中文", "中文"),
+    ],
+)
+def test_a_bare_subject_character_inside_another_word_is_not_the_subject(
+    text: str, subject: str
+) -> None:
+    assert classify_subject(text) == subject
 
 
 def test_the_earliest_mention_wins() -> None:

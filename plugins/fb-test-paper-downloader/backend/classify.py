@@ -22,6 +22,15 @@ _LEVELS = [
     re.compile(r"([一二三四五六1-6])\s*年[級级]"),  # 三年級, 一年级
 ]
 
+_AFTER_LEVEL = r"(?:(?<=小[一二三四五六1-6])|(?<=[級级])|(?<=p[1-6])|(?<=p\.[1-6]))"
+
+
+def _bare(char: str) -> str:
+    """A one-character subject ("小一數", "英 中閱") right after a Level or standing on its own,
+    never inside another word (分數, 數量, the school names 英華, 英皇)."""
+    return rf"{_AFTER_LEVEL}{char}|(?<![一-鿿]){char}(?![一-鿿])"
+
+
 # On a tie the earlier entry wins, so 綜合's "中英數" beats the bare 英 and 數 below.
 _SUBJECTS: list[tuple[Subject, re.Pattern[str]]] = [
     ("綜合", re.compile(r"中英數常|中英數|全科|各科")),
@@ -36,10 +45,12 @@ _SUBJECTS: list[tuple[Subject, re.Pattern[str]]] = [
     (
         "英文",
         re.compile(
-            r"英|english|(?<![a-z])eng(?![a-z])|(?-i:Eng(?=[A-Z]))|reading\s*&\s*writing", re.I
+            rf"英文|英語|英语|{_bare('英')}|english|(?<![a-z])eng(?![a-z])|(?-i:Eng(?=[A-Z]))"
+            r"|reading\s*&\s*writing",
+            re.I,
         ),
     ),
-    ("數學", re.compile(r"[數数]|maths?(?![a-z])|mathematics", re.I)),  # a bare 數 ("小一數")
+    ("數學", re.compile(rf"數學|数学|{_bare('[數数]')}|maths?(?![a-z])|mathematics", re.I)),
     ("常識", re.compile(r"常識|常识|general\s*studies|(?<![a-z])gs(?![a-z])", re.I)),
     ("科學", re.compile(r"科學|science", re.I)),
     ("人文", re.compile(r"人文|humanities", re.I)),
@@ -80,6 +91,8 @@ def safe_name(text: str, max_len: int) -> str:
     """`text` as a Windows file or folder name of at most `max_len` characters."""
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", text)
     name = re.sub(r"\s+", " ", name).strip().strip(".")
+    # A post whose text is all forbidden characters still needs a folder: "untitled" is the name
+    # staff see, as with 未分級, not a sentinel anything reads back.
     return name[:max_len].strip() or "untitled"
 
 
