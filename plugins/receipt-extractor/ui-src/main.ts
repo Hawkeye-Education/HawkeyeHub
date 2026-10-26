@@ -2,7 +2,7 @@
 
 import { buildDocx, suggestedName } from "./docx";
 import { t } from "./i18n";
-import { extract, type Receipt } from "./receipt";
+import { extract, type Extracted, type Receipt } from "./receipt";
 
 /** The element `<tag id=id>`, which index.html always has. */
 function byId<K extends keyof HTMLElementTagNameMap>(
@@ -67,6 +67,31 @@ document.addEventListener("drop", (e) => {
   choose([...(e.dataTransfer?.files ?? [])]);
 });
 
+/** A result's line in the list, `name` with its thumbnail or flag; a receipt joins the document. */
+function show(name: string, extracted: Extracted): HTMLLIElement {
+  switch (extracted.kind) {
+    case "receipt": {
+      receipts.push(extracted.receipt);
+      const img = document.createElement("img");
+      const url = URL.createObjectURL(
+        new Blob([extracted.receipt.jpeg], { type: "image/jpeg" }),
+      );
+      thumbnails.push(url);
+      img.src = url;
+      img.alt = "";
+      return item(name, img);
+    }
+    case "failed": {
+      const flag = document.createElement("strong");
+      flag.textContent = t(`failed.${extracted.reason}`);
+      return item(name, flag);
+    }
+    default:
+      extracted satisfies never;
+      throw new Error("unreachable");
+  }
+}
+
 async function extractAll(): Promise<void> {
   files.disabled = true;
   run.disabled = true;
@@ -75,38 +100,29 @@ async function extractAll(): Promise<void> {
   await hub.busy.set(t("busy"));
   try {
     receipts = [];
+    let total = 0;
+    // Each file's line in the list, which its results replace: one per page for a PDF.
+    const lines = [...list.children];
     for (const [i, file] of picked.entries()) {
-      const extracted = await extract(file);
-      let shown: HTMLLIElement;
-      switch (extracted.kind) {
-        case "receipt": {
-          receipts.push(extracted.receipt);
-          const img = document.createElement("img");
-          const url = URL.createObjectURL(
-            new Blob([extracted.receipt.jpeg], { type: "image/jpeg" }),
+      const fromFile = await extract(file);
+      let shown: HTMLLIElement[];
+      switch (fromFile.kind) {
+        case "whole":
+          shown = [show(file.name, fromFile.extracted)];
+          break;
+        case "pages":
+          shown = fromFile.pages.map((extracted, p) =>
+            show(t("page", { name: file.name, page: p + 1 }), extracted),
           );
-          thumbnails.push(url);
-          img.src = url;
-          img.alt = "";
-          shown = item(file.name, img);
           break;
-        }
-        case "failed": {
-          const flag = document.createElement("strong");
-          flag.textContent = t(`failed.${extracted.reason}`);
-          shown = item(file.name, flag);
-          break;
-        }
         default:
-          extracted satisfies never;
+          fromFile satisfies never;
           throw new Error("unreachable");
       }
-      list.children[i]?.replaceWith(shown);
+      total += shown.length;
+      lines[i]?.replaceWith(...shown);
     }
-    summary.textContent = t("summary", {
-      receipts: receipts.length,
-      total: picked.length,
-    });
+    summary.textContent = t("summary", { receipts: receipts.length, total });
   } finally {
     await hub.busy.clear();
     files.disabled = false;

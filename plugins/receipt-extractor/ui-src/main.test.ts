@@ -4,8 +4,13 @@ import { installFakeHub, type FakeHub } from "@hawkeye-hub/fake-hub";
 import JSZip from "jszip";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import manifest from "../manifest.json";
-import { installCanvasDouble, jpegSize, photo } from "./canvas-double";
+import { installCanvasDouble, jpegSize, pdf, photo } from "./canvas-double";
 import page from "./index.html?raw";
+
+// Node runs pdf.js without a Web Worker; this is the worker it then runs on the main thread.
+Object.assign(globalThis, {
+  pdfjsWorker: await import("pdfjs-dist/legacy/build/pdf.worker.mjs"),
+});
 
 // The page's body only: happy-dom would fetch the head's stylesheet and script.
 const html = page.slice(
@@ -181,7 +186,7 @@ test("photos become one receipt per page in name order, fitted in 9 × 25 cm, wh
     reason: "Extracting receipts. Closing now loses this run.",
   });
   await vi.waitFor(() => {
-    expect(text("summary")).toBe("Done: 2 of 2 photos extracted.");
+    expect(text("summary")).toBe("Done: 2 of 2 receipts extracted.");
   });
   await fake.settle();
 
@@ -235,6 +240,85 @@ test("a dropped photo is saved under its own name, turned upright by its EXIF or
   ]);
 });
 
+test("a PDF gives one receipt per page: a scan's own image at full size, any other page at 300 DPI", async () => {
+  const fake = await open();
+  expect($<HTMLInputElement>("files").accept.split(",")).toContain(
+    "application/pdf",
+  );
+  pick([
+    await pdf("scan.pdf", [
+      { kind: "scan", width: 300, height: 500 },
+      // 1 × 2 inches.
+      { kind: "drawing", widthPt: 72, heightPt: 144 },
+    ]),
+  ]);
+  await run(fake);
+
+  expect(text("summary")).toBe("Done: 2 of 2 receipts extracted.");
+  expect(listed()).toEqual([
+    { name: "scan.pdf, page 1", flag: null, thumbnail: true },
+    { name: "scan.pdf, page 2", flag: null, thumbnail: true },
+  ]);
+  const download = await save();
+  expect(download.name).toBe("scan_receipts.docx");
+  const { pages } = await readDocx(download.blob);
+  expect(pages.map((p) => p.image)).toEqual([
+    { width: 300, height: 500 },
+    { width: 300, height: 600 },
+  ]);
+});
+
+test("dropped photos and PDFs go in name order, a PDF's pages in page order", async () => {
+  const fake = await open();
+  drop([
+    photo("c.png", 30, 40, "png"),
+    await pdf("b.pdf", [
+      { kind: "scan", width: 100, height: 200 },
+      { kind: "scan", width: 120, height: 240 },
+    ]),
+    photo("a.jpg", 50, 60, "jpeg"),
+  ]);
+  await run(fake);
+
+  expect(listed().map((item) => item.name)).toEqual([
+    "a.jpg",
+    "b.pdf, page 1",
+    "b.pdf, page 2",
+    "c.png",
+  ]);
+  const { pages } = await readDocx((await save()).blob);
+  expect(pages.map((p) => p.image)).toEqual([
+    { width: 50, height: 60 },
+    { width: 100, height: 200 },
+    { width: 120, height: 240 },
+    { width: 30, height: 40 },
+  ]);
+});
+
+test("a password-protected or corrupt PDF is flagged and the run carries on", async () => {
+  const fake = await open();
+  pick([
+    await pdf(
+      "a locked.pdf",
+      [{ kind: "scan", width: 100, height: 200 }],
+      "password",
+    ),
+    new File(["%PDF-1.4\nnot really a PDF"], "b broken.pdf", {
+      type: "application/pdf",
+    }),
+    photo("c good.jpg", 50, 60, "jpeg"),
+  ]);
+  await run(fake);
+
+  expect(text("summary")).toBe("Done: 1 of 3 receipts extracted.");
+  expect(listed()).toEqual([
+    { name: "a locked.pdf", flag: "Password protected", thumbnail: false },
+    { name: "b broken.pdf", flag: "Could not be read", thumbnail: false },
+    { name: "c good.jpg", flag: null, thumbnail: true },
+  ]);
+  expect(fake.busy.state).toEqual({ kind: "idle" });
+});
+
 test("a file that can't be read is flagged and the run carries on", async () => {
   const fake = await open();
   pick([
@@ -250,11 +334,11 @@ test("a file that can't be read is flagged and the run carries on", async () => 
   ]);
   await run(fake);
 
-  expect(text("summary")).toBe("Done: 1 of 3 photos extracted.");
+  expect(text("summary")).toBe("Done: 1 of 3 receipts extracted.");
   expect(listed()).toEqual([
     { name: "a broken.jpg", flag: "Could not be read", thumbnail: false },
     { name: "b good.png", flag: null, thumbnail: true },
-    { name: "c notes.heic", flag: "Not a JPEG or PNG", thumbnail: false },
+    { name: "c notes.heic", flag: "Not a JPEG, PNG or PDF", thumbnail: false },
   ]);
   expect(fake.busy.state).toEqual({ kind: "idle" });
   const { pages } = await readDocx((await save()).blob);
@@ -269,7 +353,7 @@ test("Save stays off until a run makes at least one receipt", async () => {
 
   await run(fake);
 
-  expect(text("summary")).toBe("Done: 0 of 1 photos extracted.");
+  expect(text("summary")).toBe("Done: 0 of 1 receipts extracted.");
   expect($<HTMLButtonElement>("save").disabled).toBe(true);
   expect($<HTMLButtonElement>("run").disabled).toBe(false);
 });
@@ -280,9 +364,9 @@ test("the Plugin UI reads in the Display Language", async () => {
   await run(fake);
 
   expect(text("run")).toBe("擷取收據");
-  expect(text("summary")).toBe("完成：已擷取 1 張相片中的 0 張。");
+  expect(text("summary")).toBe("完成：已擷取 1 張收據中的 0 張。");
   expect(listed()).toEqual([
-    { name: "scan.txt", flag: "不是 JPEG 或 PNG", thumbnail: false },
+    { name: "scan.txt", flag: "不是 JPEG、PNG 或 PDF", thumbnail: false },
   ]);
 });
 
