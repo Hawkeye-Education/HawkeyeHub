@@ -4,10 +4,11 @@
 // Types and constants only: the preload is sandboxed and the Hub Chrome has no Node.
 
 import type { PluginId, PluginVersion } from "@hawkeye-hub/plugin-format";
-import type { AiContent, AiFailure, AiMessage, AiModelChoice } from "./ai-call";
+import type { AiContent, AiFailure, AiModelChoice, SentPart } from "./ai-call";
 import type { Branded } from "./branded";
 import type {
   AiProvider,
+  AiProviderKind,
   AiProviderLabel,
   ModelId,
   AiProviderRow,
@@ -22,7 +23,13 @@ export const DISPLAY_LANGUAGES = ["en-HK", "zh-HK"] as const;
 export type DisplayLanguage = (typeof DISPLAY_LANGUAGES)[number];
 
 /** The Plugin Switcher's width: the Hub Chrome draws it, main lays Plugin UIs out beside it. */
-export const SWITCHER_WIDTH_PX = 240;
+export const SWITCHER_WIDTH_PX = 260;
+
+/** The Plugin Switcher's width collapsed to its icon rail (#153). */
+export const RAIL_WIDTH_PX = 48;
+
+/** The header strip's height: the Hub Chrome draws it, main lays Plugin UIs out below it. */
+export const HEADER_STRIP_HEIGHT_PX = 40;
 
 /**
  * Why the Hub cannot run an installed Plugin (ADRs 0002, 0005): it needs a Staff Identity and
@@ -54,6 +61,8 @@ export interface SwitcherPlugin {
   /** The Plugin's `icon.svg`, served to the Hub Chrome only as a CSS mask (spec #44 story 53). */
   iconUrl: IconUrl;
   access: PluginAccess;
+  /** Starred by staff (CONTEXT.md "Favourite"): the Switcher shows it in its own section. */
+  favourite: boolean;
 }
 
 /** Why an install failed (spec #91): `environment` is a Python Backend's venv that would not build. */
@@ -83,6 +92,8 @@ export interface CataloguePlugin {
   description: string;
   /** The Registry's icon, served through the icon scheme as the Switcher's are. */
   iconUrl: IconUrl;
+  /** The version Install would install: the newest installable, else the newest offered. */
+  version: PluginVersion;
   access: CatalogueAccess;
   installed: CatalogueInstalled;
   job: CatalogueJob;
@@ -107,6 +118,33 @@ export type ThemeName = Branded<string, "ThemeName">;
 /** The Colour Schemes staff choose from (ADR 0006): `system` follows the OS. */
 export const COLOUR_SCHEMES = ["system", "light", "dark"] as const;
 export type ColourScheme = (typeof COLOUR_SCHEMES)[number];
+
+/**
+ * What a model accepts besides text, which every model takes (spec #142): `document` is a PDF,
+ * `audio` a WAV or MP3. No video until a provider kind sends it.
+ */
+export const MODEL_INPUTS = ["image", "document", "audio"] as const;
+export type ModelInput = (typeof MODEL_INPUTS)[number];
+
+/** The audio a model takes, by file extension, as its media type. */
+export const AUDIO_MEDIA_TYPES = {
+  wav: "audio/wav",
+  mp3: "audio/mpeg",
+} as const;
+export type AudioMediaType =
+  (typeof AUDIO_MEDIA_TYPES)[keyof typeof AUDIO_MEDIA_TYPES];
+
+/** The inputs a provider of `kind` can send: the Anthropic library sends no audio. */
+export function inputsFor(kind: AiProviderKind): readonly ModelInput[] {
+  switch (kind) {
+    case "openai-compatible":
+      return MODEL_INPUTS;
+    case "anthropic":
+      return ["image", "document"];
+    default:
+      return kind satisfies never;
+  }
+}
 
 /**
  * What the content area shows: the front Plugin's UI (or the empty state when none is open), or
@@ -152,6 +190,8 @@ export interface HubChromeSnapshot {
   catalogue: Catalogue;
   /** The front Plugin's Assistant Panel. */
   assistant: AssistantPanel;
+  /** The Plugin Switcher shows as its icon rail, `RAIL_WIDTH_PX` wide. */
+  switcherCollapsed: boolean;
 }
 
 /** The Assistant Panel's width: the Hub Chrome draws it, main narrows the Plugin UI beside it. */
@@ -182,7 +222,7 @@ export interface PromptTemplate {
 /**
  * The Plugin's model: its picker's `choice`, and where its messages go. `none` is Default with no
  * Default AI Provider; `missing` is a chosen provider or model since removed, whose messages fail
- * with `provider-missing` (no silent switch). The composer offers images only when it accepts them.
+ * with `provider-missing` (no silent switch). The composer offers only the `inputs` it accepts.
  */
 export type CurrentModel = { choice: AiModelChoice } & (
   | { kind: "none" }
@@ -191,7 +231,7 @@ export type CurrentModel = { choice: AiModelChoice } & (
       kind: "chosen";
       provider: AiProviderLabel;
       model: ModelId;
-      acceptsImages: boolean;
+      inputs: ModelInput[];
     }
 );
 
@@ -201,9 +241,14 @@ export type CurrentModel = { choice: AiModelChoice } & (
  */
 export interface Conversation {
   /** Every message sent and every finished (or stopped) reply, oldest first. */
-  messages: AiMessage[];
+  messages: ConversationMessage[];
   reply: AssistantReply;
 }
+
+/** A message staff sent, with its attachments' names, or a reply, which is text only. */
+export type ConversationMessage =
+  | { role: "user"; parts: SentPart[] }
+  | { role: "assistant"; content: AiContent };
 
 /**
  * The reply under way: none, streaming with what has arrived, or failed. A failure shows until
@@ -315,13 +360,17 @@ export interface HubChromeApi {
   /** Opens or closes an open Plugin's Assistant Panel. */
   toggleAssistant(id: PluginId): void;
   /** Sends a message to an open Plugin's Assistant, which then streams its reply. */
-  sendToAssistant(id: PluginId, content: AiContent): void;
+  sendToAssistant(id: PluginId, parts: SentPart[]): void;
   /** Stops the reply streaming, keeping what has arrived. */
   stopAssistant(id: PluginId): void;
   /** Drops the conversation, stopping any reply, and starts again. */
   newConversation(id: PluginId): void;
   /** Sets an open Plugin's Assistant model, saved at once. */
   chooseModel(id: PluginId, model: AiModelChoice): void;
+  /** Stars or unstars an installed Plugin as a Favourite, saved at once. */
+  toggleFavourite(id: PluginId): void;
+  /** Collapses the Plugin Switcher to its icon rail, or expands it, saved at once. */
+  toggleSwitcher(): void;
 }
 
 /** Hub Chrome → main, `invoke`: answers the current snapshot. */
@@ -356,7 +405,7 @@ export const INSTALL_PLUGIN = "hub-chrome:install-plugin";
 export const UNINSTALL_PLUGIN = "hub-chrome:uninstall-plugin";
 /** Hub Chrome → main, `invoke`: the id of an open Plugin whose Assistant Panel to toggle. */
 export const TOGGLE_ASSISTANT = "hub-chrome:toggle-assistant";
-/** Hub Chrome → main, `invoke`: an open Plugin's id and the `AiContent` to send its Assistant. */
+/** Hub Chrome → main, `invoke`: an open Plugin's id and the `SentPart`s to send its Assistant. */
 export const SEND_TO_ASSISTANT = "hub-chrome:send-to-assistant";
 /** Hub Chrome → main, `invoke`: the id of an open Plugin whose Assistant reply to stop. */
 export const STOP_ASSISTANT = "hub-chrome:stop-assistant";
@@ -364,3 +413,7 @@ export const STOP_ASSISTANT = "hub-chrome:stop-assistant";
 export const NEW_CONVERSATION = "hub-chrome:new-conversation";
 /** Hub Chrome → main, `invoke`: an open Plugin's id and the `AiModelChoice` its Assistant uses. */
 export const CHOOSE_MODEL = "hub-chrome:choose-model";
+/** Hub Chrome → main, `invoke`: the id of an installed Plugin to star or unstar. */
+export const TOGGLE_FAVOURITE = "hub-chrome:toggle-favourite";
+/** Hub Chrome → main, `invoke`: collapses or expands the Plugin Switcher. */
+export const TOGGLE_SWITCHER = "hub-chrome:toggle-switcher";

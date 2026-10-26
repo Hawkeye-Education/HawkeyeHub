@@ -5,6 +5,8 @@ import { LitElement, css, html, nothing } from "lit";
 import {
   COLOUR_SCHEMES,
   DISPLAY_LANGUAGES,
+  MODEL_INPUTS,
+  inputsFor,
   type DisplayLanguage,
   type AiProviderRow,
   type HubChromeApi,
@@ -14,6 +16,7 @@ import {
 } from "../shared/hub-chrome-ipc";
 import type { AiProviderDraft, AiProviderKind } from "../shared/hub-settings";
 import type { Strings } from "./strings";
+import { native } from "./theme";
 
 // Each language in itself, whatever the Hub Chrome is drawn in, so staff find theirs (spec #71).
 const LANGUAGE_NAMES = {
@@ -40,6 +43,18 @@ function kindsOf(names: Record<AiProviderKind, string>): AiProviderKind[] {
   return Object.keys(names) as AiProviderKind[];
 }
 
+/** The kind the select chose: one of its own options, so anything else is a bug. */
+function chosenKind(
+  event: Event,
+  names: Record<AiProviderKind, string>,
+): AiProviderKind {
+  const value = valueOf(event);
+  const kind = kindsOf(names).find((each) => each === value);
+  if (kind === undefined)
+    throw new Error(`No AI Provider kind is called ${value}`);
+  return kind;
+}
+
 function themeLabel(name: ThemeName): string {
   const label = THEME_LABELS.get(name);
   if (label === undefined) throw new Error(`No label for the Theme ${name}`);
@@ -47,56 +62,66 @@ function themeLabel(name: ThemeName): string {
 }
 
 export class HubSettings extends LitElement {
-  static override styles = css`
-    :host {
-      display: block;
-      height: 100%;
-      overflow-y: auto;
-      padding: 24px;
-      box-sizing: border-box;
-    }
-    h2 {
-      margin: 0 0 16px;
-      font-size: 20px;
-    }
-    h3 {
-      margin: 0 0 8px;
-      font-size: 16px;
-    }
-    dl {
-      display: flex;
-      gap: 8px;
-    }
-    dd {
-      margin: 0;
-    }
-    fieldset {
-      display: flex;
-      gap: 16px;
-      border: none;
-      padding: 0;
-      margin: 0;
-    }
-    legend {
-      padding: 0;
-      margin-bottom: 8px;
-    }
-    .provider {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-    .model {
-      display: flex;
-      gap: 8px;
-    }
-    .actions {
-      display: flex;
-      gap: 8px;
-      margin: 16px 0 32px;
-    }
-  `;
+  static override styles = [
+    native,
+    css`
+      :host {
+        display: block;
+        height: 100%;
+        overflow-y: auto;
+        padding: var(--hub-space-5);
+        box-sizing: border-box;
+      }
+      h2 {
+        margin: 0 0 var(--hub-space-4);
+        font-size: var(--hub-text-xl);
+      }
+      h3 {
+        margin: 0 0 var(--hub-space-2);
+        font-size: var(--hub-text-lg);
+        font-weight: var(--hub-weight-strong);
+      }
+      dl {
+        display: flex;
+        gap: var(--hub-space-2);
+      }
+      dd {
+        margin: 0;
+      }
+      fieldset {
+        display: flex;
+        gap: var(--hub-space-4);
+        border: none;
+        padding: 0;
+        margin: 0;
+      }
+      legend {
+        padding: 0;
+        margin-bottom: var(--hub-space-2);
+      }
+      label {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--hub-space-2);
+      }
+      .provider {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--hub-space-2);
+        margin-bottom: var(--hub-space-4);
+      }
+      .model {
+        display: flex;
+        align-items: center;
+        gap: var(--hub-space-2);
+      }
+      .actions {
+        display: flex;
+        gap: var(--hub-space-2);
+        margin: var(--hub-space-4) 0 var(--hub-space-6);
+      }
+    `,
+  ];
 
   static override properties = {
     strings: { attribute: false },
@@ -175,13 +200,21 @@ export class HubSettings extends LitElement {
               ${strings.providerKind}
               <select
                 @change=${(event: Event) => {
-                  const kind = valueOf(event);
+                  const kind = chosenKind(event, strings.providerKinds);
+                  // An input the new kind cannot send (audio, for Anthropic) is dropped.
+                  const offered = inputsFor(kind);
                   this.editProvider(index, (each) => ({
                     ...each,
                     endpoint:
                       kind === "anthropic"
                         ? { kind: "anthropic" }
                         : { kind: "openai-compatible", baseUrl: "" },
+                    models: each.models.map((model) => ({
+                      ...model,
+                      inputs: model.inputs.filter((input) =>
+                        offered.includes(input),
+                      ),
+                    })),
                   }));
                 }}
               >
@@ -251,24 +284,34 @@ export class HubSettings extends LitElement {
                       }}
                     />
                   </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      .checked=${model.acceptsImages}
-                      @change=${(event: Event) => {
-                        const { checked } = inputOf(event);
-                        this.editProvider(index, (each) => ({
-                          ...each,
-                          models: each.models.map((other, at) =>
-                            at === modelIndex
-                              ? { ...other, acceptsImages: checked }
-                              : other,
-                          ),
-                        }));
-                      }}
-                    />
-                    ${strings.acceptsImages}
-                  </label>
+                  ${inputsFor(provider.endpoint.kind).map(
+                    (input) =>
+                      html`<label>
+                        <input
+                          type="checkbox"
+                          .checked=${model.inputs.includes(input)}
+                          @change=${(event: Event) => {
+                            const { checked } = inputOf(event);
+                            this.editProvider(index, (each) => ({
+                              ...each,
+                              models: each.models.map((other, at) =>
+                                at === modelIndex
+                                  ? {
+                                      ...other,
+                                      inputs: MODEL_INPUTS.filter((kept) =>
+                                        kept === input
+                                          ? checked
+                                          : other.inputs.includes(kept),
+                                      ),
+                                    }
+                                  : other,
+                              ),
+                            }));
+                          }}
+                        />
+                        ${strings.modelInputs[input]}
+                      </label>`,
+                  )}
                   <button
                     @click=${() => {
                       this.editProvider(index, (each) => ({
@@ -283,11 +326,17 @@ export class HubSettings extends LitElement {
                   </button>
                 </div>`,
             )}
+            ${
+              provider.endpoint.kind === "anthropic" &&
+              provider.models.length > 0
+                ? html`<span>${strings.noAudioForAnthropic}</span>`
+                : nothing
+            }
             <button
               @click=${() => {
                 this.editProvider(index, (each) => ({
                   ...each,
-                  models: [...each.models, { id: "", acceptsImages: false }],
+                  models: [...each.models, { id: "", inputs: [] }],
                 }));
               }}
             >
@@ -317,7 +366,7 @@ export class HubSettings extends LitElement {
                 was: { kind: "added" },
                 label: "",
                 endpoint: { kind: "openai-compatible", baseUrl: "" },
-                models: [{ id: "", acceptsImages: false }],
+                models: [{ id: "", inputs: [] }],
               },
             ],
           });

@@ -125,7 +125,7 @@ test("hub-settings.json never holds a key", () => {
       {
         label: AZURE,
         endpoint: { kind: "anthropic" },
-        models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
+        models: [{ id: parseModelId("claude-opus-5-5"), inputs: ["image"] }],
       },
     ],
   });

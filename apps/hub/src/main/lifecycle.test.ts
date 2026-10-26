@@ -1,6 +1,7 @@
 import {
   parseManifest,
   PluginId,
+  PluginVersion,
   type Manifest,
 } from "@hawkeye-hub/plugin-format";
 import { expect, test, vi } from "vitest";
@@ -118,18 +119,21 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
         name: "Attendance",
         iconUrl: "hawkeye-icon://attendance/icon.svg",
         access: { kind: "openable" },
+        favourite: false,
       },
       {
         id: "seating-plan",
         name: "Seating Plan",
         iconUrl: "hawkeye-icon://seating-plan/icon.svg",
         access: { kind: "openable" },
+        favourite: false,
       },
       {
         id: "class-timer",
         name: "Timer",
         iconUrl: "hawkeye-icon://class-timer/icon.svg",
         access: { kind: "openable" },
+        favourite: false,
       },
     ],
     open: [],
@@ -142,6 +146,7 @@ test("the snapshot lists every installed Plugin by its en-HK name and icon URL, 
     themes: ["hawkeye"],
     catalogue: { kind: "off" },
     assistant: { kind: "none" },
+    switcherCollapsed: false,
   });
 });
 
@@ -431,7 +436,7 @@ const OLLAMA: AiProviderDraft = {
   was: { kind: "added" },
   label: "Ollama",
   endpoint: { kind: "openai-compatible", baseUrl: "http://localhost:11434/v1" },
-  models: [{ id: "llama4", acceptsImages: false }],
+  models: [{ id: "llama4", inputs: [] }],
 };
 const WITH_CLAUDE: HubSettings = {
   ...FIRST_LAUNCH_SETTINGS,
@@ -439,7 +444,7 @@ const WITH_CLAUDE: HubSettings = {
     {
       label: label("Claude"),
       endpoint: { kind: "anthropic" },
-      models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
+      models: [{ id: parseModelId("claude-opus-5-5"), inputs: ["image"] }],
     },
   ],
   defaultAiProvider: {
@@ -531,7 +536,7 @@ test("removing the default's model sets the default back to none", () => {
     ...form,
     aiProviders: form.aiProviders.map((each) => ({
       ...each,
-      models: [{ id: "claude-sonnet-5", acceptsImages: true }],
+      models: [{ id: "claude-sonnet-5", inputs: ["image"] }],
     })),
   });
   expect(lifecycle.snapshot().content).toMatchObject({
@@ -1527,12 +1532,12 @@ test("the system description holds what is stored and drawn, and the installed P
           kind: "openai-compatible",
           baseUrl: "https://school.openai.azure.com/openai/v1",
         },
-        models: [{ id: parseModelId("gpt-5"), acceptsImages: true }],
+        models: [{ id: parseModelId("gpt-5"), inputs: ["image"] }],
       },
       {
         label: parseAiProviderLabel("Claude"),
         endpoint: { kind: "anthropic" },
-        models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
+        models: [{ id: parseModelId("claude-opus-5-5"), inputs: ["image"] }],
       },
     ],
   };
@@ -1693,6 +1698,7 @@ test("a check lists each Plugin by name, description and Registry icon in the Di
         name: "計時器",
         description: "為課堂計時。",
         iconUrl: "hawkeye-icon://class-timer/registry.svg",
+        version: "1.0.0",
         access: { kind: "installable" },
         installed: { kind: "installed", version: "1.0.0" },
         job: { kind: "none" },
@@ -1702,11 +1708,29 @@ test("a check lists each Plugin by name, description and Registry icon in the Di
         name: "點名",
         description: "Takes the register.",
         iconUrl: "hawkeye-icon://attendance/registry.svg",
+        version: "1.0.0",
         access: { kind: "blocked", reason: "not-for-this-computer" },
         installed: { kind: "installed", version: "1.0.0" },
         job: { kind: "none" },
       },
     ],
+  });
+});
+
+test("each entry carries the version Install would install, not only the installed one", () => {
+  const { lifecycle } = withRegistry("en-HK");
+  const [timer] = OFFERED;
+  if (timer === undefined) throw new Error("no Timer offered");
+  const newer = {
+    ...timer,
+    manifest: { ...timer.manifest, version: PluginVersion.parse("1.1.0") },
+  };
+
+  lifecycle.registryChecked({ kind: "listed", plugins: [newer] });
+
+  expect(entryOf(lifecycle, "class-timer")).toMatchObject({
+    version: "1.1.0",
+    installed: { kind: "installed", version: "1.0.0" },
   });
 });
 
@@ -2143,6 +2167,7 @@ function withAssistant(
 }
 
 const said = (text: string) => [{ type: "text" as const, text }];
+const typed = (text: string) => [{ kind: "typed" as const, text }];
 
 test("a Plugin without an Assistant has no Panel, and toggling one throws, as for a Plugin not open", () => {
   const { lifecycle } = withAssistant();
@@ -2202,7 +2227,7 @@ test("the open Panel's current model is the Default AI Provider's, with whether 
       kind: "chosen",
       provider: "Claude",
       model: "claude-opus-5-5",
-      acceptsImages: true,
+      inputs: ["image"],
     },
   });
 });
@@ -2215,7 +2240,7 @@ test("the context's Display Language is the one at send, while its files are rea
   lifecycle.saveSettings();
   lifecycle.open(HELPER);
 
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(requests[0]?.system).toBe("Context of regex-helper in zh-HK");
   expect(read).toEqual(["regex-helper"]);
 });
@@ -2226,7 +2251,7 @@ test("a message streams a reply from the Default AI Provider, with the context r
   expect(read).toEqual(["regex-helper"]);
   lifecycle.toggleAssistant(HELPER);
 
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(requests).toEqual([
     {
       model: { kind: "default" },
@@ -2239,14 +2264,14 @@ test("a message streams a reply from the Default AI Provider, with the context r
   await vi.waitFor(() => {
     expect(lifecycle.snapshot().assistant).toMatchObject({
       conversation: {
-        messages: [{ role: "user", content: said("Hi") }],
+        messages: [{ role: "user", parts: typed("Hi") }],
         reply: { kind: "streaming", text: "Hello there" },
       },
     });
   });
   // One reply at a time.
   expect(() => {
-    lifecycle.sendToAssistant(HELPER, said("And?"));
+    lifecycle.sendToAssistant(HELPER, typed("And?"));
   }).toThrow();
 
   chat(0).finish();
@@ -2254,7 +2279,7 @@ test("a message streams a reply from the Default AI Provider, with the context r
     expect(lifecycle.snapshot().assistant).toMatchObject({
       conversation: {
         messages: [
-          { role: "user", content: said("Hi") },
+          { role: "user", parts: typed("Hi") },
           { role: "assistant", content: said("Hello there") },
         ],
         reply: { kind: "idle" },
@@ -2263,16 +2288,43 @@ test("a message streams a reply from the Default AI Provider, with the context r
   });
 
   // The next message carries the conversation so far; the context is not read again.
-  lifecycle.sendToAssistant(HELPER, said("Thanks"));
+  lifecycle.sendToAssistant(HELPER, typed("Thanks"));
   expect(requests[1]?.messages).toHaveLength(3);
   expect(read).toEqual(["regex-helper"]);
+});
+
+test("an attachment keeps its name in the conversation, while the model gets only its part", () => {
+  const { lifecycle, requests } = withAssistant();
+  lifecycle.open(HELPER);
+  lifecycle.toggleAssistant(HELPER);
+  const sent = [
+    { kind: "typed" as const, text: "Summarise these" },
+    {
+      kind: "attached" as const,
+      name: "marks.csv",
+      part: { type: "text" as const, text: "a,b" },
+    },
+  ];
+  lifecycle.sendToAssistant(HELPER, sent);
+  expect(requests[0]?.messages).toEqual([
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Summarise these" },
+        { type: "text", text: "a,b" },
+      ],
+    },
+  ]);
+  expect(lifecycle.snapshot().assistant).toMatchObject({
+    conversation: { messages: [{ role: "user", parts: sent }] },
+  });
 });
 
 test("Stop keeps what had arrived, and New conversation starts again", async () => {
   const { lifecycle, chat } = withAssistant();
   lifecycle.open(HELPER);
   lifecycle.toggleAssistant(HELPER);
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   chat(0).delta("Partial");
   await vi.waitFor(() => {
     expect(lifecycle.snapshot().assistant).toMatchObject({
@@ -2286,7 +2338,7 @@ test("Stop keeps what had arrived, and New conversation starts again", async () 
     expect(lifecycle.snapshot().assistant).toMatchObject({
       conversation: {
         messages: [
-          { role: "user", content: said("Hi") },
+          { role: "user", parts: typed("Hi") },
           { role: "assistant", content: said("Partial") },
         ],
         reply: { kind: "idle" },
@@ -2296,7 +2348,7 @@ test("Stop keeps what had arrived, and New conversation starts again", async () 
   // Stopping with nothing streaming does nothing: staff may click as the reply ends.
   lifecycle.stopAssistant(HELPER);
 
-  lifecycle.sendToAssistant(HELPER, said("Again"));
+  lifecycle.sendToAssistant(HELPER, typed("Again"));
   lifecycle.newConversation(HELPER);
   expect(chat(1).cancelled).toBe(true);
   expect(lifecycle.snapshot().assistant).toMatchObject({
@@ -2308,12 +2360,12 @@ test("a failed reply shows its failure until the next message", async () => {
   const { lifecycle, chat } = withAssistant();
   lifecycle.open(HELPER);
   lifecycle.toggleAssistant(HELPER);
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   chat(0).fail({ code: "provider-rejected", status: 401 });
   await vi.waitFor(() => {
     expect(lifecycle.snapshot().assistant).toMatchObject({
       conversation: {
-        messages: [{ role: "user", content: said("Hi") }],
+        messages: [{ role: "user", parts: typed("Hi") }],
         reply: {
           kind: "failed",
           failure: { code: "provider-rejected", status: 401 },
@@ -2321,7 +2373,7 @@ test("a failed reply shows its failure until the next message", async () => {
       },
     });
   });
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(lifecycle.snapshot().assistant).toMatchObject({
     conversation: { reply: { kind: "streaming", text: "" } },
   });
@@ -2331,13 +2383,13 @@ test("closing the Plugin cancels its reply and drops its conversation", async ()
   const { lifecycle, chat } = withAssistant();
   lifecycle.open(HELPER);
   lifecycle.toggleAssistant(HELPER);
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   chat(0).delta("Partial");
 
   lifecycle.close(HELPER);
   expect(chat(0).cancelled).toBe(true);
   expect(() => {
-    lifecycle.sendToAssistant(HELPER, said("Hi"));
+    lifecycle.sendToAssistant(HELPER, typed("Hi"));
   }).toThrow();
   lifecycle.closed(HELPER);
   lifecycle.open(HELPER);
@@ -2362,7 +2414,7 @@ test("the model picker saves its choice at once, for its Plugin only, and later 
       {
         label: local,
         endpoint: { kind: "openai-compatible", baseUrl: "http://localhost:1" },
-        models: [{ id: parseModelId("big-model"), acceptsImages: true }],
+        models: [{ id: parseModelId("big-model"), inputs: ["image"] }],
       },
     ],
   };
@@ -2378,7 +2430,7 @@ test("the model picker saves its choice at once, for its Plugin only, and later 
     providers: [
       {
         label: "Local",
-        models: [{ id: "big-model", acceptsImages: true }],
+        models: [{ id: "big-model", inputs: ["image"] }],
       },
     ],
   });
@@ -2396,16 +2448,16 @@ test("the model picker saves its choice at once, for its Plugin only, and later 
       kind: "chosen",
       provider: "Local",
       model: "big-model",
-      acceptsImages: true,
+      inputs: ["image"],
     },
   });
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(requests[0]?.model).toEqual(big);
 
   // After a restart, the saved choice is the Plugin's.
   const restarted = withAssistant(stored, "en-HK", new Map(saved[0]));
   restarted.lifecycle.open(HELPER);
-  restarted.lifecycle.sendToAssistant(HELPER, said("Hi"));
+  restarted.lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(restarted.requests[0]?.model).toEqual(big);
 });
 
@@ -2426,7 +2478,7 @@ test("a chosen provider or model since removed is missing: it offers no images, 
     model: { choice: gone, kind: "missing" },
   });
   // The call module answers `provider-missing`: the choice goes to it as is, never the Default.
-  lifecycle.sendToAssistant(HELPER, said("Hi"));
+  lifecycle.sendToAssistant(HELPER, typed("Hi"));
   expect(requests[0]?.model).toEqual(gone);
 });
 
@@ -2608,4 +2660,175 @@ test("a crash of a Plugin that is not open throws and shows nothing", () => {
     lifecycle.crashed(id("class-timer"), "crashed");
   }).toThrow();
   expect(lifecycle.snapshot().dialog).toBeNull();
+});
+
+function withFavourites(favourites: string[]) {
+  const saved: HubSettings[] = [];
+  const keysSaved: unknown[] = [];
+  const lifecycle = createLifecycle({
+    hubVersion: HUB_VERSION,
+    systemLanguage: "en-HK",
+    installed: [
+      ...plugins,
+      installed("sign-in", "Sign In", {
+        identity: { kind: "required", roles: [] },
+      }),
+    ],
+    storedAtStart: { ...FIRST_LAUNCH_SETTINGS, favourites: favourites.map(id) },
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
+    keyedAtStart: new Set(),
+    save: (settings, keys) => {
+      saved.push(settings);
+      keysSaved.push(keys);
+      return new Set();
+    },
+    unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
+    registry: {
+      kind: "on",
+      check: () => undefined,
+      install: () => undefined,
+      uninstall: () => undefined,
+    },
+  });
+  const favouritesShown = () =>
+    lifecycle
+      .snapshot()
+      .plugins.filter(({ favourite }) => favourite)
+      .map(({ id }) => id);
+  return { lifecycle, saved, keysSaved, favouritesShown };
+}
+
+test("stored Favourites are marked in the Switcher, which keeps its order", () => {
+  const { lifecycle } = withFavourites(["class-timer", "attendance"]);
+  expect(
+    lifecycle.snapshot().plugins.map(({ id, favourite }) => [id, favourite]),
+  ).toEqual([
+    ["attendance", true],
+    ["seating-plan", false],
+    ["sign-in", false],
+    ["class-timer", true],
+  ]);
+});
+
+test("starring a Plugin makes it a Favourite at once and saves it, with no Save", () => {
+  const { lifecycle, saved, keysSaved, favouritesShown } = withFavourites([]);
+  lifecycle.toggleFavourite(id("seating-plan"));
+  expect(favouritesShown()).toEqual(["seating-plan"]);
+  expect(saved).toEqual([
+    { ...FIRST_LAUNCH_SETTINGS, favourites: ["seating-plan"] },
+  ]);
+  // No provider, so no key to keep.
+  expect(keysSaved).toEqual([[]]);
+
+  lifecycle.toggleFavourite(id("seating-plan"));
+  expect(favouritesShown()).toEqual([]);
+  expect(saved.at(-1)).toEqual(FIRST_LAUNCH_SETTINGS);
+});
+
+test("starring keeps every stored key with its provider", () => {
+  const label = parseAiProviderLabel("Claude");
+  const stored: HubSettings = {
+    ...FIRST_LAUNCH_SETTINGS,
+    aiProviders: [
+      {
+        label,
+        endpoint: { kind: "anthropic" },
+        models: [{ id: parseModelId("claude-opus-5-5"), inputs: ["image"] }],
+      },
+    ],
+  };
+  const keysSaved: unknown[] = [];
+  const lifecycle = createLifecycle({
+    hubVersion: HUB_VERSION,
+    systemLanguage: "en-HK",
+    installed: plugins,
+    storedAtStart: stored,
+    companyAtStart: BUILT_IN_COMPANY_CONFIGURATION,
+    keyedAtStart: new Set([label]),
+    save: (_, keys) => {
+      keysSaved.push(keys);
+      return new Set([label]);
+    },
+    unknownTheme: ignoreUnknownTheme,
+    assistant: NO_ASSISTANT,
+    registry: DEV_MODE,
+  });
+  lifecycle.toggleFavourite(id("attendance"));
+  expect(keysSaved).toEqual([
+    [{ label, was: { kind: "stored", label }, key: { kind: "unchanged" } }],
+  ]);
+});
+
+test("a blocked Plugin can be a Favourite, and stays one with its reason", () => {
+  const { lifecycle, favouritesShown } = withFavourites(["sign-in"]);
+  expect(favouritesShown()).toEqual(["sign-in"]);
+  expect(
+    lifecycle.snapshot().plugins.find(({ id }) => id === "sign-in")?.access,
+  ).toEqual({ kind: "blocked", reason: "needs-sign-in" });
+  lifecycle.toggleFavourite(id("sign-in"));
+  expect(favouritesShown()).toEqual([]);
+});
+
+test("starring a Plugin that is not installed throws", () => {
+  const { lifecycle } = withFavourites([]);
+  expect(() => {
+    lifecycle.toggleFavourite(id("gone"));
+  }).toThrow();
+});
+
+test("uninstalling a Favourite removes it from the Favourites, and saves that", () => {
+  const { lifecycle, saved } = withFavourites(["class-timer", "attendance"]);
+  lifecycle.uninstall(id("class-timer"));
+  lifecycle.answer("uninstall");
+  lifecycle.uninstallFinished(id("class-timer"));
+  expect(saved.at(-1)?.favourites).toEqual(["attendance"]);
+});
+
+test("starring while Hub Settings show leaves the unsaved form alone, and Save keeps the Favourites", () => {
+  const { lifecycle, saved } = withFavourites(["attendance"]);
+  lifecycle.showSettings();
+  lifecycle.editSettings(
+    formOf({ ...FIRST_LAUNCH_SETTINGS, colourScheme: "dark" }),
+  );
+  lifecycle.toggleFavourite(id("seating-plan"));
+  const { content } = lifecycle.snapshot();
+  expect(content.kind === "settings" && content.form.colourScheme).toBe("dark");
+
+  lifecycle.saveSettings();
+  expect(saved.at(-1)).toEqual({
+    ...FIRST_LAUNCH_SETTINGS,
+    colourScheme: "dark",
+    favourites: ["attendance", "seating-plan"],
+  });
+});
+
+test("collapsing the Switcher shows the rail at once and saves it, with no Save", () => {
+  const { lifecycle, saved } = withFavourites(["attendance"]);
+  expect(lifecycle.snapshot().switcherCollapsed).toBe(false);
+
+  lifecycle.toggleSwitcher();
+  expect(lifecycle.snapshot().switcherCollapsed).toBe(true);
+  expect(saved).toEqual([
+    {
+      ...FIRST_LAUNCH_SETTINGS,
+      favourites: ["attendance"],
+      switcherCollapsed: true,
+    },
+  ]);
+
+  lifecycle.toggleSwitcher();
+  expect(lifecycle.snapshot().switcherCollapsed).toBe(false);
+  expect(saved.at(-1)?.switcherCollapsed).toBe(false);
+});
+
+test("a Save from Hub Settings keeps the Switcher collapsed", () => {
+  const { lifecycle, saved } = withFavourites([]);
+  lifecycle.toggleSwitcher();
+  lifecycle.showSettings();
+  lifecycle.editSettings(
+    formOf({ ...FIRST_LAUNCH_SETTINGS, colourScheme: "dark" }),
+  );
+  lifecycle.saveSettings();
+  expect(saved.at(-1)?.switcherCollapsed).toBe(true);
 });

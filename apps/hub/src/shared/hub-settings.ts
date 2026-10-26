@@ -2,11 +2,14 @@
 // the type inferred from it. The Hub Chrome and its preload import only the type, so zod stays out
 // of their bundles.
 
-import { KEBAB_CASE } from "@hawkeye-hub/plugin-format";
+import { KEBAB_CASE, PluginId } from "@hawkeye-hub/plugin-format";
 import { z } from "zod";
 import {
   COLOUR_SCHEMES,
   DISPLAY_LANGUAGES,
+  MODEL_INPUTS,
+  inputsFor,
+  type ModelInput,
   type ThemeName,
 } from "./hub-chrome-ipc";
 import type { Branded } from "./branded";
@@ -39,6 +42,28 @@ const endpointSchema = <BaseUrl extends z.ZodType<string>>(baseUrl: BaseUrl) =>
     z.strictObject({ kind: z.literal("openai-compatible"), baseUrl }),
     z.strictObject({ kind: z.literal("anthropic") }),
   ]);
+
+// A model's accepted inputs: a set, so each at most once.
+const InputsSchema = z
+  .array(z.enum(MODEL_INPUTS))
+  .refine(
+    (inputs) => new Set(inputs).size === inputs.length,
+    "an input repeats",
+  );
+
+/**
+ * A stored model. A file from before model inputs (#151) has `acceptsImages` instead, read as
+ * `{image}` or `{}` and saved in the new shape.
+ */
+const StoredModelSchema = z.union([
+  z.strictObject({ id: ModelIdSchema, inputs: InputsSchema }),
+  z
+    .strictObject({ id: ModelIdSchema, acceptsImages: z.boolean() })
+    .transform(({ id, acceptsImages }) => {
+      const inputs: ModelInput[] = acceptsImages ? ["image"] : [];
+      return { id, inputs };
+    }),
+]);
 
 // The Default AI Provider: none, or a provider (by label when stored, by row in the form) and model.
 const defaultSchema = <Provider extends z.ZodType, Model extends z.ZodType>(
@@ -82,16 +107,33 @@ export const HubSettingsSchema = z
       z.strictObject({
         label: AiProviderLabelSchema,
         endpoint: endpointSchema(z.url()),
-        models: z
-          .array(
-            z.strictObject({ id: ModelIdSchema, acceptsImages: z.boolean() }),
-          )
-          .min(1),
+        models: z.array(StoredModelSchema).min(1),
       }),
     ),
     defaultAiProvider: defaultSchema(AiProviderLabelSchema, ModelIdSchema),
+    // The starred Plugins (CONTEXT.md "Favourite"), saved on each star, outside the form's Save.
+    // The default reads a file written before Favourites existed as having none (#149): a real
+    // state, not missing data. An id no longer installed is left alone and simply not shown.
+    favourites: z.array(PluginId).default([]),
+    // The Plugin Switcher collapsed to its icon rail (#153), saved on each toggle, outside the
+    // form's Save. The default reads a file written before the rail existed as expanded: a real
+    // state, not missing data.
+    switcherCollapsed: z.boolean().default(false),
   })
   .superRefine(({ aiProviders, defaultAiProvider }, context) => {
+    for (const { label, endpoint, models } of aiProviders) {
+      const offered = inputsFor(endpoint.kind);
+      if (
+        models.some(({ inputs }) =>
+          inputs.some((input) => !offered.includes(input)),
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: `${label} has a model with an input its kind cannot send`,
+        });
+      }
+    }
     const labels = aiProviders.map(({ label }) => label);
     if (new Set(labels).size !== labels.length) {
       context.addIssue({
@@ -144,7 +186,7 @@ export const HubSettingsFormSchema = z.strictObject({
         label: z.string(),
         endpoint: endpointSchema(z.string()),
         models: z.array(
-          z.strictObject({ id: z.string(), acceptsImages: z.boolean() }),
+          z.strictObject({ id: z.string(), inputs: InputsSchema }),
         ),
       }),
     )

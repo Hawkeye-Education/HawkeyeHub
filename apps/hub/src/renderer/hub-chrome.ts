@@ -1,76 +1,147 @@
-// The Hub Chrome's root element: the Plugin Switcher down the side and the content area beside it.
-// It draws the latest snapshot of the lifecycle state held in main. No Theme yet (ADR 0006).
+// The Hub Chrome's root element: the Plugin Switcher, or its icon rail, down the side, and beside it
+// the header strip above the content area and the Assistant Panel.
+// It draws the latest snapshot of the lifecycle state held in main, built from the Theme (ADR 0006).
 // Loaded with #dialog it is the dialog overlay instead, above every Plugin UI, and draws only the
 // pending dialog.
 
 import { LitElement, css, html, nothing, unsafeCSS } from "lit";
 import { keyed } from "lit/directives/keyed.js";
+import type { PluginId } from "@hawkeye-hub/plugin-format";
 import {
   ASSISTANT_PANEL_WIDTH_PX,
+  HEADER_STRIP_HEIGHT_PX,
+  RAIL_WIDTH_PX,
   SWITCHER_WIDTH_PX,
   type HubChromeApi,
   type HubChromeSnapshot,
+  type SwitcherPlugin,
 } from "../shared/hub-chrome-ipc";
 import "./assistant-panel";
 import "./hub-dialog";
 import "./hub-settings";
 import "./plugin-catalogue";
 import "./plugin-switcher";
+import { icon, pluginIconMask, pluginIconStyle } from "./icons";
 import { STRINGS, type Strings } from "./strings";
+import { native } from "./theme";
 
 const IS_OVERLAY = location.hash === "#dialog";
 
 export class HubChrome extends LitElement {
-  static override styles = css`
-    :host {
-      display: grid;
-      grid-template-columns: ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr;
-      height: 100vh;
-      font-family: system-ui, sans-serif;
-    }
-    aside {
-      display: flex;
-      flex-direction: column;
-      border-right: 1px solid #ccc;
-      min-height: 0;
-    }
-    plugin-switcher {
-      flex: 1;
-      overflow-y: auto;
-    }
-    h1 {
-      margin: 0;
-      padding: 16px;
-      font-size: 20px;
-    }
-    .gear {
-      font: inherit;
-      border: none;
-      border-top: 1px solid #ccc;
-      background: none;
-      padding: 12px 16px;
-      text-align: start;
-      cursor: pointer;
-    }
-    .gear[aria-current="page"] {
-      font-weight: bold;
-    }
-    :host([panel]) {
-      grid-template-columns:
-        ${unsafeCSS(SWITCHER_WIDTH_PX)}px 1fr
-        ${unsafeCSS(ASSISTANT_PANEL_WIDTH_PX)}px;
-    }
-    main {
-      min-height: 0;
-    }
-    .empty {
-      display: grid;
-      place-items: center;
-      height: 100%;
-      margin: 0;
-      color: #666;
-    }
-  `;
+  static override styles = [
+    native,
+    css`
+      :host {
+        --switcher-width: ${unsafeCSS(SWITCHER_WIDTH_PX)}px;
+        display: grid;
+        grid-template-columns: var(--switcher-width) 1fr;
+        grid-template-rows: ${unsafeCSS(HEADER_STRIP_HEIGHT_PX)}px 1fr;
+        height: 100vh;
+      }
+      aside {
+        grid-row: 1 / -1;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--hub-color-line);
+        min-height: 0;
+      }
+      plugin-switcher {
+        flex: 1;
+      }
+      :host([collapsed]) {
+        --switcher-width: ${unsafeCSS(RAIL_WIDTH_PX)}px;
+      }
+      :host([panel]) {
+        grid-template-columns:
+          var(--switcher-width) 1fr
+          ${unsafeCSS(ASSISTANT_PANEL_WIDTH_PX)}px;
+      }
+      /* Over the content area and the Assistant Panel, the Switcher's collapse toggle first. */
+      header {
+        grid-column: 2 / -1;
+        display: flex;
+        align-items: center;
+        gap: var(--hub-space-2);
+        padding-inline: var(--hub-space-1) var(--hub-space-2);
+        min-width: 0;
+      }
+      .toggle {
+        flex: none;
+        width: 28px;
+        height: 28px;
+        min-height: 0;
+        padding: 0;
+        display: grid;
+        place-items: center;
+        border: none;
+        border-radius: var(--hub-radius-1);
+        background: none;
+        box-shadow: none;
+        color: var(--hub-color-fg-muted);
+      }
+      .toggle:hover {
+        background: color-mix(in srgb, var(--hub-color-accent) 8%, transparent);
+        color: var(--hub-color-fg);
+      }
+      .toggle .icon {
+        width: 16px;
+        height: 16px;
+      }
+      .title {
+        display: flex;
+        align-items: center;
+        gap: var(--hub-space-2);
+        min-width: 0;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      /* The Plugin's icon.svg as a mask over the accent, as in the Plugin Switcher. */
+      .plugin-icon {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        background-color: var(--hub-color-accent);
+        ${pluginIconMask}
+      }
+      .assistant {
+        margin-inline-start: auto;
+        display: flex;
+        align-items: center;
+        gap: var(--hub-space-1);
+        min-height: 28px;
+        padding-block: 0;
+        border: none;
+        border-radius: var(--hub-radius-1);
+        background: none;
+        box-shadow: none;
+      }
+      .assistant .icon {
+        width: 16px;
+        height: 16px;
+        color: var(--hub-color-accent);
+      }
+      .assistant[aria-pressed="true"] {
+        background: color-mix(
+          in srgb,
+          var(--hub-color-accent) 15%,
+          transparent
+        );
+        color: var(--hub-color-accent);
+      }
+      main,
+      assistant-panel {
+        grid-row: 2;
+        min-height: 0;
+      }
+      .empty {
+        display: grid;
+        place-items: center;
+        height: 100%;
+      }
+    `,
+  ];
 
   static override properties = { snapshot: { state: true } };
   // Null until the preload delivers the first snapshot: a real state, drawn as nothing.
@@ -104,59 +175,66 @@ export class HubChrome extends LitElement {
           ></hub-dialog>`;
     }
     const { content, foreground, assistant } = this.snapshot;
-    const settingsShowing = content.kind === "settings";
     // The front Plugin's, while it shows.
     const front =
       content.kind === "plugin" && foreground !== null ? foreground : null;
     const panel = front === null ? { kind: "none" as const } : assistant;
+    const { switcherCollapsed } = this.snapshot;
     this.toggleAttribute("panel", panel.kind === "open");
+    this.toggleAttribute("collapsed", switcherCollapsed);
+    const toggleLabel = switcherCollapsed
+      ? strings.showSwitcher
+      : strings.hideSwitcher;
     return html`<aside>
-        <h1>Hawkeye Hub</h1>
         <plugin-switcher
+          .collapsed=${switcherCollapsed}
           .strings=${strings}
           .plugins=${this.snapshot.plugins}
           .open=${this.snapshot.open}
           .closing=${this.snapshot.closing}
           .foreground=${content.kind === "plugin" ? foreground : null}
+          .screen=${content.kind}
+          .catalogueOn=${this.snapshot.catalogue.kind !== "off"}
           .hub=${window.hubChrome}
         ></plugin-switcher>
+      </aside>
+      <header>
+        <button
+          class="toggle"
+          aria-expanded=${switcherCollapsed ? "false" : "true"}
+          aria-label=${toggleLabel}
+          title=${toggleLabel}
+          @click=${() => {
+            window.hubChrome.toggleSwitcher();
+          }}
+        >
+          ${icon("panel-left")}
+        </button>
+        ${
+          front === null
+            ? html`<span class="title">${this.screenTitle(strings)}</span>`
+            : html`<span class="title">
+                <span
+                  class="plugin-icon"
+                  .style=${pluginIconStyle(this.frontPlugin(front))}
+                ></span>
+                ${this.frontPlugin(front).name}
+              </span>`
+        }
         ${
           front === null || panel.kind === "none"
             ? nothing
             : html`<button
-                class="gear"
+                class="assistant"
                 aria-pressed=${panel.kind === "open" ? "true" : "false"}
                 @click=${() => {
                   window.hubChrome.toggleAssistant(front);
                 }}
               >
-                ${strings.assistant}
+                ${icon("sparkles")} ${strings.assistant}
               </button>`
         }
-        ${
-          // Dev mode has no Catalogue (PLUGIN_STANDARD §9.4).
-          this.snapshot.catalogue.kind === "off"
-            ? nothing
-            : html`<button
-                class="gear"
-                aria-current=${content.kind === "catalogue" ? "page" : nothing}
-                @click=${() => {
-                  window.hubChrome.showCatalogue();
-                }}
-              >
-                <span aria-hidden="true">＋</span> ${strings.catalogue}
-              </button>`
-        }
-        <button
-          class="gear"
-          aria-current=${settingsShowing ? "page" : nothing}
-          @click=${() => {
-            window.hubChrome.showSettings();
-          }}
-        >
-          <span aria-hidden="true">⚙</span> ${strings.settings}
-        </button>
-      </aside>
+      </header>
       <main>${this.renderContent(strings)}</main>
       ${
         front === null || panel.kind !== "open"
@@ -175,6 +253,31 @@ export class HubChrome extends LitElement {
               ></assistant-panel>`,
             )
       }`;
+  }
+
+  /** The front Plugin's Switcher entry: main only ever puts an installed Plugin in front. */
+  private frontPlugin(id: PluginId): SwitcherPlugin {
+    const plugin = this.snapshot?.plugins.find((each) => each.id === id);
+    if (plugin === undefined) {
+      throw new Error(`Plugin ${id} is in front but not installed`);
+    }
+    return plugin;
+  }
+
+  /** The header strip's title with no Plugin in front. */
+  private screenTitle(strings: Strings): string {
+    if (this.snapshot === null) throw new Error("No snapshot to title");
+    const { content } = this.snapshot;
+    switch (content.kind) {
+      case "settings":
+        return strings.settings;
+      case "catalogue":
+        return strings.catalogue;
+      case "plugin":
+        return strings.hubName;
+      default:
+        return content satisfies never;
+    }
   }
 
   // The front Plugin's UI is a view main lays over the content area, so with one in front this

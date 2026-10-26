@@ -37,6 +37,13 @@ const WORDS = {
 
 // The page's own global, for code evaluated in it; the smoke suite has no DOM types.
 declare const matchMedia: (query: string) => { matches: boolean };
+declare const document: { body: object };
+declare const getComputedStyle: (element: object) => { color: string };
+
+// The Hub Chrome's text, drawn from the Theme's tokens (ADR 0006), so it flips with the scheme.
+function textColourOf(page: Page): Promise<string> {
+  return page.evaluate(() => getComputedStyle(document.body).color);
+}
 
 function drawsDark(page: Page): Promise<boolean> {
   return page.evaluate(
@@ -62,11 +69,15 @@ test("a Colour Scheme applies on Save, in open Plugin UIs too, and is kept after
   const timer = await pluginPage(first.pages, "class-timer");
 
   await hubChrome.getByRole("button", { name: words.settings }).click();
+  // The header strip titles Settings, with no Assistant button.
+  await expect(hubChrome.getByRole("banner")).toHaveText(words.settings);
   await hubChrome.getByRole("radio", { name: chosen }).check();
   expect(await drawsDark(hubChrome)).toBe(osDark);
+  const textBefore = await textColourOf(hubChrome);
 
   await hubChrome.getByRole("button", { name: words.save }).click();
   await expect.poll(() => drawsDark(hubChrome)).toBe(!osDark);
+  await expect.poll(() => textColourOf(hubChrome)).not.toBe(textBefore);
   await expect.poll(() => drawsDark(timer)).toBe(!osDark);
   await first.close();
 

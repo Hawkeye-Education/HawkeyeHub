@@ -20,6 +20,8 @@ const FIRST_LAUNCH = {
   displayLanguage: { kind: "system" },
   aiProviders: [],
   defaultAiProvider: { kind: "none" },
+  favourites: [],
+  switcherCollapsed: false,
 };
 
 let dataDir: AbsolutePath;
@@ -51,6 +53,8 @@ const CHOSEN = {
   displayLanguage: { kind: "chosen", language: "zh-HK" },
   aiProviders: [],
   defaultAiProvider: { kind: "none" },
+  favourites: ["class-timer"],
+  switcherCollapsed: true,
 };
 
 test("a valid file is returned as it is, with nothing logged", () => {
@@ -58,6 +62,33 @@ test("a valid file is returned as it is, with nothing logged", () => {
   expect(loadHubSettings(dataDir, diagnostics)).toEqual(CHOSEN);
   expect(settingsOnDisk()).toEqual(CHOSEN);
   expect(existsSync(join(logsDir, "hub.log"))).toBe(false);
+});
+
+test("a file from before Favourites reads as having none, with nothing logged", () => {
+  const { favourites: _, ...withoutFavourites } = CHOSEN;
+  writeSettings(JSON.stringify(withoutFavourites));
+  expect(loadHubSettings(dataDir, diagnostics)).toEqual({
+    ...CHOSEN,
+    favourites: [],
+  });
+  expect(existsSync(join(logsDir, "hub.log"))).toBe(false);
+});
+
+test("a file from before the icon rail reads as an expanded Switcher, with nothing logged", () => {
+  const { switcherCollapsed: _, ...withoutCollapse } = CHOSEN;
+  writeSettings(JSON.stringify(withoutCollapse));
+  expect(loadHubSettings(dataDir, diagnostics)).toEqual({
+    ...CHOSEN,
+    switcherCollapsed: false,
+  });
+  expect(existsSync(join(logsDir, "hub.log"))).toBe(false);
+});
+
+test("a Favourite that is not a Plugin id is refused", () => {
+  expect(
+    HubSettingsSchema.safeParse({ ...CHOSEN, favourites: ["Not An Id"] })
+      .success,
+  ).toBe(false);
 });
 
 function hubLogMessages(): unknown[] {
@@ -133,14 +164,14 @@ const AZURE = {
     kind: "openai-compatible",
     baseUrl: "https://school.openai.azure.com/openai/v1",
   },
-  models: [{ id: "gpt-5", acceptsImages: true }],
+  models: [{ id: "gpt-5", inputs: ["image"] }],
 };
 const CLAUDE = {
   label: "Claude",
   endpoint: { kind: "anthropic" },
   models: [
-    { id: "claude-opus-5-5", acceptsImages: true },
-    { id: "claude-haiku-4-5", acceptsImages: false },
+    { id: "claude-opus-5-5", inputs: ["image"] },
+    { id: "claude-haiku-4-5", inputs: [] },
   ],
 };
 const WITH_AI = {
@@ -152,6 +183,39 @@ const WITH_AI = {
     model: "claude-haiku-4-5",
   },
 };
+
+test("a file from before model inputs loads acceptsImages as inputs, and saves the new shape", () => {
+  const old = {
+    ...WITH_AI,
+    aiProviders: [
+      {
+        ...AZURE,
+        models: [
+          { id: "gpt-5", acceptsImages: true },
+          { id: "gpt-5-mini", acceptsImages: false },
+        ],
+      },
+    ],
+    defaultAiProvider: { kind: "none" },
+  };
+  writeSettings(JSON.stringify(old));
+  const loaded = loadHubSettings(dataDir, diagnostics);
+  const migrated = {
+    ...old,
+    aiProviders: [
+      {
+        ...AZURE,
+        models: [
+          { id: "gpt-5", inputs: ["image"] },
+          { id: "gpt-5-mini", inputs: [] },
+        ],
+      },
+    ],
+  };
+  expect(loaded).toEqual(migrated);
+  saveHubSettings(dataDir, loaded);
+  expect(settingsOnDisk()).toEqual(migrated);
+});
 
 test("AI Providers of both kinds and a Default AI Provider are accepted", () => {
   expect(HubSettingsSchema.parse(WITH_AI)).toEqual(WITH_AI);
@@ -176,11 +240,20 @@ test.each([
   ],
   ["a blank label", { ...CLAUDE, label: " " }],
   ["an empty model list", { ...CLAUDE, models: [] }],
-  [
-    "a blank model id",
-    { ...CLAUDE, models: [{ id: " ", acceptsImages: false }] },
-  ],
+  ["a blank model id", { ...CLAUDE, models: [{ id: " ", inputs: [] }] }],
   ["a key", { ...CLAUDE, apiKey: "sk-secret" }],
+  [
+    "audio on an Anthropic model",
+    { ...CLAUDE, models: [{ id: "claude-opus-5-5", inputs: ["audio"] }] },
+  ],
+  [
+    "an input named twice",
+    { ...AZURE, models: [{ id: "gpt-5", inputs: ["image", "image"] }] },
+  ],
+  [
+    "an unknown input",
+    { ...AZURE, models: [{ id: "gpt-5", inputs: ["video"] }] },
+  ],
 ])("an AI Provider with %s is refused", (_, provider) => {
   const settings = { ...WITH_AI, aiProviders: [AZURE, provider] };
   expect(HubSettingsSchema.safeParse(settings).success).toBe(false);

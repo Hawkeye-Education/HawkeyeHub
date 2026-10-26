@@ -7,12 +7,47 @@ import type {
   CrashCause,
   DisplayLanguage,
   InstallFailureCause,
+  ModelInput,
 } from "../shared/hub-chrome-ipc";
+import { MAX_ATTACHMENT_BYTES, sizeText, type Refusal } from "./composer-files";
+
+/** The Hub's name, untranslated: the Switcher draws the product part muted. */
+const WORDMARK = { name: "Hawkeye", product: "Hub" };
+
+/** The attachment cap in whole MB, as staff read it. */
+const ATTACHMENT_LIMIT = `${String(MAX_ATTACHMENT_BYTES / (1024 * 1024))} MB`;
+
+const INPUT_NAMES_EN = {
+  image: "images",
+  document: "PDFs",
+  audio: "audio",
+} satisfies Record<ModelInput, string>;
+const INPUT_NAMES_ZH = {
+  image: "圖片",
+  document: "PDF",
+  audio: "音訊",
+} satisfies Record<ModelInput, string>;
+
+/** "a", "a and b", "a, b and c". */
+function andList(words: string[]): string {
+  return words.length < 2
+    ? words.join("")
+    : `${words.slice(0, -1).join(", ")} and ${words.slice(-1).join("")}`;
+}
 
 export const STRINGS = {
   "en-HK": {
     plugins: "Plugins",
+    favourites: "Favourites",
+    noFavourites: "Star a Plugin to keep it here.",
+    addFavourite: (name: string) => `Add ${name} to Favourites`,
+    removeFavourite: (name: string) => `Remove ${name} from Favourites`,
+    open: "Open",
+    hideSwitcher: "Hide Plugin Switcher",
+    showSwitcher: "Show Plugin Switcher",
     noPluginOpen: "No Plugin is open",
+    wordmark: WORDMARK,
+    hubName: `${WORDMARK.name} ${WORDMARK.product}`,
     close: (name: string) => `Close ${name}`,
     closing: "Closing…",
     closeQuestion: (name: string) => `Close ${name}?`,
@@ -61,7 +96,12 @@ export const STRINGS = {
     keySet: "Key set",
     noKey: "No key",
     model: "Model",
-    acceptsImages: "Accepts images",
+    modelInputs: {
+      image: "Image",
+      document: "Document (PDF)",
+      audio: "Audio",
+    } satisfies Record<ModelInput, string>,
+    noAudioForAnthropic: "Anthropic's library can't send audio.",
     addModel: "Add model",
     removeModel: "Remove model",
     defaultAiProvider: "Default AI Provider",
@@ -87,7 +127,7 @@ export const STRINGS = {
     uninstallQuestion: (name: string) => `Uninstall ${name}?`,
     keepInstalled: "Keep installed",
     alsoDeleteData: "Also delete my data",
-    installedVersion: (version: string) => `Installed: version ${version}`,
+    installed: "Installed",
     installFailed: {
       download: "Install failed: the download did not finish",
       checksum: "Install failed: the download was damaged",
@@ -106,8 +146,35 @@ export const STRINGS = {
     promptTemplates: "Prompt Templates",
     pastedImage: "Pasted image",
     pastedText: "Pasted text",
-    remove: "Remove",
-    attachImage: "Attach an image",
+    remove: (name: string) => `Remove ${name}`,
+    closePanel: "Close",
+    askAssistant: "Ask the Assistant…",
+    howCanIHelp: "How can I help?",
+    attachFiles: "Attach files",
+    textOnly: "text only",
+    canAttach: (inputs: ModelInput[]) =>
+      `You can attach ${andList(["text files", ...inputs.map((input) => INPUT_NAMES_EN[input])])}.`,
+    fileKinds: {
+      image: "Image",
+      document: "PDF",
+      audio: "Audio",
+      text: "Text",
+    } satisfies Record<ModelInput | "text", string>,
+    notForThisModel: "Not for this model",
+    refused: (refusal: Refusal, model: string) => {
+      switch (refusal.kind) {
+        case "unknown-type":
+          return `“${refusal.name}” can't be attached.`;
+        case "too-big":
+          return `“${refusal.name}” is ${sizeText(refusal.bytes)}; the limit is ${ATTACHMENT_LIMIT}.`;
+        case "not-for-model":
+          return `${model} can't read ${INPUT_NAMES_EN[refusal.input]}, so “${refusal.name}” wasn't attached.`;
+        default:
+          return refusal satisfies never;
+      }
+    },
+    cantRead: (model: string, inputs: ModelInput[]) =>
+      `${model} can't read ${inputs.map((input) => INPUT_NAMES_EN[input]).join(" or ")}. Remove what it can't read, or pick another model.`,
     noProvider: "No AI Provider is set up.",
     openSettings: "Set one up in Settings",
     providerMissing:
@@ -119,7 +186,16 @@ export const STRINGS = {
   },
   "zh-HK": {
     plugins: "外掛程式",
+    favourites: "我的最愛",
+    noFavourites: "為外掛程式加上星號，即可放在這裏。",
+    addFavourite: (name: string) => `把 ${name} 加入我的最愛`,
+    removeFavourite: (name: string) => `把 ${name} 從我的最愛移除`,
+    open: "已開啟",
+    hideSwitcher: "隱藏外掛程式切換器",
+    showSwitcher: "顯示外掛程式切換器",
     noPluginOpen: "未有開啟任何外掛程式",
+    wordmark: WORDMARK,
+    hubName: `${WORDMARK.name} ${WORDMARK.product}`,
     close: (name: string) => `關閉 ${name}`,
     closing: "正在關閉…",
     closeQuestion: (name: string) => `關閉 ${name}？`,
@@ -168,7 +244,12 @@ export const STRINGS = {
     keySet: "已設定金鑰",
     noKey: "未設定金鑰",
     model: "模型",
-    acceptsImages: "接受圖片",
+    modelInputs: {
+      image: "圖片",
+      document: "文件 (PDF)",
+      audio: "音訊",
+    } satisfies Record<ModelInput, string>,
+    noAudioForAnthropic: "Anthropic 的程式庫無法傳送音訊。",
     addModel: "新增模型",
     removeModel: "移除模型",
     defaultAiProvider: "預設 AI 供應商",
@@ -194,7 +275,7 @@ export const STRINGS = {
     uninstallQuestion: (name: string) => `解除安裝 ${name}？`,
     keepInstalled: "保留",
     alsoDeleteData: "同時刪除我的資料",
-    installedVersion: (version: string) => `已安裝：版本 ${version}`,
+    installed: "已安裝",
     installFailed: {
       download: "安裝失敗：下載未能完成",
       checksum: "安裝失敗：下載的檔案已損壞",
@@ -213,8 +294,35 @@ export const STRINGS = {
     promptTemplates: "提示範本",
     pastedImage: "已貼上的圖片",
     pastedText: "已貼上的文字",
-    remove: "移除",
-    attachImage: "附加圖片",
+    remove: (name: string) => `移除 ${name}`,
+    closePanel: "關閉",
+    askAssistant: "向助理發問…",
+    howCanIHelp: "有甚麼可以幫你？",
+    attachFiles: "附加檔案",
+    textOnly: "只限文字",
+    canAttach: (inputs: ModelInput[]) =>
+      `你可以附加${["文字檔", ...inputs.map((input) => INPUT_NAMES_ZH[input])].join("、")}。`,
+    fileKinds: {
+      image: "圖片",
+      document: "PDF",
+      audio: "音訊",
+      text: "文字",
+    } satisfies Record<ModelInput | "text", string>,
+    notForThisModel: "此模型不適用",
+    refused: (refusal: Refusal, model: string) => {
+      switch (refusal.kind) {
+        case "unknown-type":
+          return `無法附加「${refusal.name}」。`;
+        case "too-big":
+          return `「${refusal.name}」有 ${sizeText(refusal.bytes)}，上限為 ${ATTACHMENT_LIMIT}。`;
+        case "not-for-model":
+          return `${model} 無法讀取${INPUT_NAMES_ZH[refusal.input]}，所以未有附加「${refusal.name}」。`;
+        default:
+          return refusal satisfies never;
+      }
+    },
+    cantRead: (model: string, inputs: ModelInput[]) =>
+      `${model} 無法讀取${inputs.map((input) => INPUT_NAMES_ZH[input]).join("或")}。請移除它無法讀取的檔案，或選擇其他模型。`,
     noProvider: "未設定任何 AI 供應商。",
     openSettings: "前往設定",
     providerMissing: "此助理所選的 AI 供應商或模型已不再設定。",

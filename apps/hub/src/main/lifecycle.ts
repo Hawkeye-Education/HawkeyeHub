@@ -29,10 +29,11 @@ import {
   type PluginAccess,
   type ThemeName,
 } from "../shared/hub-chrome-ipc";
-import type {
-  AiChatRequest,
-  AiContent,
-  AiModelChoice,
+import {
+  contentOf,
+  type AiChatRequest,
+  type AiModelChoice,
+  type SentPart,
 } from "../shared/ai-call";
 import type { AiProviderRow, HubSettingsForm } from "../shared/hub-settings";
 import { AiCallFailed, labelAndModels, targetOf, type AiChat } from "./ai";
@@ -179,7 +180,7 @@ export interface Lifecycle {
    * reply through the Plugin's model. Throws unless the Plugin is open with an Assistant and
    * no reply is streaming.
    */
-  sendToAssistant(id: PluginId, content: AiContent): void;
+  sendToAssistant(id: PluginId, parts: SentPart[]): void;
   /** Stops a streaming reply, keeping what has arrived. Does nothing when none is streaming. */
   stopAssistant(id: PluginId): void;
   /** Stops any reply and empties the conversation. */
@@ -190,6 +191,16 @@ export interface Lifecycle {
    * with an Assistant.
    */
   chooseModel(id: PluginId, model: AiModelChoice): void;
+  /**
+   * Stars or unstars an installed Plugin, blocked or not, as a Favourite: saved at once with the
+   * stored Hub Settings, outside Save and Cancel. Throws unless the Plugin is installed.
+   */
+  toggleFavourite(id: PluginId): void;
+  /**
+   * Collapses the Plugin Switcher to its icon rail, or expands it: saved at once with the stored
+   * Hub Settings, outside Save and Cancel.
+   */
+  toggleSwitcher(): void;
 }
 
 export interface LifecycleDeps {
@@ -337,6 +348,9 @@ export function createLifecycle({
         return displayLanguage satisfies never;
     }
   };
+  // The Hub Settings as last saved. Favourites and the Switcher's collapse change here at once; the
+  // rest only through Save.
+  let stored = storedAtStart;
   // Grows as installs finish, and shrinks as uninstalls do.
   let installedPlugins = [...installed];
   // The Display Language and the installed Plugins named and sorted in it.
@@ -350,6 +364,7 @@ export function createLifecycle({
           name: displayTextIn(plugin.manifest.name, language),
           iconUrl: pluginIconUrl(plugin.manifest.id),
           access: accessOf(plugin.manifest, HUB_API_VERSION),
+          favourite: stored.favourites.includes(plugin.manifest.id),
         },
       }))
       .sort((a, b) => byName(a.listed.name, b.listed.name));
@@ -422,6 +437,7 @@ export function createLifecycle({
             name: displayTextIn(manifest.name, language),
             description: displayTextIn(manifest.description, language),
             iconUrl: registryIconUrl(manifest.id),
+            version: manifest.version,
             access,
             installed:
               installedVersion === undefined
@@ -439,7 +455,6 @@ export function createLifecycle({
     }
     return registry;
   };
-  let stored = storedAtStart;
   let keyed = keyedAtStart;
   // The unsaved form: what is stored until staff edit it.
   let form = formOf(storedAtStart);
@@ -448,6 +463,20 @@ export function createLifecycle({
   const resetForm = (): void => {
     form = formOf(stored);
     typedKeys = new Map();
+  };
+  // Favourites and the Switcher's collapse save with what is stored, every key kept with its
+  // provider, as an unedited Save would.
+  const saveOutsideForm = (next: HubSettings): void => {
+    stored = next;
+    keyed = save(
+      stored,
+      stored.aiProviders.map(({ label }) => ({
+        label,
+        was: { kind: "stored", label },
+        key: { kind: "unchanged" },
+      })),
+    );
+    listing = listingIn(listing.language);
   };
   const edited = (): boolean =>
     typedKeys.size > 0 || !isDeepStrictEqual(form, formOf(stored));
@@ -548,7 +577,7 @@ export function createLifecycle({
         kind: "chosen",
         provider: provider.label,
         model: model.id,
-        acceptsImages: model.acceptsImages,
+        inputs: model.inputs,
       };
     }
     switch (target.failure.code) {
@@ -672,7 +701,8 @@ export function createLifecycle({
               ...content,
               form,
               keysSet: rowsWithKey(form, typedKeys, keyed),
-              savable: settingsFrom(form, typedKeys, keyed).kind === "valid",
+              savable:
+                settingsFrom(form, typedKeys, keyed, stored).kind === "valid",
             }
           : content,
       dialog: dialogOf(
@@ -684,6 +714,7 @@ export function createLifecycle({
       themes: [...THEMES],
       catalogue: catalogueIn(listing.language),
       assistant: open[0] === undefined ? { kind: "none" } : panelOf(open[0]),
+      switcherCollapsed: stored.switcherCollapsed,
     }),
     installed: (id) => installedPlugin(id).plugin,
     running,
@@ -870,6 +901,12 @@ export function createLifecycle({
         ({ manifest }) => manifest.id !== id,
       );
       listing = listingIn(listing.language);
+      if (stored.favourites.includes(id)) {
+        saveOutsideForm({
+          ...stored,
+          favourites: stored.favourites.filter((other) => other !== id),
+        });
+      }
       // A crash message names its Plugin when drawn, so one still up for it goes with it.
       crashMessages = crashMessages.filter((message) => message.id !== id);
       changed();
@@ -911,7 +948,7 @@ export function createLifecycle({
     saveSettings: () => {
       const showing = settingsShowing("saveSettings");
       if (!edited()) return;
-      const valid = settingsFrom(form, typedKeys, keyed);
+      const valid = settingsFrom(form, typedKeys, keyed, stored);
       if (valid.kind === "invalid") return;
       keyed = save(valid.settings, valid.keys);
       stored = valid.settings;
@@ -958,19 +995,23 @@ export function createLifecycle({
       if (!panelsOpen.delete(id)) panelsOpen.add(id);
       changed();
     },
-    sendToAssistant: (id, content) => {
+    sendToAssistant: (id, parts) => {
       const talk = talkOf(id);
       if (talk.chat !== null) {
         throw new Error(`${id}'s Assistant is still replying`);
       }
       const messages = [
         ...talk.conversation.messages,
-        { role: "user" as const, content },
+        { role: "user" as const, parts },
       ];
       const chat = assistant.chat({
         model: modelOf(id),
         system: talk.system(listing.language),
-        messages,
+        messages: messages.map((message) =>
+          message.role === "user"
+            ? { role: "user", content: contentOf(message.parts) }
+            : message,
+        ),
       });
       talk.chat = chat;
       talk.conversation = { messages, reply: { kind: "streaming", text: "" } };
@@ -990,6 +1031,23 @@ export function createLifecycle({
       talkOf(id);
       models.set(id, model);
       assistant.saveModels(models);
+      changed();
+    },
+    toggleFavourite: (id) => {
+      installedPlugin(id);
+      saveOutsideForm({
+        ...stored,
+        favourites: stored.favourites.includes(id)
+          ? stored.favourites.filter((other) => other !== id)
+          : [...stored.favourites, id],
+      });
+      changed();
+    },
+    toggleSwitcher: () => {
+      saveOutsideForm({
+        ...stored,
+        switcherCollapsed: !stored.switcherCollapsed,
+      });
       changed();
     },
     answer: (answer) => {

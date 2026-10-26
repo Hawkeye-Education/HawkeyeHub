@@ -15,6 +15,8 @@ import {
 } from "electron";
 import {
   ASSISTANT_PANEL_WIDTH_PX,
+  HEADER_STRIP_HEIGHT_PX,
+  RAIL_WIDTH_PX,
   SWITCHER_WIDTH_PX,
   type BusyReason,
   type DisplayLanguage,
@@ -37,7 +39,7 @@ import type { AbsolutePath } from "./ids";
 import { pluginRefOf, type InstalledPlugin } from "./installed-plugins";
 import type { Lifecycle } from "./lifecycle";
 import { lockDown } from "./plugin-lockdown";
-import { serveHubKit } from "./hub-kit";
+import { serveHubKit, TRANSPARENT } from "./hub-kit";
 import { PLUGIN_SCHEME, servePluginUi } from "./plugin-scheme";
 import { serveStores } from "./stores";
 import { watchResponsiveness } from "./plugin-ui-responsiveness";
@@ -65,7 +67,7 @@ const LOAD_FAILURE_SETTLE_MS = 500;
 export interface PluginViews {
   /** Creates, shows, hides and destroys views until they match `snapshot`. */
   follow(snapshot: HubChromeSnapshot): void;
-  /** Lays every view out beside the Plugin Switcher, at the window's current size. */
+  /** Lays every view out beside the Plugin Switcher and below the header strip, at the window's current size. */
   layout(): void;
 }
 
@@ -100,18 +102,21 @@ export function createPluginViews(
 ): PluginViews {
   const opened = new Map<PluginId, OpenPlugin>();
 
-  // Whether the front Plugin's Assistant Panel is open, as the latest snapshot says.
+  // Whether the front Plugin's Assistant Panel is open, and the Switcher collapsed to its rail, as
+  // the latest snapshot says.
   let panelOpen = false;
-  // Beside the Plugin Switcher, and left of the Assistant Panel while it is open. Only the front
-  // view shows, so every view takes the front one's bounds.
+  let switcherCollapsed = false;
+  // Beside the Plugin Switcher or its rail, below the header strip, and left of the Assistant Panel while it
+  // is open. Only the front view shows, so every view takes the front one's bounds.
   const contentArea = (): Rectangle => {
     const { width, height } = contentAreaOf(window);
     const panel = panelOpen ? ASSISTANT_PANEL_WIDTH_PX : 0;
+    const switcher = switcherCollapsed ? RAIL_WIDTH_PX : SWITCHER_WIDTH_PX;
     return {
-      x: SWITCHER_WIDTH_PX,
-      y: 0,
-      width: width - SWITCHER_WIDTH_PX - panel,
-      height,
+      x: switcher,
+      y: HEADER_STRIP_HEIGHT_PX,
+      width: width - switcher - panel,
+      height: height - HEADER_STRIP_HEIGHT_PX,
     };
   };
 
@@ -143,6 +148,8 @@ export function createPluginViews(
       },
     });
     lockDown(view, window, id);
+    // The window's material or tint shows through the Theme's transparent canvas (ADR 0006).
+    view.setBackgroundColor(TRANSPARENT);
     // The Hub has no menu to bind Toggle Developer Tools, so dev mode binds its shortcut itself.
     if (mode === "dev") {
       view.webContents.on("before-input-event", (event, input) => {
@@ -270,8 +277,16 @@ export function createPluginViews(
   };
 
   return {
-    follow({ open: openIds, foreground, content, displayLanguage, assistant }) {
+    follow({
+      open: openIds,
+      foreground,
+      content,
+      displayLanguage,
+      assistant,
+      switcherCollapsed: collapsed,
+    }) {
       panelOpen = assistant.kind === "open";
+      switcherCollapsed = collapsed;
       for (const [id, plugin] of opened) {
         if (!openIds.includes(id)) close(id, plugin);
       }

@@ -5,6 +5,7 @@ import { aiProvidersOf, startAiChat, type AiChatRequest } from "./ai";
 import type { HubEvent } from "./diagnostics";
 import { FIRST_LAUNCH_SETTINGS } from "./hub-settings";
 import { parseAiProviderLabel, parseModelId } from "./ids";
+import { AiChatCallSchema } from "../shared/ai-call";
 import type { HubSettings } from "../shared/hub-settings";
 
 const LOCAL = parseAiProviderLabel("Local");
@@ -18,8 +19,11 @@ const settings: HubSettings = {
       label: LOCAL,
       endpoint: { kind: "openai-compatible", baseUrl: BASE_URL },
       models: [
-        { id: parseModelId("text-model"), acceptsImages: false },
-        { id: parseModelId("vision-model"), acceptsImages: true },
+        { id: parseModelId("text-model"), inputs: [] },
+        {
+          id: parseModelId("vision-model"),
+          inputs: ["image", "document", "audio"],
+        },
       ],
     },
   ],
@@ -204,37 +208,87 @@ test("provider-unreachable when the connection fails, logged as no response", as
   ]);
 });
 
-test("an image for a model that does not accept images is refused before the call", async () => {
-  const withImage: AiChatRequest = {
-    ...request,
-    messages: [
+const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+const WAV = new Uint8Array([0x52, 0x49, 0x46, 0x46]);
+test.each([
+  ["an image", "image", { type: "image", image: PDF, mediaType: "image/png" }],
+  [
+    "a PDF",
+    "document",
+    { type: "document", data: PDF, mediaType: "application/pdf" },
+  ],
+  ["audio", "audio", { type: "audio", data: WAV, mediaType: "audio/wav" }],
+] as const)(
+  "%s for a model without the %s input is refused before the call, and sent to one with it",
+  async (_, refused, part) => {
+    const withPart: AiChatRequest = {
+      ...request,
+      messages: [
+        { role: "user", content: [{ type: "text", text: PROMPT }, part] },
+      ],
+    };
+    let called = false;
+    expect(() =>
+      chatWith(() => {
+        called = true;
+        return sse([{ content: "no" }]);
+      }, withPart),
+    ).toThrow(`text-model does not accept ${refused} parts`);
+    expect(called).toBe(false);
+
+    const accepted = chatWith(() => sse([{ content: "yes" }]), {
+      ...withPart,
+      model: {
+        kind: "chosen",
+        provider: LOCAL,
+        model: parseModelId("vision-model"),
+      },
+    });
+    expect(await accepted.chat.done).toBe("yes");
+    expect(accepted.requests).toHaveLength(1);
+  },
+);
+
+test("an image for a model that accepts only documents is refused", () => {
+  const docsOnly: HubSettings = {
+    ...settings,
+    aiProviders: [
       {
-        role: "user",
-        content: [
-          { type: "text", text: PROMPT },
-          { type: "image", image: new Uint8Array([1]), mediaType: "image/png" },
-        ],
+        label: LOCAL,
+        endpoint: { kind: "openai-compatible", baseUrl: BASE_URL },
+        models: [{ id: parseModelId("text-model"), inputs: ["document"] }],
       },
     ],
   };
-  let called = false;
   expect(() =>
-    chatWith(() => {
-      called = true;
-      return sse([{ content: "no" }]);
-    }, withImage),
-  ).toThrow(/does not accept images/);
-  expect(called).toBe(false);
+    chatWith(
+      () => sse([{ content: "no" }]),
+      {
+        ...request,
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "image", image: PDF, mediaType: "image/png" }],
+          },
+        ],
+      },
+      docsOnly,
+    ),
+  ).toThrow("text-model does not accept image parts");
+});
 
-  const accepted = chatWith(() => sse([{ content: "yes" }]), {
-    ...withImage,
-    model: {
-      kind: "chosen",
-      provider: LOCAL,
-      model: parseModelId("vision-model"),
-    },
-  });
-  expect(await accepted.chat.done).toBe("yes");
+test("hub.ai stays text and images: a Plugin's document part is refused at the boundary", () => {
+  const call = (part: object) =>
+    AiChatCallSchema.safeParse({
+      id: 1,
+      request: { ...request, messages: [{ role: "user", content: [part] }] },
+    }).success;
+  expect(call({ type: "image", image: PDF, mediaType: "image/png" })).toBe(
+    true,
+  );
+  expect(
+    call({ type: "document", data: PDF, mediaType: "application/pdf" }),
+  ).toBe(false);
 });
 
 test("cancel stops the stream, and done keeps what had arrived", async () => {
@@ -270,6 +324,26 @@ test("providers lists labels, kinds and models, never a key or Base URL", () => 
   ]);
 });
 
+test("providers works out acceptsImages from a model's inputs", () => {
+  const docsOnly: HubSettings = {
+    ...settings,
+    aiProviders: [
+      {
+        label: LOCAL,
+        endpoint: { kind: "openai-compatible", baseUrl: BASE_URL },
+        models: [{ id: parseModelId("text-model"), inputs: ["document"] }],
+      },
+    ],
+  };
+  expect(aiProvidersOf(docsOnly)).toEqual([
+    {
+      label: LOCAL,
+      kind: "openai-compatible",
+      models: [{ id: "text-model", acceptsImages: false }],
+    },
+  ]);
+});
+
 const CLAUDE = parseAiProviderLabel("Claude");
 const withClaude: HubSettings = {
   ...settings,
@@ -277,7 +351,9 @@ const withClaude: HubSettings = {
     {
       label: CLAUDE,
       endpoint: { kind: "anthropic" },
-      models: [{ id: parseModelId("claude-opus-5-5"), acceptsImages: true }],
+      models: [
+        { id: parseModelId("claude-opus-5-5"), inputs: ["image", "document"] },
+      ],
     },
   ],
   defaultAiProvider: {

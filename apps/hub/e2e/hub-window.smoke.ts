@@ -1,14 +1,17 @@
 ﻿import { existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, release } from "node:os";
 import { join } from "node:path";
-import { exitCodeOf, expect, launchHub, test } from "./hub";
+import { windowBackdrop } from "../src/main/platform";
+import { displayLanguageOf, exitCodeOf, expect, launchHub, test } from "./hub";
 
 test("the Hub shows one window whose Hub Chrome says Hawkeye Hub", async ({
   hub,
 }) => {
   const hubChrome = await hub.firstWindow();
 
-  await expect(hubChrome.getByText("Hawkeye Hub")).toBeVisible();
+  await expect(
+    hubChrome.getByRole("banner").getByText("Hawkeye Hub"),
+  ).toBeVisible();
   const titles = await hub.evaluate(({ BaseWindow }) =>
     BaseWindow.getAllWindows().map((window) => window.getTitle()),
   );
@@ -112,4 +115,38 @@ test("the Hub Chrome fills the maximised window", async ({ hub }) => {
       }));
     })
     .toEqual([{ maximised: true, widthGap: 0, heightGap: 0 }]);
+});
+
+const DARK_TINT = "#0c0c0c";
+
+const DARK_WORDS = {
+  "en-HK": { settings: "Settings", dark: "Dark", save: "Save" },
+  "zh-HK": { settings: "設定", dark: "深色", save: "儲存" },
+};
+
+// Every view is transparent, so behind the Hub Chrome is the window's own background (ADR 0006).
+// `launchHub` keeps its pages light whatever the Hub sets (hub-settings.smoke.ts), but not main.
+test("a saved Dark paints the window's tint dark behind the Hub Chrome", async ({
+  hub,
+}) => {
+  test.skip(
+    windowBackdrop(process.platform, release()) !== "tint",
+    "This OS shows its own material, not the Theme's tint",
+  );
+  const hubChrome = await hub.firstWindow();
+  const words = DARK_WORDS[await displayLanguageOf(hubChrome)];
+
+  await hubChrome.getByRole("button", { name: words.settings }).click();
+  await hubChrome.getByRole("radio", { name: words.dark }).check();
+  await hubChrome.getByRole("button", { name: words.save }).click();
+
+  await expect
+    .poll(() =>
+      hub.evaluate(({ BaseWindow }) =>
+        BaseWindow.getAllWindows().map((window) =>
+          window.getBackgroundColor().toLowerCase(),
+        ),
+      ),
+    )
+    .toEqual([DARK_TINT]);
 });

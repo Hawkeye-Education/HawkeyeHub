@@ -1,7 +1,7 @@
 {
   "name": "@hawkeye-hub/hub",
   "productName": "Hawkeye Hub",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Hawkeye Education's staff tools, as Plugins",
   "author": "Hawkeye Education",
   "private": true,
