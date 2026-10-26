@@ -2,7 +2,7 @@
 name = "fb-test-paper-downloader-backend"
 version = "0.1.0"            # equals the Manifest version
 requires-python = "==3.12.*" # agrees with the Manifest's backend.python
-dependencies = ["playwright>=1.49", "hawkeye-hub>=1.0,<2"]
+dependencies = ["playwright>=1.49", "hawkeye-hub>=1.0,<2", "pillow>=11"]
 
 [dependency-groups]
 dev = ["pytest>=8", "pyright>=1.1.400", "ruff>=0.12"] # never installed for staff: the Hub runs `uv sync --frozen --no-dev`
