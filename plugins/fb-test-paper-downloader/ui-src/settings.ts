@@ -1,4 +1,5 @@
-// Plugin Data (PLUGIN_STANDARD.md §4.8): the group and output folder staff chose last, in the
+// Plugin Data (PLUGIN_STANDARD.md §4.8): the group, output folder and Update's stop-at-known
+// checkbox as staff left them, in the
 // Plugin's own localStorage, versioned and migrated forward at open.
 
 import type { FolderPath } from "@hawkeye-hub/hub-api";
@@ -19,15 +20,23 @@ const V1 = z.strictObject({
   group: z.string(),
   output: Folder,
 });
-const Stored = z.discriminatedUnion("v", [V1]);
+const V2 = z.strictObject({
+  v: z.literal(2),
+  group: z.string(),
+  output: Folder,
+  // Update ends its feed scan at posts downloaded before (fb_papers.py's --update).
+  stopAtKnown: z.boolean(),
+});
+const Stored = z.discriminatedUnion("v", [V1, V2]);
 /** Always the newest version. */
-export type Settings = z.infer<typeof V1>;
+export type Settings = z.infer<typeof V2>;
 
 const KEY = "settings";
 const FIRST_OPEN: Settings = {
-  v: 1,
+  v: 2,
   group: "460403882433823",
   output: { kind: "none" },
+  stopAtKnown: true,
 };
 
 /** The first open's settings when none are stored; throws on corrupt ones. */
@@ -38,9 +47,16 @@ export function loadSettings(): Settings {
 }
 
 function migrate(stored: z.infer<typeof Stored>): Settings {
-  // V1 is the only version so far. When V2 lands, switch on `stored.v`:
-  // case 1: return migrate(v1ToV2(stored)); case 2: return stored.
-  return stored;
+  switch (stored.v) {
+    case 1:
+      return migrate({ ...stored, v: 2, stopAtKnown: true }); // V2 added the checkbox, on by default
+    case 2:
+      return stored;
+    default: {
+      const unreachable: never = stored;
+      throw new Error(`unknown settings ${JSON.stringify(unreachable)}`);
+    }
+  }
 }
 
 export function saveSettings(settings: Settings): void {
