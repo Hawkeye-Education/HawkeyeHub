@@ -130,16 +130,37 @@ interface Google {
   valueReads: number;
 }
 
-/** Stubs `fetch` as Google: each values.get answers with the next of `sheets`, the last repeating. */
-function stubGoogle(sheets: string[][][]): Google {
+/** How Google answers one read: the sheet, an HTTP error at one step, or no network at all. */
+type Answer =
+  string[][] | { step: "token" | "values"; status: number } | "offline";
+
+/** Stubs `fetch` as Google: each read (a token request, then values.get) answers with the next of
+ * `answers`, the last repeating. */
+function stubGoogle(answers: Answer[]): Google {
   const google: Google = { tokenRequests: [], valueReads: 0 };
+  const current = (): Answer =>
+    answers[Math.min(google.tokenRequests.length, answers.length) - 1] ??
+    "offline";
+  /** The error response `step` answers with now, or null when it succeeds. */
+  const failure = (step: "token" | "values"): Promise<Response> | null => {
+    const answer = current();
+    if (answer === "offline")
+      return Promise.reject(new TypeError("Failed to fetch"));
+    if (Array.isArray(answer) || answer.step !== step) return null;
+    return Promise.resolve(
+      Response.json({ error: "synthetic" }, { status: answer.status }),
+    );
+  };
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string, init: RequestInit) => {
       if (url === "https://oauth2.googleapis.com/token") {
         google.tokenRequests.push(init.body as URLSearchParams);
-        return Promise.resolve(
-          Response.json({ access_token: "ya29.test", expires_in: 3599 }),
+        return (
+          failure("token") ??
+          Promise.resolve(
+            Response.json({ access_token: "ya29.test", expires_in: 3599 }),
+          )
         );
       }
       expect(url).toBe(
@@ -148,8 +169,10 @@ function stubGoogle(sheets: string[][][]): Google {
       expect(new Headers(init.headers).get("authorization")).toBe(
         "Bearer ya29.test",
       );
-      const values = sheets[Math.min(google.valueReads, sheets.length - 1)];
       google.valueReads++;
+      const failed = failure("values");
+      if (failed !== null) return failed;
+      const values = current();
       return Promise.resolve(Response.json({ range: "Sheet1", values }));
     }),
   );
@@ -177,13 +200,23 @@ function chooseFile(text: string): void {
 }
 
 /** Opens the Plugin UI with the key already stored, and waits for the roster. */
-async function openWithKey(sheets: string[][][]): Promise<[FakeHub, Google]> {
+async function openWithKey(answers: Answer[]): Promise<[FakeHub, Google]> {
+  const opened = await openWithStoredKey(answers);
+  expect($("roster").hidden).toBe(false);
+  return opened;
+}
+
+/** Opens the Plugin UI with the key already stored, and waits for the first read to finish. */
+async function openWithStoredKey(
+  answers: Answer[],
+): Promise<[FakeHub, Google]> {
   const fake = installFakeHub({ manifest, displayLanguage: "en-HK" });
   fake.secrets.stored.set("google-service-account", keyJson);
-  const google = stubGoogle(sheets);
+  const google = stubGoogle(answers);
   await open(fake);
   await vi.waitFor(() => {
-    expect($("roster").hidden).toBe(false);
+    expect(google.tokenRequests).toHaveLength(1);
+    expect($<HTMLButtonElement>("refresh").disabled).toBe(false);
   });
   return [fake, google];
 }
@@ -342,4 +375,127 @@ test("the roster never reaches console or web storage, and the Plugin is never B
   expect(localStorage.length).toBe(0);
   expect(sessionStorage.length).toBe(0);
   expect(fake.busy.state).toEqual({ kind: "idle" });
+});
+
+// --- When the read fails ------------------------------------------------------------------------
+
+/** The buttons the failure message offers, by their text. */
+const actions = (): string[] =>
+  [...$("problem").querySelectorAll<HTMLButtonElement>("button")]
+    .filter((b) => b.hidden === false)
+    .map((b) => b.textContent);
+
+test.each([
+  ["the token exchange answers invalid_grant", { step: "token", status: 400 }],
+  ["the token exchange answers 401", { step: "token", status: 401 }],
+  ["values.get answers 401", { step: "values", status: 401 }],
+] as const)(
+  "when %s, the key isn't valid and Replace key leads to setup",
+  async (_, answer) => {
+    await openWithStoredKey([answer]);
+
+    expect($("problem").hidden).toBe(false);
+    expect($("problem-message").textContent).toBe(
+      "The key isn't valid: Google refused it. Replace it with a current key for the service account.",
+    );
+    expect(actions()).toEqual(["Replace key"]);
+    expect($("roster").hidden).toBe(true);
+
+    $("replace-key").click();
+    expect($("setup").hidden).toBe(false);
+    expect($("problem").hidden).toBe(true);
+  },
+);
+
+test.each([403, 404])(
+  "when values.get answers %i, the message names the key's client_email to share the sheet with",
+  async (status) => {
+    await openWithStoredKey([{ step: "values", status }]);
+
+    expect($("problem-message").textContent).toBe(
+      `This key can't see the tutor sheet. Share the sheet with ${EMAIL}, then Retry.`,
+    );
+    expect(actions()).toEqual(["Retry"]);
+    expect($("roster").hidden).toBe(true);
+  },
+);
+
+test.each([
+  ["there is no network", "offline"],
+  ["Google answers 503", { step: "values", status: 503 }],
+  ["the token exchange answers 500", { step: "token", status: 500 }],
+] as const)("when %s, Retry reads the sheet again", async (_, answer) => {
+  const [, google] = await openWithStoredKey([answer, ROWS]);
+
+  expect($("problem-message").textContent).toBe(
+    "The tutor sheet couldn't be reached. Check the internet connection, then Retry.",
+  );
+  expect(actions()).toEqual(["Retry"]);
+  expect($("roster").hidden).toBe(true);
+
+  $("retry").click();
+  await vi.waitFor(() => {
+    expect($("roster").hidden).toBe(false);
+  });
+  expect($("problem").hidden).toBe(true);
+  expect(names()).toEqual(["Miss Bo", "Mr Chan", "Miss Au"]);
+  expect(google.tokenRequests).toHaveLength(2);
+});
+
+test("a failed Refresh keeps the last good table and shows the stale banner, until a read succeeds", async () => {
+  await openWithKey([ROWS, "offline", [HEADER, ROWS[3] ?? []]]);
+  expect($("stale").hidden).toBe(true);
+
+  $("refresh").click();
+  await vi.waitFor(() => {
+    expect($("problem").hidden).toBe(false);
+  });
+  expect($("roster").hidden).toBe(false);
+  expect(names()).toEqual(["Miss Bo", "Mr Chan", "Miss Au"]);
+  expect($("stale").hidden).toBe(false);
+  expect($("stale").textContent).toBe(
+    "Refresh failed, so this is the roster as it was last read.",
+  );
+  expect(actions()).toEqual(["Retry"]);
+
+  $("retry").click();
+  await vi.waitFor(() => {
+    expect(names()).toEqual(["Miss Bo"]);
+  });
+  expect($("problem").hidden).toBe(true);
+});
+
+test("Replace key under Settings leads to setup, and the new key replaces the old one", async () => {
+  const [fake, google] = await openWithKey([ROWS]);
+  expect($("settings").hidden).toBe(false);
+
+  $("settings-replace-key").click();
+  expect($("setup").hidden).toBe(false);
+  expect($("roster").hidden).toBe(true);
+  expect($("settings").hidden).toBe(true);
+
+  const newKey = JSON.stringify({
+    ...(JSON.parse(keyJson) as object),
+    client_email: "other@example.iam.gserviceaccount.com",
+  });
+  chooseFile(newKey);
+  await vi.waitFor(() => {
+    expect($("roster").hidden).toBe(false);
+  });
+  expect(fake.secrets.stored).toEqual(
+    new Map([["google-service-account", newKey]]),
+  );
+  expect(google.tokenRequests).toHaveLength(2);
+});
+
+test("a failed read logs nothing", async () => {
+  const logged = (["log", "info", "warn", "error", "debug"] as const).map((m) =>
+    vi.spyOn(console, m),
+  );
+  await openWithStoredKey([{ step: "values", status: 403 }]);
+  $("retry").click();
+  await vi.waitFor(() => {
+    expect($<HTMLButtonElement>("refresh").disabled).toBe(false);
+  });
+  for (const spy of logged) expect(spy).not.toHaveBeenCalled();
 });
