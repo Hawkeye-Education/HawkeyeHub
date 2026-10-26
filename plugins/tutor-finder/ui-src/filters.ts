@@ -109,12 +109,18 @@ function svg<K extends keyof SVGElementTagNameMap>(
   return el;
 }
 
-/** Draws the filters into `aside` and calls `changed` on every change. The result filters a roster
- * and redraws the district counts for it. */
+/** The filter column: `apply` narrows a roster and redraws the district counts for it. */
+export interface FilterColumn {
+  apply: (tutors: readonly Tutor[]) => Filtered;
+  /** The level chosen now. null: All levels. */
+  level: () => Level | null;
+}
+
+/** Draws the filters into `aside` and calls `changed` on every change. */
 export function createFilters(
   aside: HTMLElement,
   changed: () => void,
-): (tutors: readonly Tutor[]) => Filtered {
+): FilterColumn {
   let level: Level | null = null;
   let method: Method = "online";
   const languages = new Set<string>();
@@ -295,7 +301,7 @@ export function createFilters(
     fieldset(t("filters.languages.title"), ...languageBoxes),
   );
 
-  return (tutors) => {
+  const apply = (tutors: readonly Tutor[]): Filtered => {
     const filters: Filters = {
       level,
       method,
@@ -344,4 +350,5 @@ export function createFilters(
       : 0;
     return { shown: applyFilters(tutors, filters), suppressed };
   };
+  return { apply, level: () => level };
 }

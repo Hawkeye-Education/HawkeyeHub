@@ -46,6 +46,7 @@ export const enHK = {
     },
   },
   column: {
+    select: "Pick",
     name: "Name",
     price: "Offerings & price",
     district: "District",
@@ -59,4 +60,12 @@ export const enHK = {
   tally_one: "{{count}} tutor",
   tally_other: "{{count}} tutors",
   suppressed: "{{count}} online-only hidden by district",
+  select: "Pick {{name}}",
+  messages: {
+    open: "Write messages ({{count}} selected)",
+    back: "Back to results",
+    profile: "Profile message",
+    phones: "Phone list message",
+    copy: "Copy",
+  },
 };

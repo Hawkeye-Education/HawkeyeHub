@@ -14,6 +14,7 @@ import {
 } from "./google";
 import { createFilters } from "./filters";
 import { t } from "./i18n";
+import { matching, phoneMessage, profileMessage } from "./messages";
 import { parseRows, type Tutor } from "./parsing";
 import { createTable } from "./table";
 
@@ -38,7 +39,13 @@ const setupError = byId("p", "setup-error");
 const roster = byId("section", "roster");
 const refresh = byId("button", "refresh");
 const tally = byId("p", "tally");
-const table = createTable(byId("table", "table"));
+/** The Selection: the sheet rows of the tutors staff picked. It outlives every filter change. */
+const selection = new Set<number>();
+const table = createTable(byId("table", "table"), selection, showSelection);
+const writeMessages = byId("button", "write-messages");
+const messages = byId("section", "messages");
+const profileText = byId("textarea", "profile-message");
+const phoneText = byId("textarea", "phone-message");
 const settings = byId("details", "settings");
 const problem = byId("section", "problem");
 const problemMessage = byId("p", "problem-message");
@@ -60,12 +67,12 @@ refresh.textContent = t("refresh");
 let key: ServiceAccountKey | null = null; // null: no usable key stored yet
 /** The roster in memory: what the filters narrow and the table shows. */
 let tutors: readonly Tutor[] = [];
-const filter = createFilters(byId("aside", "filters"), showRoster);
+const filters = createFilters(byId("aside", "filters"), showRoster);
 /** Whether a read has worked since the Plugin opened, so a failed one leaves its table, marked stale. */
 let loaded = false;
 
 function showRoster(): void {
-  const { shown, suppressed } = filter(tutors);
+  const { shown, suppressed } = filters.apply(tutors);
   table.show(shown);
   const count = t("tally", { count: shown.length });
   tally.textContent =
@@ -121,7 +128,52 @@ function showProblem(failure: ReadFailure, key: ServiceAccountKey): void {
   problem.hidden = false;
 }
 
+function showSelection(): void {
+  writeMessages.disabled = selection.size === 0;
+  writeMessages.textContent = t("messages.open", { count: selection.size });
+}
+showSelection();
+
+byId("button", "back").textContent = t("messages.back");
+byId("span", "profile-label").textContent = t("messages.profile");
+byId("span", "phones-label").textContent = t("messages.phones");
+for (const [button, text] of [
+  ["copy-profile", profileText],
+  ["copy-phones", phoneText],
+] as const) {
+  const copy = byId("button", button);
+  copy.textContent = t("messages.copy");
+  copy.addEventListener("click", () => {
+    // The text as staff edited it. A refusal propagates: there is nothing to retry here.
+    void navigator.clipboard.writeText(text.value);
+  });
+}
+
+/** Whether the failure message was up when staff left the results, so Back brings it back. */
+let problemShown = false;
+writeMessages.addEventListener("click", () => {
+  // Regenerated on every entry, in table order, priced by the level filter now. A picked tutor the
+  // filters hide is still in the messages.
+  const level = filters.level();
+  const picked = tutors
+    .filter((tutor) => selection.has(tutor.row))
+    .map((tutor) => ({ tutor, offerings: matching(tutor, level) }));
+  const ordered = table.sorted(picked);
+  profileText.value = profileMessage(ordered);
+  phoneText.value = phoneMessage(ordered);
+  problemShown = problem.hidden === false; // hidden may also be "until-found"
+  roster.hidden = true;
+  problem.hidden = true;
+  messages.hidden = false;
+});
+byId("button", "back").addEventListener("click", () => {
+  messages.hidden = true;
+  roster.hidden = false;
+  problem.hidden = !problemShown;
+});
+
 function askForKey(): void {
+  messages.hidden = true;
   roster.hidden = true;
   problem.hidden = true;
   settings.hidden = true;
