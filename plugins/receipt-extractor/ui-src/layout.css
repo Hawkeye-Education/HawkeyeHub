@@ -1,0 +1,36 @@
+/* Layout only (PLUGIN_STANDARD.md §4.3): spacing from --hub-* tokens, never colour, font, radius or shadow. */
+main {
+  padding: var(--hub-space-4);
+  max-width: 60rem;
+  min-height: 100vh; /* the whole page takes drops */
+  box-sizing: border-box;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hub-space-3);
+}
+.stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hub-space-1);
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hub-space-3);
+}
+#list {
+  margin: 0;
+  padding-left: var(--hub-space-4);
+}
+#list li {
+  display: flex;
+  align-items: center;
+  gap: var(--hub-space-3);
+}
+#list img {
+  height: 5rem;
+  width: auto;
+}

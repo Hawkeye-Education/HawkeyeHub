@@ -1,0 +1,18 @@
+{
+  "id": "receipt-extractor",
+  "version": "1.0.0",
+  "hubApi": "^1.3.0",
+  "name": {
+    "en-HK": "Receipt Extractor",
+    "zh-HK": "收據擷取"
+  },
+  "description": {
+    "en-HK": "Turn photos of receipts into a Word document with one receipt per page, leaving room for the paper receipt.",
+    "zh-HK": "把收據相片轉成 Word 文件，每頁一張收據，並留位貼上紙本收據。"
+  },
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "none" },
+  "assistant": { "kind": "none" }
+}
