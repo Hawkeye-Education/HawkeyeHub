@@ -11,6 +11,8 @@ export default tseslint.config(
       "**/playwright-report/",
       // A Plugin UI's Vite build output.
       "plugins/*/ui/",
+      // A Backend's venv; Playwright's driver ships its own JavaScript there.
+      "**/.venv/",
     ],
   },
   eslint.configs.recommended,

@@ -1,7 +1,7 @@
 // Test doubles of Hub Kit v1's elements for happy-dom, where the Hub's preload never runs. They
 // behave as apps/hub/src/hub-kit/components.ts does: Browse… calls `hub.files.pickFolder(label)`
 // and fires `change`, and each log line is a `[data-tone]` element in the shadow root.
-// ponytail: lives here until a second Plugin's tests need it; then move it into fake-hub.
+// Import it in a Plugin UI test as `@hawkeye-hub/fake-hub/hub-kit`.
 
 import type {
   FolderFieldValue,

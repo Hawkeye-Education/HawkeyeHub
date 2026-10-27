@@ -1,0 +1,23 @@
+[project]
+name = "fb-test-paper-downloader-backend"
+version = "0.1.0"            # equals the Manifest version
+requires-python = "==3.12.*" # agrees with the Manifest's backend.python
+dependencies = ["playwright>=1.49", "hawkeye-hub>=1.0,<2", "pillow>=11"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pyright>=1.1.400", "ruff>=0.12"] # never installed for staff: the Hub runs `uv sync --frozen --no-dev`
+
+[tool.uv]
+required-version = "==0.13.5" # the uv the Hub downloads (apps/hub/src/main/uv.ts)
+package = false               # a script the Hub runs, not a package to build
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = [".", "tests"]
+exclude = [".venv"]
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."] # tests import the Backend's modules (browser.py) as well as driving main.py

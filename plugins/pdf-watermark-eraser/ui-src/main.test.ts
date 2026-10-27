@@ -9,7 +9,7 @@ import type { FolderPath } from "@hawkeye-hub/hub-api";
 import type { HubFolderFieldElement } from "@hawkeye-hub/hub-api/hub-kit";
 import { beforeEach, expect, test, vi } from "vitest";
 import manifest from "../manifest.json";
-import { browse, logLines } from "./hub-kit-double";
+import { browse, logLines } from "@hawkeye-hub/fake-hub/hub-kit";
 import page from "./index.html?raw";
 
 // The page's body only: happy-dom would fetch the head's stylesheet and script.
