@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./src/manifest.ts",
-    "./registry-index": "./src/registry-index.ts"
+    "./registry-index": "./src/registry-index.ts",
+    "./secrets": "./src/secrets.ts"
   },
   "scripts": {
     "typecheck": "tsc",

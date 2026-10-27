@@ -20,6 +20,7 @@ class Echoed(Model):
 class Started(Model):
     data_dir: str
     stores: dict[str, str]
+    secrets: dict[str, str]
     hub_api: str
 
 
@@ -42,6 +43,7 @@ def started(ctx: Context, p: Empty) -> Started:
     return Started(
         data_dir=str(ctx.data_dir),
         stores={name: str(path) for name, path in ctx.stores.items()},
+        secrets=dict(ctx.secrets),
         hub_api=ctx.hub_api,
     )
 

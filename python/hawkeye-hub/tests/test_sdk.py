@@ -3,13 +3,17 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
+from hawkeye_hub import Context, Model, SemVer
 from hawkeye_hub.testing import BackendFailed, run_backend
+from pydantic import ValidationError
 
 BACKEND = Path(__file__).parent / "backend"
 
 
 def test_a_request_is_answered_with_its_camel_case_result(tmp_path: Path) -> None:
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.3.0") as backend:
+    with run_backend(
+        BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.3.0"
+    ) as backend:
         result = backend.request("echo", {"text": "水印 ok", "repeatCount": 2})
         assert result == {"texts": ["水印 ok", "水印 ok"]}
         assert "a stray print goes to stderr" in backend.stderr
@@ -18,24 +22,64 @@ def test_a_request_is_answered_with_its_camel_case_result(tmp_path: Path) -> Non
 def test_a_handler_gets_what_initialize_sent(tmp_path: Path) -> None:
     stores = {"seating": tmp_path / "stores" / "seating"}
     with run_backend(
-        BACKEND, data_dir=tmp_path / "data", stores=stores, hub_api="1.3.0"
+        BACKEND,
+        data_dir=tmp_path / "data",
+        stores=stores,
+        secrets={"sheets-key": '{"private_key": "pk"}'},
+        hub_api="1.4.0",
     ) as backend:
         result = backend.request("started", {})
     assert result == {
         "dataDir": str(tmp_path / "data"),
         "stores": {"seating": str(stores["seating"])},
-        "hubApi": "1.3.0",
+        "secrets": {"sheets-key": '{"private_key": "pk"}'},
+        "hubApi": "1.4.0",
     }
 
 
+class _Keyed(Model):
+    key_id: int
+
+
+def test_a_validation_error_never_echoes_its_input() -> None:
+    # `initialize` is validated as a Model too, so a bad one never prints the secrets it carries.
+    with pytest.raises(ValidationError) as failed:
+        _Keyed.model_validate({"keyId": "pk-very-secret"})
+    assert "pk-very-secret" not in str(failed.value)
+
+
+def test_a_context_never_shows_its_secrets() -> None:
+    ctx = Context(
+        data_dir=Path("data"),
+        stores={},
+        secrets={"sheets-key": "pk-very-secret"},
+        hub_api=SemVer("1.4.0"),
+        _write=lambda message: None,
+    )
+    assert "pk-very-secret" not in repr(ctx)
+
+
+def test_an_initialize_without_secrets_is_none_stored(tmp_path: Path) -> None:
+    # The Hub leaves `secrets` out when none is stored, as run_backend does for `{}`.
+    with run_backend(
+        BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.3.0"
+    ) as backend:
+        result = backend.request("started", {})
+    assert result["secrets"] == {}
+
+
 def test_a_notification_runs_its_handler(tmp_path: Path) -> None:
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.3.0") as backend:
+    with run_backend(
+        BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.3.0"
+    ) as backend:
         backend.notify("ping", {"n": 1})
         assert backend.wait_for("pong", 1, timeout=5) == [{"n": 2}]
 
 
 def test_a_notification_reaches_a_request_still_running(tmp_path: Path) -> None:
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.3.0") as backend:
+    with run_backend(
+        BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.3.0"
+    ) as backend:
         answered = threading.Event()
 
         def wait() -> None:
@@ -58,14 +102,18 @@ def test_a_notification_reaches_a_request_still_running(tmp_path: Path) -> None:
 def test_invalid_params_are_answered_with_invalid_params(
     tmp_path: Path, params: Mapping[str, object]
 ) -> None:
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.3.0") as backend:
+    with run_backend(
+        BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.3.0"
+    ) as backend:
         with pytest.raises(BackendFailed) as failed:
             backend.request("echo", params)
     assert (failed.value.code, failed.value.reason) == (-32602, "invalid-params")
 
 
 def test_an_rpc_error_is_answered_with_its_reason_and_message(tmp_path: Path) -> None:
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.3.0") as backend:
+    with run_backend(
+        BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.3.0"
+    ) as backend:
         with pytest.raises(BackendFailed) as failed:
             backend.request("fail", {})
     assert (failed.value.reason, failed.value.message) == ("asked-to-fail", "Asked to fail")
@@ -74,7 +122,9 @@ def test_an_rpc_error_is_answered_with_its_reason_and_message(tmp_path: Path) ->
 def test_an_rpc_error_whose_reason_is_not_kebab_case_is_answered_with_internal(
     tmp_path: Path,
 ) -> None:
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.3.0") as backend:
+    with run_backend(
+        BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.3.0"
+    ) as backend:
         with pytest.raises(BackendFailed) as failed:
             backend.request("failWithBadReason", {})
     assert (failed.value.code, failed.value.reason) == (-32603, "internal")
@@ -83,14 +133,18 @@ def test_an_rpc_error_whose_reason_is_not_kebab_case_is_answered_with_internal(
 
 def test_a_hub_api_that_is_not_a_semantic_version_stops_the_backend(tmp_path: Path) -> None:
     with pytest.raises(AssertionError, match="exited before answering initialize"):
-        with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="latest"):
+        with run_backend(
+            BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="latest"
+        ):
             pass
 
 
 def test_an_uncaught_exception_is_answered_with_internal_and_logs_its_traceback(
     tmp_path: Path,
 ) -> None:
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.3.0") as backend:
+    with run_backend(
+        BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.3.0"
+    ) as backend:
         with pytest.raises(BackendFailed) as failed:
             backend.request("crash", {})
         assert (failed.value.code, failed.value.reason) == (-32603, "internal")
@@ -102,7 +156,9 @@ def test_an_uncaught_exception_is_answered_with_internal_and_logs_its_traceback(
 
 
 def test_an_unknown_method_is_answered_with_method_not_found(tmp_path: Path) -> None:
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.3.0") as backend:
+    with run_backend(
+        BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.3.0"
+    ) as backend:
         with pytest.raises(BackendFailed) as failed:
             backend.request("nope", {})
     assert (failed.value.code, failed.value.reason) == (-32601, "method-not-found")
@@ -110,12 +166,14 @@ def test_an_unknown_method_is_answered_with_method_not_found(tmp_path: Path) -> 
 
 def test_shutdown_runs_its_handler_then_exits(tmp_path: Path) -> None:
     # run_backend sends `shutdown` on exit, and fails if the Backend outlives the grace period.
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.3.0"):
+    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.3.0"):
         pass
     assert (tmp_path / "data" / "shut-down").read_text(encoding="utf-8") == "✓"
 
 
 def test_the_backend_exits_when_stdin_closes(tmp_path: Path) -> None:
-    with run_backend(BACKEND, data_dir=tmp_path / "data", stores={}, hub_api="1.3.0") as backend:
+    with run_backend(
+        BACKEND, data_dir=tmp_path / "data", stores={}, secrets={}, hub_api="1.3.0"
+    ) as backend:
         assert backend.close_stdin() == 0
     assert not (tmp_path / "data" / "shut-down").exists()

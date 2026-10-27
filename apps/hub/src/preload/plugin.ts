@@ -1,6 +1,6 @@
 // The Plugin preload: builds each Plugin UI's one frozen `window.hub` (ADR 0009) before any Plugin
 // code runs. Sandboxed, so it may import only `electron` (anything else is bundled) and is built as
-// CommonJS. `displayLanguage`, `busy`, `files`, `ai`, `backend` when the Plugin has one, and `stores` when it
+// CommonJS. `displayLanguage`, `busy`, `files`, `ai`, `secrets`, `backend` when the Plugin has one, and `stores` when it
 // declares any.
 
 import type {
@@ -11,6 +11,7 @@ import type {
   HubBusy,
   HubError,
   HubFiles,
+  HubSecrets,
   HubStores,
   PickFolderResult,
   RpcError,
@@ -30,6 +31,7 @@ import {
   FILES_PICK_FOLDER,
   HAS_BACKEND_ARG,
   HAS_STORES_ARG,
+  SECRETS,
   STORES,
   STORES_CHANGED,
   type BusyMessage,
@@ -37,6 +39,7 @@ import {
   type StoreAnswer,
   type StoreChanged,
 } from "../shared/plugin-preload";
+import type { SecretCall } from "../shared/secret-call";
 import type { StoreCall } from "../shared/store-call";
 import hawkeyeCss from "../hub-kit/hawkeye.css?raw";
 import nativeCss from "../hub-kit/native.css?raw";
@@ -99,6 +102,23 @@ const files: HubFiles = {
   },
 };
 
+// `hub.secrets`: main refuses a bad name or a value too large with the `HubError` the call rejects
+// with. Main is trusted, so its answer is not re-validated; `Value` is what main returns for it.
+const secretAnswer = async <Value>(call: SecretCall): Promise<Value> => {
+  const answered = await ipcRenderer
+    .invoke(SECRETS, call)
+    .then((received: StoreAnswer<Value>) => received);
+  // A HubError is a plain object by design (ADR 0009).
+  // eslint-disable-next-line @typescript-eslint/only-throw-error
+  if (answered.kind === "refused") throw answered.refusal;
+  return answered.value;
+};
+const secrets: HubSecrets = {
+  get: (name) => secretAnswer({ call: "get", name }),
+  set: (name, value) => secretAnswer({ call: "set", name, value }),
+  remove: (name) => secretAnswer({ call: "remove", name }),
+};
+
 // Built in the page's world, not with exposeInMainWorld: `hub.ai.chat`'s `text` is an async
 // iterable, and the context bridge drops symbol keys, `Symbol.asyncIterator` among them. The
 // arguments cross the bridge as exposeInMainWorld's would.
@@ -136,6 +156,7 @@ contextBridge.executeInMainWorld({
       displayLanguage,
       busy,
       files,
+      secrets,
       ...(process.argv.includes(HAS_BACKEND_ARG)
         ? { backend: connectBackend() }
         : {}),

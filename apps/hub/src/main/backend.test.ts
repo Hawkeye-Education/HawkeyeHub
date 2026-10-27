@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { SHUTDOWN_GRACE_MS, startBackend } from "./backend";
 import type { Diagnostics, PluginSession } from "./diagnostics";
 import { parseAbsolutePath } from "./ids";
+import type { SecretName } from "./plugin-secrets";
 
 // The Backend process, as the Hub sees it: stdin lines it was sent, and stdout it answers on.
 const child = vi.hoisted((): { current: unknown } => ({ current: undefined }));
@@ -61,11 +62,11 @@ const session: PluginSession = {
 };
 const diagnostics = { recordHubEvent: noop } as unknown as Diagnostics;
 
-function installed() {
+function installed(hubApi = "^1.0.0") {
   const parsed = parseManifest({
     id: "echo-backend",
     version: "1.0.0",
-    hubApi: "^1.0.0",
+    hubApi,
     name: "Echo",
     description: "A fixture.",
     platforms: ["win32-x64"],
@@ -92,10 +93,31 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+function started(hubApi: string, secrets: ReadonlyMap<SecretName, string>) {
+  return startBackend(
+    installed(hubApi),
+    parseAbsolutePath(mkdtempSync(join(tmpdir(), "hub-data-"))),
+    secrets,
+    diagnostics,
+    session,
+    noop,
+    "installed",
+  );
+}
+
+/** The params of the `initialize` the Backend was sent. */
+async function initializeParams(): Promise<unknown> {
+  await vi.advanceTimersByTimeAsync(0);
+  const [first] = fake.sent;
+  if (first === undefined) throw new Error("Nothing was sent");
+  return (JSON.parse(first) as { params: unknown }).params;
+}
+
 async function initializedBackend() {
   const backend = startBackend(
     installed(),
     parseAbsolutePath(mkdtempSync(join(tmpdir(), "hub-data-"))),
+    new Map(),
     diagnostics,
     session,
     noop,
@@ -108,6 +130,36 @@ async function initializedBackend() {
   await vi.advanceTimersByTimeAsync(REMEMBER_MS);
   return backend;
 }
+
+// A test builds the brand by hand; only `createPluginSecrets` parses one.
+const STORED = new Map([["sheets-key" as SecretName, "pk-secret"]]);
+
+test.each(["^1.4.0", ">=1.5.0 <2"])(
+  "initialize carries every stored secret to a Plugin requiring Hub API %s",
+  async (hubApi) => {
+    started(hubApi, STORED);
+
+    expect(await initializeParams()).toMatchObject({
+      secrets: { "sheets-key": "pk-secret" },
+    });
+  },
+);
+
+// SDK 1.0.0 Backends refuse an `initialize` with keys they do not know, and print what they got.
+test.each(["^1.3.0", ">=1.0.0 <2"])(
+  "initialize leaves secrets out for a Plugin that accepts Hub API %s, before secrets",
+  async (hubApi) => {
+    started(hubApi, STORED);
+
+    expect(await initializeParams()).not.toHaveProperty("secrets");
+  },
+);
+
+test("initialize leaves secrets out when none is stored", async () => {
+  started("^1.4.0", new Map());
+
+  expect(await initializeParams()).not.toHaveProperty("secrets");
+});
 
 test("shutdown is sent at once, without waiting for the process tree to be noted", async () => {
   const backend = await initializedBackend();
