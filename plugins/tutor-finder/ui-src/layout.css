@@ -1,4 +1,4 @@
-/* Layout only (PLUGIN_STANDARD.md §4.3): spacing from --hub-* tokens, never colour, font, radius or shadow. */
+/* PLUGIN_STANDARD.md §4.3: layout, plus every visual value from a --hub-* token, never a literal. */
 main {
   padding: var(--hub-space-4);
 }
@@ -38,15 +38,19 @@ main {
   max-width: 40rem;
 }
 
-/* The filters' column beside the table and its tally. */
-.layout {
-  display: grid;
-  grid-template-columns: 16rem minmax(0, 1fr);
-  gap: var(--hub-space-4);
-  align-items: start;
+/* The tally and the way to the messages view, always in reach below a long table. */
+.bar {
+  position: sticky;
+  bottom: 0;
+  padding: var(--hub-space-3) var(--hub-space-4);
+  background: var(--hub-color-surface-raised);
+  border: 1px solid var(--hub-color-line);
+  border-radius: var(--hub-radius-3);
+  box-shadow: var(--hub-shadow-2);
 }
-.layout[hidden] {
-  display: none;
+/* The display rules above beat the browser's own [hidden], so restore it for every view. */
+[hidden] {
+  display: none !important;
 }
 .scroller {
   overflow-x: auto;
@@ -64,12 +68,38 @@ main {
   vertical-align: top;
   border-bottom: 1px solid var(--hub-color-line); /* a hairline: no border-width token exists */
 }
+#table td {
+  padding-block: var(--hub-space-2);
+}
+#table th {
+  font-size: var(--hub-text-sm);
+  color: var(--hub-color-fg-muted);
+}
+/* Column headers read as headers, not boxed buttons. */
 #table th button {
   white-space: nowrap;
+  padding: 0;
+  font-weight: var(--hub-weight-strong);
+  color: inherit;
+  background: none;
+  border: 0;
+}
+#table th[aria-sort] {
+  color: var(--hub-color-accent);
+}
+#table tbody tr {
+  transition: background-color var(--hub-motion-fast) var(--hub-motion-ease);
+}
+#table tbody tr:hover {
+  background: var(--hub-color-surface);
+}
+#table tbody tr:has(input:checked) {
+  background: color-mix(in srgb, var(--hub-color-accent) 12%, transparent);
 }
 .offering {
   display: grid;
-  grid-template-columns: 6rem minmax(0, 1fr) auto;
+  /* A real minimum: in an auto-width table a 0 minimum lets Chinese text wrap one character per line. */
+  grid-template-columns: 6rem minmax(10rem, 1fr) auto;
   gap: var(--hub-space-2);
 }
 .muted,
@@ -87,11 +117,16 @@ main {
 /* The district map (source SPEC §4.3): a Plugin-drawn widget, so every visual is a --hub-* token.
    Its geometry (stroke widths, dashes, label sizes) is set as SVG attributes in filters.ts; the
    few numbers left here change with state, are in viewBox units, and have no token equivalent. */
+/* Sized by the window's height, so it stays big on a wide screen; the SVG centres the drawing. */
 .map {
   width: 100%;
-  height: auto;
+  height: 88vh;
   display: block;
   overflow: visible;
+}
+.regions {
+  justify-content: center;
+  gap: var(--hub-space-5);
 }
 /* Dimmed while disarmed: no opacity token exists. */
 fieldset:disabled .map {
@@ -102,6 +137,7 @@ fieldset:disabled .map {
   stroke: var(--hub-color-line);
   stroke-linejoin: round;
   cursor: pointer;
+  outline: none; /* the box ring; keyboard focus is the plate's own stroke, below */
 }
 fieldset:disabled .plate {
   cursor: default;
@@ -154,4 +190,38 @@ fieldset:disabled .plate {
 }
 #filters small {
   display: block;
+}
+/* Each filter group as a card: the Hub styles no fieldset, so the browser's grooved box showed. */
+#filters fieldset {
+  margin: 0;
+  padding: var(--hub-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hub-space-2);
+  background: var(--hub-color-surface);
+  border: 1px solid var(--hub-color-line);
+  border-radius: var(--hub-radius-3);
+  box-shadow: var(--hub-shadow-1);
+}
+#filters legend {
+  float: left; /* inside the card, not cut into its border */
+  width: 100%;
+  margin-bottom: var(--hub-space-1);
+  font-weight: var(--hub-weight-strong);
+}
+.regions button {
+  border-radius: var(--hub-radius-3);
+  padding-inline: var(--hub-space-4);
+}
+/* A box or dot level with the first line of its text, not sunk below it. */
+#filters label:has(> input[type="checkbox"], > input[type="radio"]) {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hub-space-2);
+}
+#filters label > input[type="checkbox"],
+#filters label > input[type="radio"] {
+  vertical-align: baseline;
+  margin-top: 0.2em; /* centres the 16px box on a first line of text */
+  flex: none;
 }

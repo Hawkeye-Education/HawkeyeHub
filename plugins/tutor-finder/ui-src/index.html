@@ -46,25 +46,26 @@
         </div>
       </section>
 
-      <section id="roster" class="layout" hidden>
-        <!-- filters.ts fills this column. -->
+      <!-- One column, as the source app: the filters, the table they update, then the bar to the
+           messages view. -->
+      <section id="roster" class="stack" hidden>
+        <div class="row">
+          <h1 id="title"></h1>
+          <button id="refresh" type="button"></button>
+          <button id="reset" type="button"></button>
+        </div>
+        <!-- filters.ts fills this. -->
         <aside id="filters" class="stack"></aside>
-        <div class="stack results">
-          <div class="row">
-            <h1 id="title"></h1>
-            <button id="refresh" type="button"></button>
-          </div>
-          <div class="scroller">
-            <table id="table"></table>
-          </div>
-          <div class="row">
-            <p id="tally" class="grow"></p>
-            <button
-              id="write-messages"
-              type="button"
-              data-variant="primary"
-            ></button>
-          </div>
+        <div class="scroller">
+          <table id="table"></table>
+        </div>
+        <div class="row bar">
+          <p id="tally" class="grow"></p>
+          <button
+            id="write-messages"
+            type="button"
+            data-variant="primary"
+          ></button>
         </div>
       </section>
 

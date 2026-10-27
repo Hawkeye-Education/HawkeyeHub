@@ -902,6 +902,27 @@ describe("Selection and messages", () => {
     expect(write.textContent).toBe("Write messages (1 selected)");
   });
 
+  test("Reset puts every filter back and unpicks every tutor", async () => {
+    await openWithKey([ROWS]);
+    tick(pick("Miss Bo"), true);
+    change(level(), "IB");
+    tick(language("English"), true);
+    tick(method("face-to-face"), true);
+    tick(filter<HTMLInputElement>("input[value=no-district]"), true);
+
+    $("reset").click();
+
+    expect(level().value).toBe("");
+    expect(method("online").checked).toBe(true);
+    expect(language("English").checked).toBe(false);
+    expect(filter<HTMLInputElement>("input[value=no-district]").checked).toBe(
+      false,
+    );
+    expect(names()).toEqual(["Miss Bo", "Mr Chan", "Miss Au"]);
+    expect(pick("Miss Bo").checked).toBe(false);
+    expect($<HTMLButtonElement>("write-messages").disabled).toBe(true);
+  });
+
   const INTRO_HEADER = [
     ...HEADER,
     "Self_introduction_chi",

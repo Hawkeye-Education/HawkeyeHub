@@ -63,11 +63,19 @@ byId(HTMLParagraphElement, "setup-hint").textContent = t("setup.hint");
 byId(HTMLSpanElement, "key-file-label").textContent = t("setup.file");
 byId(HTMLHeadingElement, "title").textContent = t("title");
 refresh.textContent = t("refresh");
+const reset = byId(HTMLButtonElement, "reset");
+reset.textContent = t("reset");
 cancelSetup.textContent = t("cancel");
 
 /** The roster in memory: what the filters narrow and the table shows. */
 let tutors: readonly Tutor[] = [];
 const filters = createFilters(byId(HTMLElement, "filters"), showRoster);
+// Reset unpicks every tutor too, as the source app's did.
+reset.addEventListener("click", () => {
+  selection.clear();
+  filters.reset();
+  showSelection();
+});
 /** Whether a read has worked since the Plugin opened, so a failed one leaves its table, marked stale. */
 let loaded = false;
 
