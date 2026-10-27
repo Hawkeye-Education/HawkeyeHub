@@ -147,7 +147,8 @@ export function createTable(
       th.scope = "col";
       if (c === column)
         th.setAttribute("aria-sort", dir === 1 ? "ascending" : "descending");
-      const button = element("button", t(`column.${c}`));
+      const arrow = c !== column ? "" : dir === 1 ? " ▲" : " ▼";
+      const button = element("button", t(`column.${c}`) + arrow);
       button.dataset["column"] = c;
       button.addEventListener("click", () => {
         dir = c === column ? (dir === 1 ? -1 : 1) : 1;

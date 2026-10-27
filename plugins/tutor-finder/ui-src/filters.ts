@@ -1,4 +1,4 @@
-// The filters in the left column (source SPEC §4), in its order: level, how they teach, district,
+// The filters above the table (source SPEC §4), in its order: level, how they teach, district,
 // language. Status is not a filter: parseRows already drops the statuses that never appear, and
 // the table pins the rest (SPEC §4.5). There is no subject filter (SPEC §12).
 
@@ -123,6 +123,8 @@ export interface FilterColumn {
   apply: (tutors: readonly Tutor[]) => Filtered;
   /** The level chosen now. null: All levels. */
   level: () => Level | null;
+  /** Puts every filter back as it opens, then calls `changed`. */
+  reset: () => void;
 }
 
 /** Draws the filters into `aside` and calls `changed` on every change. */
@@ -158,6 +160,7 @@ export function createFilters(
   });
   levelLabel.append(levelText, select);
 
+  const methodInputs: HTMLInputElement[] = [];
   const methods = METHODS.map((value) => {
     const [label, input] = choice(
       "radio",
@@ -166,6 +169,7 @@ export function createFilters(
       t(`filters.method.${value}`),
     );
     input.checked = value === method;
+    methodInputs.push(input);
     input.addEventListener("change", () => {
       method = value;
       // A district means the tutor travels, so leaving Face-to-face clears it (SPEC §4.3).
@@ -236,14 +240,14 @@ export function createFilters(
       class: "plate-name",
       x: plate.cx,
       y: plate.cy,
-      "font-size": 2.9,
+      "font-size": 2.2,
     });
     name.textContent = t(`plate.${id}`);
     const count = svgElement("text", {
       class: "plate-count",
       x: plate.cx,
-      y: plate.cy + 4,
-      "font-size": 3.6,
+      y: plate.cy + 3.2,
+      "font-size": 2.8,
     });
     labels.append(name, count);
     return { id, shape, name, count };
@@ -252,7 +256,7 @@ export function createFilters(
     class: "ridge-label",
     x: 50,
     y: RIDGE - 1.6,
-    "font-size": 2.6,
+    "font-size": 2.2,
   });
   ridgeLabel.textContent = t("filters.district.ridge");
   map.append(
@@ -289,7 +293,7 @@ export function createFilters(
     return button;
   });
   const regions = document.createElement("div");
-  regions.className = "row";
+  regions.className = "row regions";
   regions.append(...regionButtons);
 
   // Off by default, and not a 19th district (SPEC §4.3).
@@ -318,6 +322,7 @@ export function createFilters(
     noDistrictLabel,
   );
 
+  const languageInputs: HTMLInputElement[] = [];
   const languageBoxes = LANGUAGES.map((language) => {
     const [label, input] = choice(
       "checkbox",
@@ -325,6 +330,7 @@ export function createFilters(
       language,
       t(`filters.languages.${language}`),
     );
+    languageInputs.push(input);
     input.addEventListener("change", () => {
       if (input.checked) languages.add(language);
       else languages.delete(language);
@@ -381,5 +387,16 @@ export function createFilters(
       : 0;
     return { shown: applyFilters(tutors, filters), suppressed };
   };
-  return { apply, level: () => level };
+  const reset = (): void => {
+    level = null;
+    select.value = "";
+    method = "online";
+    for (const input of methodInputs) input.checked = input.value === method;
+    languages.clear();
+    for (const input of languageInputs) input.checked = false;
+    district = ANY_DISTRICT;
+    noDistrictBox.checked = false;
+    changed();
+  };
+  return { apply, level: () => level, reset };
 }

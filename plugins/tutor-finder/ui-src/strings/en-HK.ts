@@ -21,6 +21,7 @@ export const enHK = {
   replaceKey: "Replace key",
   settings: "Settings",
   refresh: "Refresh",
+  reset: "Reset",
   filters: {
     level: "Level",
     allLevels: "All levels",
