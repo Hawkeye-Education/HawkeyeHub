@@ -26,6 +26,26 @@ jobs:
       - run: pnpm plugin-format check plugins/pdf-watermark-eraser
       - run: pnpm --filter fb-test-paper-downloader build
       - run: pnpm plugin-format check plugins/fb-test-paper-downloader
+      - run: pnpm --filter receipt-extractor build
+      - run: pnpm plugin-format check plugins/receipt-extractor
+
+  # A UI-only Plugin's tests on each of its Supported Platforms (PLUGIN_STANDARD.md §9.3): its
+  # tests decode and encode images with @napi-rs/canvas, a native binary per platform.
+  receipt-extractor-ui:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter receipt-extractor test
 
   smoke:
     strategy:
