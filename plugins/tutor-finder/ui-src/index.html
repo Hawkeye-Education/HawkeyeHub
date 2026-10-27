@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- The Hub preload has already set <html lang>, loaded the --hub-* tokens, the native-element
+         stylesheet and the Hub Kit, and exposed window.hub (PLUGIN_STANDARD.md §4.2). -->
+    <link rel="stylesheet" href="./layout.css" />
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <main class="stack">
+      <div class="row">
+        <p id="status" class="grow" role="status"></p>
+        <!-- Replace key, always reachable once a key is stored. The Hub draws no dialog (ADR 0013). -->
+        <details id="settings" hidden>
+          <summary id="settings-label"></summary>
+          <button id="settings-replace-key" type="button"></button>
+        </details>
+      </div>
+
+      <!-- Why the last read failed, and what staff can do about it. -->
+      <section id="problem" class="stack-tight" role="alert" hidden>
+        <p id="stale" class="banner" hidden></p>
+        <p id="problem-message"></p>
+        <div class="row">
+          <button id="retry" type="button" data-variant="primary"></button>
+          <button
+            id="replace-key"
+            type="button"
+            data-variant="primary"
+          ></button>
+        </div>
+      </section>
+
+      <section id="setup" class="stack" hidden>
+        <h1 id="setup-title"></h1>
+        <p id="setup-hint"></p>
+        <label class="stack-tight">
+          <span id="key-file-label"></span>
+          <input id="key-file" type="file" accept=".json,application/json" />
+        </label>
+        <p id="setup-error" role="alert"></p>
+        <!-- Only when reached from Settings: the stored key still works, so staff can go back. -->
+        <div class="row">
+          <button id="cancel-setup" type="button" hidden></button>
+        </div>
+      </section>
+
+      <section id="roster" class="layout" hidden>
+        <!-- filters.ts fills this column. -->
+        <aside id="filters" class="stack"></aside>
+        <div class="stack results">
+          <div class="row">
+            <h1 id="title"></h1>
+            <button id="refresh" type="button"></button>
+          </div>
+          <div class="scroller">
+            <table id="table"></table>
+          </div>
+          <div class="row">
+            <p id="tally" class="grow"></p>
+            <button
+              id="write-messages"
+              type="button"
+              data-variant="primary"
+            ></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- The messages view, swapped in for the results: no route, no pushState. -->
+      <section id="messages" class="stack" hidden>
+        <div class="row">
+          <button id="back" type="button"></button>
+        </div>
+        <label class="stack-tight">
+          <span id="profile-label"></span>
+          <textarea id="profile-message" rows="16"></textarea>
+        </label>
+        <div class="row">
+          <button id="copy-profile" type="button"></button>
+        </div>
+        <label class="stack-tight">
+          <span id="phones-label"></span>
+          <textarea id="phone-message" rows="5"></textarea>
+        </label>
+        <div class="row">
+          <button id="copy-phones" type="button"></button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
