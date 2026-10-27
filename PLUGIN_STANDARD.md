@@ -694,6 +694,16 @@ cd plugins/pdf-watermark-eraser/backend && uv sync        # builds backend/.venv
 pnpm dev --plugin pdf-watermark-eraser                    # from the repo root; repeat --plugin for more
 ```
 
+A Plugin shows up only when it is named with `--plugin`: a bare `pnpm dev` starts the Hub with none. A Plugin with a Backend whose `backend/.venv` was never built fails to start (on Windows the Backend exits with code -4058, file not found). `uv sync` needs the uv that `required-version` in `pyproject.toml` pins: run `uv self update <version>` if yours differs.
+
+To run every Plugin in the repo, from the repo root:
+
+```
+for d in plugins/*/backend; do (cd "$d" && uv sync); done  # builds each backend/.venv
+pnpm --filter "./plugins/*" --parallel dev                 # watches every Plugin UI into ui/
+pnpm dev --plugin fb-test-paper-downloader --plugin pdf-watermark-eraser --plugin receipt-extractor --plugin tutor-finder
+```
+
 Dev mode starts a development build of the Hub that treats each named `plugins/<id>/` folder as installed:
 
 - It runs `plugin-format check` on each Plugin first, then applies the install gates (Supported Platforms, identity and Roles, `hubApi`), and refuses as a real install would.
