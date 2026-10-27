@@ -1,0 +1,478 @@
+"""The Update run's feed scan and post download, against a stand-in feed: no test opens Facebook.
+
+Cancel and `shutdown` mid-run are tested here rather than over stdio (a documented deviation from
+PLUGIN_STANDARD.md §9.2): no run can start without Facebook. Both set the same `stopping` event.
+"""
+
+import io
+import json
+import threading
+from collections.abc import Callable, Iterator, Sequence
+from pathlib import Path
+
+import pytest
+from files import FileRow
+from hawkeye_hub import RpcError
+from PIL import Image
+from playwright._impl._errors import TargetClosedError
+from posts import Stopped, known_post_ids, write_post
+from update import (
+    BAD_STREAK,
+    KNOWN_STREAK,
+    POSTS_PER_RUN,
+    FeedPost,
+    GroupId,
+    GroupPost,
+    Progress,
+    SinglePhoto,
+    UpdateResult,
+    group_id,
+    run_update,
+)
+
+GROUP = GroupId("460403882433823")
+
+
+def png() -> bytes:
+    out = io.BytesIO()
+    Image.new("RGB", (20, 30), "white").save(out, "PNG")
+    return out.getvalue()
+
+
+PNG = png()
+
+
+def paper(post_id: str, text: str = "P3 數學 測驗", shown: int = 2) -> FeedPost:
+    return FeedPost(
+        post_id=GroupPost(kind="post", id=post_id),
+        photo_url=f"https://fb/photo/?set=pcb.{post_id}",
+        text=text,
+        shown=shown,
+    )
+
+
+class FakeFeed:
+    """Yields `batches` as scroll rounds. A post's viewer shows `shown` images, or `viewer`'s."""
+
+    def __init__(self, batches: Sequence[Sequence[FeedPost]], stopping: threading.Event) -> None:
+        self.batches = batches
+        self.stopping = stopping
+        self.rounds = 0
+        self.scanned = False
+        self.opened: list[str] = []
+        self.viewer: dict[str, list[str] | Exception] = {}  # what opening a post gives
+        self.fetcher: Callable[[str], bytes] = lambda src: PNG
+
+    def scan(self) -> Iterator[Sequence[FeedPost]]:
+        self.scanned = True
+        for batch in self.batches:
+            self.rounds += 1
+            yield batch
+
+    def images(self, post: FeedPost) -> list[str]:
+        key = post.post_id.disk_id()
+        self.opened.append(key)
+        if key in self.viewer:
+            shows = self.viewer[key]
+            if isinstance(shows, Exception):
+                raise shows
+            return shows
+        return [f"https://cdn/{key}/{i}" for i in range(post.shown)]
+
+    def fetch(self, src: str) -> bytes:
+        return self.fetcher(src)
+
+
+class FakeFilesTab:
+    """Shows `names` in one scroll round. Saving a name in `fails` raises what it maps to."""
+
+    def __init__(self, names: Sequence[str]) -> None:
+        self.rows = [
+            FileRow(row_id=f"r{i}", name=n, href=f"https://fb/{i}") for i, n in enumerate(names)
+        ]
+        self.saved: list[str] = []
+        self.fails: dict[str, BaseException] = {}
+
+    def file_rows(self) -> Iterator[Sequence[FileRow]]:
+        yield self.rows
+
+    def save_file(self, row: FileRow, to: Path) -> None:
+        if row.name in self.fails:
+            to.write_bytes(b"half")
+            raise self.fails[row.name]
+        to.write_bytes(row.name.encode())
+        self.saved.append(row.name)
+
+
+class Run:
+    def __init__(
+        self, tmp_path: Path, batches: Sequence[Sequence[FeedPost]], files: Sequence[str] = ()
+    ) -> None:
+        self.output = tmp_path
+        self.posts = tmp_path / "posts"
+        self.stopping = threading.Event()
+        self.feed = FakeFeed(batches, self.stopping)
+        self.tab = FakeFilesTab(files)
+        self.progress: list[Progress] = []
+        self.on_progress: Callable[[Progress], None] = lambda p: None
+
+    def __call__(self, stop_at_known: bool = True) -> UpdateResult:
+        return run_update(
+            feed=self.feed,
+            tab=self.tab,
+            output=self.output,
+            group=GROUP,
+            stop_at_known=stop_at_known,
+            stopping=self.stopping,
+            notify=self.notify,
+            delay_seconds=0,
+        )
+
+    def notify(self, progress: Progress) -> None:
+        self.progress.append(progress)
+        self.on_progress(progress)
+
+    def results(self) -> list[tuple[str, str]]:
+        return [(p.item, p.result.kind) for p in self.progress if p.phase == "posts"]
+
+
+def done(post_id: str, posts: Path) -> None:
+    """A post an earlier run saved."""
+    write_post(
+        posts,
+        post_id=post_id,
+        url="u",
+        text="P1 中文",
+        images=["x"],
+        fetch=lambda src: PNG,
+        stopping=threading.Event(),
+    )
+
+
+@pytest.mark.parametrize(
+    "group",
+    [
+        "460403882433823",
+        " 460403882433823 ",
+        "https://www.facebook.com/groups/460403882433823",
+        "https://www.facebook.com/groups/460403882433823/?sorting_setting=CHRONOLOGICAL",
+        "facebook.com/groups/460403882433823/",
+        "https://m.facebook.com/groups/460403882433823/posts/123/",
+    ],
+)
+def test_a_group_url_or_bare_id_gives_the_group_id(group: str) -> None:
+    assert group_id(group) == "460403882433823"
+
+
+def test_saves_new_papers_newest_first_and_logs_one_line_per_post(tmp_path: Path) -> None:
+    run = Run(
+        tmp_path,
+        [
+            [paper("111", "P2 英文 默書"), paper("222", "歡迎新成員", shown=1)],
+            [paper("333", "小六 中文 試卷")],
+        ],
+    )
+
+    result = run()
+
+    assert result == UpdateResult(
+        files_saved=0,
+        files_known=0,
+        files_failed=0,
+        saved=2,
+        skipped_not_paper=1,
+        incomplete=0,
+        failed=0,
+        outcome="finished",
+    )
+    assert run.results() == [
+        ("P2 英文 默書", "saved"),
+        ("歡迎新成員", "skipped-not-paper"),
+        ("小六 中文 試卷", "saved"),
+    ]
+    assert [(p.done, p.total) for p in run.progress if p.phase == "posts"] == [
+        (1, 3),
+        (2, 3),
+        (3, 3),
+    ]
+    assert [p.found for p in run.progress if p.phase == "scan"] == [2, 3]
+    assert run.feed.opened == ["111", "333"]  # a non-paper post is never opened
+    assert known_post_ids(run.posts) == {"111", "333"}
+    [saved] = (run.posts / "P2" / "英文").iterdir()
+    assert saved.name == "P2 英文 默書_111"
+
+
+def test_a_single_photo_post_is_saved_under_its_photo_s_id_and_url(tmp_path: Path) -> None:
+    photo = FeedPost(
+        post_id=SinglePhoto(kind="photo", fbid="555"),
+        photo_url="https://fb/photo/?fbid=555&set=g.1",
+        text="P4 常識 工作紙",
+        shown=1,
+    )
+    run = Run(tmp_path, [[photo]])
+
+    run()
+
+    [folder] = (run.posts / "P4" / "常識").iterdir()
+    assert folder.name == "P4 常識 工作紙_photo_555"
+    assert json.loads((folder / "post.json").read_text(encoding="utf-8"))["url"] == photo.photo_url
+    assert known_post_ids(run.posts) == {"photo_555"}
+
+
+def test_posts_already_on_disk_are_never_downloaded_again(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111"), paper("222")]])
+    done("111", run.posts)
+
+    run()
+
+    assert run.feed.opened == ["222"]
+
+
+def test_stop_at_known_ends_the_scan_at_posts_downloaded_before(tmp_path: Path) -> None:
+    known = [paper(str(1000 + i)) for i in range(KNOWN_STREAK)]
+    batches = [[paper("1")], known, [paper("2")]]
+    run = Run(tmp_path, batches)
+    for post in known:
+        done(post.post_id.disk_id(), run.posts)
+
+    run(stop_at_known=True)
+
+    assert run.feed.opened == ["1"]
+    assert run.feed.rounds == 2  # it stopped scrolling at the known posts
+
+
+def test_without_stop_at_known_the_scan_reaches_older_new_posts(tmp_path: Path) -> None:
+    known = [paper(str(1000 + i)) for i in range(KNOWN_STREAK)]
+    run = Run(tmp_path, [[paper("1")], known, [paper("2")]])
+    for post in known:
+        done(post.post_id.disk_id(), run.posts)
+
+    run(stop_at_known=False)
+
+    assert run.feed.opened == ["1", "2"]
+
+
+def test_a_run_downloads_at_most_its_quota_of_papers(tmp_path: Path) -> None:
+    feed = [[paper(str(i))] for i in range(POSTS_PER_RUN + 5)]
+    run = Run(tmp_path, feed)
+
+    result = run()
+
+    assert result.saved == POSTS_PER_RUN
+    assert run.feed.rounds == POSTS_PER_RUN  # the scan stopped once the quota was queued
+
+
+def test_an_incomplete_post_is_discarded_so_the_next_run_retries_it(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111", shown=10), paper("222")]])
+    run.feed.viewer["111"] = ["https://cdn/111/0", "https://cdn/111/1"]  # the viewer cut it short
+
+    result = run()
+
+    assert run.results() == [("P3 數學 測驗", "incomplete"), ("P3 數學 測驗", "saved")]
+    assert (result.incomplete, result.saved) == (1, 1)
+    assert known_post_ids(run.posts) == {"222"}
+
+
+def test_a_failed_post_is_reported_and_the_run_goes_on(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111"), paper("222")]])
+
+    def drop(src: str) -> bytes:
+        if "/111/" in src:
+            raise ConnectionError("the CDN dropped the connection")
+        return PNG
+
+    run.feed.fetcher = drop
+
+    result = run()
+
+    [first, _] = [p for p in run.progress if p.phase == "posts"]
+    assert first.result.kind == "failed"
+    assert "the CDN dropped the connection" in first.result.detail
+    assert (result.failed, result.saved) == (1, 1)
+    assert known_post_ids(run.posts) == {"222"}
+
+
+def test_a_post_with_no_images_in_the_viewer_fails(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111")]])
+    run.feed.viewer["111"] = []
+
+    assert run().failed == 1
+
+
+def test_bad_posts_in_a_row_stop_the_run(tmp_path: Path) -> None:
+    bad = [paper(str(i)) for i in range(BAD_STREAK)]
+    run = Run(tmp_path, [[paper("900"), *bad, paper("901")]])
+    for post in bad:
+        run.feed.viewer[post.post_id.disk_id()] = []
+
+    result = run()
+
+    assert result.outcome == "bad-streak"
+    assert "901" not in run.feed.opened
+
+
+def test_a_saved_post_resets_the_bad_streak(tmp_path: Path) -> None:
+    almost = [paper(str(i)) for i in range(BAD_STREAK - 1)]
+    more = [paper(str(10 + i)) for i in range(BAD_STREAK - 1)]
+    run = Run(tmp_path, [[*almost, paper("900"), *more]])
+    for post in [*almost, *more]:
+        run.feed.viewer[post.post_id.disk_id()] = []
+
+    assert run().outcome == "finished"
+
+
+def test_cancel_or_shutdown_mid_post_keeps_no_partial_post_and_stops(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111", shown=3), paper("222")]])
+
+    def stop_during_first(src: str) -> bytes:
+        run.stopping.set()  # `cancel` or `shutdown` arrives between two images
+        return PNG
+
+    run.feed.fetcher = stop_during_first
+
+    result = run()
+
+    assert result == UpdateResult(
+        files_saved=0,
+        files_known=0,
+        files_failed=0,
+        saved=0,
+        skipped_not_paper=0,
+        incomplete=0,
+        failed=0,
+        outcome="cancelled",
+    )
+    assert run.feed.opened == ["111"]
+    assert known_post_ids(run.posts) == set()
+    assert [p for p in run.posts.rglob("*") if p.is_file()] == []
+
+
+def test_cancel_between_posts_stops_before_the_next(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111"), paper("222")]])
+    run.on_progress = lambda p: run.stopping.set() if p.phase == "posts" else None
+
+    result = run()
+
+    assert result.outcome == "cancelled"
+    assert run.feed.opened == ["111"]
+    assert known_post_ids(run.posts) == {"111"}
+
+
+def test_cancel_during_the_scan_downloads_nothing(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111")], [paper("222")]])
+    run.stopping.set()
+
+    result = run()
+
+    assert result.outcome == "cancelled"
+    assert run.feed.opened == []
+
+
+def test_closing_the_edge_window_ends_the_run_as_cancelled(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111"), paper("222")]])
+
+    run.feed.viewer["111"] = TargetClosedError()
+
+    assert run().outcome == "cancelled"
+
+
+def test_signed_out_checkpoint_and_blocked_stop_the_run(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111"), paper("222")]])
+
+    run.feed.viewer["111"] = RpcError(
+        "blocked", "Facebook says this account is temporarily blocked"
+    )
+
+    with pytest.raises(RpcError) as raised:
+        run()
+    assert raised.value.reason == "blocked"
+
+
+def test_stopped_is_what_a_viewer_raises_when_stopping(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111"), paper("222")]])
+
+    run.feed.viewer["111"] = Stopped()
+
+    assert run().outcome == "cancelled"
+
+
+def files_under(folder: Path) -> list[str]:
+    return sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file())
+
+
+def file_results(run: Run) -> list[tuple[int, int, str, str]]:
+    return [(p.done, p.total, p.item, p.result.kind) for p in run.progress if p.phase == "files"]
+
+
+def test_the_files_tab_is_saved_by_level_and_subject_before_the_feed_scan(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111")]], files=["P.4考試二.數學卷.pdf", "小六 英文.docx"])
+
+    result = run()
+
+    assert files_under(tmp_path / "files") == [
+        "P4/數學/P.4考試二.數學卷.pdf",
+        "P6/英文/小六 英文.docx",
+    ]
+    assert file_results(run) == [
+        (1, 2, "P.4考試二.數學卷.pdf", "saved"),
+        (2, 2, "小六 英文.docx", "saved"),
+    ]
+    assert [p.phase for p in run.progress] == ["files", "files", "scan", "posts"]
+    assert (result.files_saved, result.files_known, result.files_failed, result.saved) == (
+        2,
+        0,
+        0,
+        1,
+    )
+
+
+def test_files_already_on_disk_are_skipped_and_logged_as_such(tmp_path: Path) -> None:
+    run = Run(tmp_path, [], files=["P1 中文.pdf", "P2 數學.pdf"])
+    (tmp_path / "files" / "P1" / "中文").mkdir(parents=True)
+    (tmp_path / "files" / "P1" / "中文" / "P1 中文.pdf").write_bytes(b"from an earlier run")
+
+    result = run()
+
+    assert run.tab.saved == ["P2 數學.pdf"]
+    assert file_results(run) == [
+        (1, 2, "P1 中文.pdf", "skipped-known"),
+        (2, 2, "P2 數學.pdf", "saved"),
+    ]
+    assert (result.files_saved, result.files_known) == (1, 1)
+
+
+def test_a_failed_file_is_reported_leaves_nothing_and_the_run_goes_on(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111")]], files=["P1 中文.pdf", "P2 數學.pdf"])
+    run.tab.fails["P1 中文.pdf"] = RuntimeError("no download route worked")
+
+    result = run()
+
+    [first, _] = [p for p in run.progress if p.phase == "files"]
+    assert first.result.kind == "failed"
+    assert "no download route worked" in first.result.detail
+    assert files_under(tmp_path / "files") == ["P2/數學/P2 數學.pdf"]
+    assert (result.files_failed, result.files_saved, result.saved) == (1, 1, 1)
+
+
+def test_cancel_between_files_stops_before_the_next_and_the_feed_scan(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111")]], files=["P1 中文.pdf", "P2 數學.pdf"])
+    run.on_progress = lambda p: run.stopping.set()
+
+    result = run()
+
+    assert run.tab.saved == ["P1 中文.pdf"]
+    assert not run.feed.scanned
+    assert (result.outcome, result.files_saved) == ("cancelled", 1)
+
+
+def test_signed_out_checkpoint_and_blocked_in_the_files_tab_stop_the_run(tmp_path: Path) -> None:
+    run = Run(tmp_path, [[paper("111")]], files=["P1 中文.pdf", "P2 數學.pdf"])
+    run.tab.fails["P1 中文.pdf"] = RpcError("signed-out", "Facebook sent Edge to /login")
+
+    with pytest.raises(RpcError) as raised:
+        run()
+
+    assert raised.value.reason == "signed-out"
+    assert run.tab.saved == []
+    assert not run.feed.scanned
+    assert files_under(tmp_path) == []

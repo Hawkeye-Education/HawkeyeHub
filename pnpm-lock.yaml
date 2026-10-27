@@ -132,6 +132,30 @@ importers:
         specifier: 5.0.5
         version: 5.0.5(@types/node@22.17.2)(happy-dom@21.0.4)(vite@7.3.6(@types/node@22.17.2)(jiti@2.7.0)(lightningcss@1.33.0))
 
+  plugins/fb-test-paper-downloader:
+    devDependencies:
+      '@hawkeye-hub/fake-hub':
+        specifier: workspace:*
+        version: link:../../packages/fake-hub
+      '@hawkeye-hub/hub-api':
+        specifier: workspace:*
+        version: link:../../packages/hub-api
+      happy-dom:
+        specifier: 20.14.6
+        version: 20.14.6
+      i18next:
+        specifier: 26.4.2
+        version: 26.4.2(typescript@6.0.3)
+      vite:
+        specifier: 7.3.6
+        version: 7.3.6(@types/node@26.6.5)(jiti@2.7.0)(lightningcss@1.33.0)
+      vitest:
+        specifier: 5.0.5
+        version: 5.0.5(@types/node@26.6.5)(happy-dom@20.14.6)(vite@7.3.6(@types/node@26.6.5)(jiti@2.7.0)(lightningcss@1.33.0))
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+
   plugins/pdf-watermark-eraser:
     devDependencies:
       '@hawkeye-hub/fake-hub':

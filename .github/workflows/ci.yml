@@ -24,6 +24,8 @@ jobs:
       # Each Plugin's built UI passes what its release checks (PLUGIN_STANDARD.md §9.3).
       - run: pnpm --filter pdf-watermark-eraser build
       - run: pnpm plugin-format check plugins/pdf-watermark-eraser
+      - run: pnpm --filter fb-test-paper-downloader build
+      - run: pnpm plugin-format check plugins/fb-test-paper-downloader
       - run: pnpm --filter receipt-extractor build
       - run: pnpm plugin-format check plugins/receipt-extractor
 
@@ -124,6 +126,23 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           working-directory: plugins/pdf-watermark-eraser/backend
+      - run: uv sync --locked
+      - run: uv run pytest
+      - run: uv run pyright
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+
+  fb-test-paper-downloader-backend:
+    # Its only Supported Platform is win32-x64.
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: plugins/fb-test-paper-downloader/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          working-directory: plugins/fb-test-paper-downloader/backend
       - run: uv sync --locked
       - run: uv run pytest
       - run: uv run pyright

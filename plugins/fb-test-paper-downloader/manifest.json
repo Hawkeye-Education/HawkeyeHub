@@ -1,0 +1,18 @@
+{
+  "id": "fb-test-paper-downloader",
+  "version": "0.1.0",
+  "hubApi": "^1.3.0",
+  "name": {
+    "en-HK": "Facebook Test Paper Downloader",
+    "zh-HK": "Facebook 試卷下載"
+  },
+  "description": {
+    "en-HK": "Download the test papers shared in a Facebook group into a folder, sorted by level and subject.",
+    "zh-HK": "把 Facebook 群組分享的試卷下載到資料夾，按年級及科目分類。"
+  },
+  "platforms": ["win32-x64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "python", "python": "3.12" },
+  "assistant": { "kind": "none" }
+}
