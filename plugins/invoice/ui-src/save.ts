@@ -1,8 +1,9 @@
 // Writing Invoices into the save folder (spec #201, *Saving*): one `<Invoice No.>.docx` each,
 // never over an existing file. Busy is the caller's, around the whole save.
 
-import type { FolderPath, HubError } from "@hawkeye-hub/hub-api";
+import type { FolderPath } from "@hawkeye-hub/hub-api";
 import { fillTemplate } from "./fill";
+import { hubError, refused } from "./hub-error";
 import {
   InvoiceNo,
   type CalendarDate,
@@ -34,34 +35,11 @@ export async function writeInvoice(
     );
     return { kind: "written" };
   } catch (e) {
-    // Every window.hub rejection is a HubError (ADR 0009); TypeScript cannot type a promise's rejection.
-    const err = e as HubError;
-    switch (err.code) {
-      case "exists":
-        return { kind: "exists" };
-      case "write-failed":
-        return { kind: "failed", message: err.message };
-      case "backend-error":
-      case "store-not-declared":
-      case "bad-path":
-      case "not-found":
-      case "no-provider":
-      case "provider-missing":
-      case "provider-rejected":
-      case "provider-unreachable":
-      case "folder-not-opened":
-      case "secret-name-invalid":
-      case "secret-too-large":
-        throw new Error(`hub.files.writeBytes refused with ${err.code}`, {
-          cause: e,
-        });
-      default: {
-        const unreachable: never = err;
-        throw new Error(`unhandled HubError ${String(unreachable)}`, {
-          cause: e,
-        });
-      }
-    }
+    const err = hubError(e);
+    if (err.code === "exists") return { kind: "exists" };
+    if (err.code === "write-failed")
+      return { kind: "failed", message: err.message };
+    return refused("hub.files.writeBytes", err);
   }
 }
 
