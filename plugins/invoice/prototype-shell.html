@@ -1,0 +1,377 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway, never merged. Answers "Plugin UI: how do the two modes, the review list and the
+  fill-in form fit together?" (issue #195).
+  The editing screen itself is settled (#194, variant B: form beside a live page). This prototype is about what
+  SURROUNDS it: choosing Import or Fill in, the Cash Flow Sheet read, setup (key, template, save folder),
+  empty / error states, and what Save reports.
+  Three shells, switchable via ?variant=A|B|C (or ← →). The bar's scenario menus change the fake world.
+  Double-click to open; no network. All data fake; the "page" is a crude stand-in, not the real template.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>PROTOTYPE · Invoice Plugin UI shell</title>
+<style>
+  :root {
+    --hub-bg: #f4f5f7; --hub-surface: #fff; --hub-text: #1d2330; --hub-muted: #667085;
+    --hub-border: #d8dce3; --hub-accent: #2f5bd3; --hub-danger: #c0362c; --hub-warn-bg: #fff3c4;
+    --hub-ok: #1f7a4d; --hub-radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: var(--hub-bg); color: var(--hub-text); }
+  h1 { font-size: 20px; margin: 0; } h2 { font-size: 16px; margin: 0; }
+  button { font: inherit; padding: 6px 12px; border: 1px solid var(--hub-border); border-radius: var(--hub-radius); background: var(--hub-surface); cursor: pointer; }
+  button[data-variant=primary] { background: var(--hub-accent); color: #fff; border-color: var(--hub-accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.link { border: 0; background: none; color: var(--hub-accent); padding: 0; }
+  input, select { font: inherit; padding: 5px 8px; border: 1px solid var(--hub-border); border-radius: 6px; width: 100%; }
+  input[readonly] { background: var(--hub-bg); }
+  label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--hub-muted); }
+  label.flagged input, label.flagged select { border-color: var(--hub-danger); background: #fff6f5; }
+  .err { color: var(--hub-danger); }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .stack { display: flex; flex-direction: column; gap: 12px; }
+  .grow { flex: 1; } .muted { color: var(--hub-muted); }
+  .card { background: var(--hub-surface); border: 1px solid var(--hub-border); border-radius: var(--hub-radius); padding: 16px; }
+  .chip { font-size: 11px; padding: 1px 7px; border-radius: 99px; border: 1px solid; white-space: nowrap; }
+  .chip.ready { color: var(--hub-ok); } .chip.warned { color: #9a6b00; } .chip.fill { color: var(--hub-accent); }
+  .chip.blocked { color: #fff; background: var(--hub-danger); border-color: var(--hub-danger); } .chip.skipped { color: var(--hub-muted); }
+  .banner { background: var(--hub-warn-bg); border: 1px solid #e7c95b; border-radius: var(--hub-radius); padding: 8px 12px; }
+  .banner.block { background: #fde8e6; border-color: var(--hub-danger); }
+  .banner ul { margin: 4px 0 0; padding-left: 18px; }
+  .folder { display: flex; gap: 8px; align-items: center; }
+  .folder code { background: var(--hub-bg); padding: 4px 8px; border-radius: 6px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .log { background: var(--hub-surface); border: 1px solid var(--hub-border); border-radius: var(--hub-radius); padding: 8px 12px; font: 12px/1.6 ui-monospace, monospace; }
+  .log .success { color: var(--hub-ok); } .log .danger { color: var(--hub-danger); }
+  .spin::before { content: "⟳ "; display: inline-block; animation: s 1s linear infinite; } @keyframes s { to { transform: rotate(360deg); } }
+  main { padding: 16px; padding-bottom: 90px; max-width: 1200px; margin: 0 auto; }
+
+  /* editing screen (settled in #194) */
+  .ed { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+  .ed-form { position: sticky; top: 12px; }
+  .paper-wrap { background: #e6e8ec; border-radius: var(--hub-radius); padding: 16px; min-height: 420px; }
+  .paper { background: #fff; box-shadow: 0 2px 10px #0003; max-width: 560px; margin: 0 auto; padding: 28px 32px; font: 12px/1.5 Georgia, serif; aspect-ratio: 210/297; }
+  .paper h3 { text-align: center; margin: 0 0 12px; } .paper td { padding: 3px 6px; border-bottom: 1px solid #ddd; }
+  .paper mark { background: #ffd84d; }
+  .gate { display: grid; place-items: center; text-align: center; min-height: 420px; border: 2px dashed var(--hub-border); border-radius: var(--hub-radius); background: var(--hub-surface); padding: 24px; }
+
+  /* A: start page */
+  .a-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .a-mode { text-align: left; padding: 20px; display: flex; flex-direction: column; gap: 6px; border-width: 2px; }
+  .a-mode:hover:not(:disabled) { border-color: var(--hub-accent); }
+  .a-mode b { font-size: 16px; }
+  .check li { margin: 6px 0; } .check .done { color: var(--hub-ok); }
+  /* B: tabs */
+  .b-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--hub-border); margin-bottom: 12px; }
+  .b-tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: none; padding: 8px 16px; }
+  .b-tabs button[aria-selected=true] { border-bottom-color: var(--hub-accent); font-weight: 600; }
+  details.b-set > summary { cursor: pointer; }
+  /* C: list-first */
+  .c-grid { display: grid; grid-template-columns: 260px 340px 1fr; gap: 16px; align-items: start; }
+  .c-list { display: flex; flex-direction: column; gap: 4px; position: sticky; top: 12px; }
+  .c-item { text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; }
+  .c-item[aria-current=true] { border-color: var(--hub-accent); box-shadow: inset 3px 0 0 var(--hub-accent); }
+  .c-item.skipped { opacity: .55; }
+
+  #switcher { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); background: #111; color: #fff; border-radius: 99px; padding: 6px 12px; display: flex; gap: 10px; align-items: center; box-shadow: 0 6px 20px #0006; z-index: 10; font-size: 12px; white-space: nowrap; }
+  #switcher button { background: #333; color: #fff; border: 0; border-radius: 99px; padding: 4px 10px; }
+  #switcher select { background: #222; color: #fff; border: 1px solid #444; width: auto; padding: 2px 4px; font-size: 12px; }
+  #state { position: fixed; right: 12px; bottom: 70px; max-width: 360px; z-index: 9; font-size: 11px; }
+  #state pre { max-height: 40vh; overflow: auto; background: #111; color: #9fe; padding: 8px; border-radius: 6px; margin: 4px 0 0; }
+  #state summary { cursor: pointer; background: #111; color: #fff; padding: 3px 8px; border-radius: 6px; display: inline-block; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<details id="state"><summary>state</summary><pre></pre></details>
+<div id="switcher">
+  <button id="prev">◀</button><b id="vlabel"></b><button id="next">▶</button>
+  key <select data-w="key"><option>stored</option><option>none</option></select>
+  template <select data-w="template"><option>imported</option><option>none</option></select>
+  folder <select data-w="folder"><option>chosen</option><option>none</option></select>
+  sheet <select data-w="sheet"><option value="ok">3 new rows</option><option value="empty">nothing new</option><option value="denied">not shared</option><option value="offline">offline</option></select>
+  save <select data-w="save"><option value="ok">all write</option><option value="fail">one fails</option></select>
+  <button id="reset">reset</button>
+</div>
+
+<script type="module">
+// ---------------- fake world ----------------
+const W = { key: "stored", template: "imported", folder: "chosen", sheet: "ok", save: "ok" };
+const FOLDER = "D:\\Hawkeye\\Invoices 2026";
+const METHODS = ["Cash", "Bank Transfer", "FPS", "Cheque", "Other"];
+const TODAY = "2026-11-14";
+let invoiced = 41;            // rows already invoiced (Plugin Data), hidden behind a count
+let fillSeq = 1;
+const sheetRows = () => [
+  { item: 212, no: "TXN-20261103-0001", date: "2026-11-03", amt: 3200, desc: "Tuition fee", remark: "Chan / Nov 8 lessons" },
+  { item: 213, no: "TXN-20261104-0001", date: "2026-11-04", amt: 1600, desc: "Tuition fee", remark: "Wong Mei Ling FPS" },
+  { item: 214, no: "TXN-2026115-03",    date: "2026-11-05", amt: 950,  desc: "Workshop",    remark: "" },
+  { item: 215, no: "TXN-20261120-0001", date: "2026-11-20", amt: 3200, desc: "Tuition fee", remark: "paid in advance" },
+];
+const toInvoice = (r) => ({ ...r, from: "", student: "", method: "", remarks: "", by: "Staff A", items: [{ desc: r.desc, amt: r.amt }], skipped: false, fromSheet: true });
+const blankInvoice = () => ({ no: "", date: TODAY, from: "", student: "", method: "", remarks: "", by: "Staff A", items: [{ desc: "", amt: 0 }], skipped: false, fromSheet: false });
+
+// review per #190/#191
+function review(inv) {
+  const f = [];
+  if (inv.fromSheet && !/^TXN-\d{8}-\d{4}$/.test(inv.no)) f.push({ field: "no", kind: "block", msg: `Row ${inv.item}: Transaction ID invalid. Fix it on the Cash Flow Sheet and import again.` });
+  if (inv.date > TODAY) f.push({ field: "date", kind: "warn", msg: "Date is in the future" });
+  for (const [k, m] of [["from", "Received from"], ["student", "Student Name"], ["method", "Payment Method"]]) if (!inv[k]) f.push({ field: k, kind: "fill", msg: `${m} is empty` });
+  if (!inv.fromSheet && inv.items.some((i) => !i.desc || !(i.amt > 0))) f.push({ field: "items", kind: "fill", msg: "Line item needs a description and amount" });
+  return f;
+}
+function status(inv) {
+  if (inv.skipped) return "skipped";
+  const f = review(inv);
+  if (f.some((x) => x.kind === "block")) return "blocked";
+  if (f.some((x) => x.kind === "fill")) return "fill";
+  if (f.some((x) => x.kind === "warn")) return "warned";
+  return "ready";
+}
+const LABEL = { ready: "ready", warned: "warned", fill: "to fill in", blocked: "blocked: fix on sheet", skipped: "skipped" };
+const chip = (inv) => `<span class="chip ${status(inv)}">${LABEL[status(inv)]}</span>`;
+const total = (inv) => inv.items.reduce((s, i) => s + Number(i.amt || 0), 0);
+const hkd = (n) => n.toLocaleString("en-HK", { style: "currency", currency: "HKD" });
+
+// ---------------- app state ----------------
+const S = {
+  variant: new URLSearchParams(location.search).get("variant") ?? "A",
+  mode: null,                 // A: null = start page | "import" | "fill"; B: tab; C: always the list
+  read: "idle",               // idle | loading | ok | empty | denied | offline
+  batch: [], i: 0,
+  fill: blankInvoice(),
+  result: null,               // { lines: [{tone,text}] } after a save
+};
+const cur = () => (S.mode === "fill" ? S.fill : S.batch[S.i]);
+const setupReady = () => W.key === "stored";       // needed to read the sheet
+const canPreview = () => W.template === "imported";
+const savable = () => (S.mode === "fill" ? [S.fill] : S.batch).filter((i) => ["ready", "warned"].includes(status(i)));
+const canSave = () => canPreview() && W.folder === "chosen" && savable().length > 0;
+const dirty = () => S.batch.some((b) => b.from || b.student || b.method || b.skipped) || S.fill.from || S.fill.student;
+
+function readSheet() {
+  S.read = "loading"; S.result = null; render();
+  setTimeout(() => {
+    S.read = W.sheet === "ok" ? "ok" : W.sheet;
+    S.batch = W.sheet === "ok" ? sheetRows().map(toInvoice) : []; S.i = 0;
+    render();
+  }, 700);
+}
+
+function save() {
+  const list = savable(); const lines = [];
+  list.forEach((inv, n) => {
+    if (!inv.fromSheet) inv.no = `INV-${TODAY.replaceAll("-", "")}-${String(fillSeq++).padStart(4, "0")}`;
+    if (W.save === "fail" && n === 1) { lines.push({ tone: "danger", text: `FAIL  ${inv.no}.docx: a file with this name is already in the folder. Not marked invoiced; it comes back next import.` }); return; }
+    lines.push({ tone: "success", text: `OK    ${inv.no}.docx` }); inv.saved = true; if (inv.fromSheet) invoiced++;
+  });
+  S.result = { lines, ok: lines.filter((l) => l.tone === "success").length, failed: lines.filter((l) => l.tone === "danger").length };
+  S.batch = S.batch.filter((b) => !b.saved); S.i = 0;
+  if (S.mode === "fill" && !S.fill.saved) {} else if (S.mode === "fill") S.fill = blankInvoice();
+  render();
+}
+
+// ---------------- shared pieces ----------------
+const folderField = (label = "Save Invoices into") => `<label>${label}<div class="folder"><code>${W.folder === "chosen" ? FOLDER : "No folder chosen"}</code><button data-act="browse">Browse…</button></div></label>`;
+const templateLine = () => W.template === "imported"
+  ? `<div class="row"><span>Official Receipt template: <b>Official Receipt.docx</b> <span class="muted">(imported 12 Nov)</span></span><button class="link" data-act="template">Change template…</button></div>`
+  : `<div class="row"><span class="err">No Official Receipt template yet.</span><button data-act="template">Import template…</button></div>`;
+const keyLine = () => W.key === "stored"
+  ? `<div class="row"><span>Google key: <b>stored</b></span><button class="link" data-act="key">Replace key…</button></div>`
+  : `<div class="row"><span class="err">No Google service-account key.</span><button data-act="key">Import key file…</button></div>`;
+
+function readState() {
+  switch (S.read) {
+    case "loading": return `<p class="spin muted">Reading the Cash Flow Sheet…</p>`;
+    case "empty": return `<div class="card stack"><h2>Nothing new to invoice</h2><p class="muted">Every Revenues row on the Cash Flow Sheet already has an Invoice (${invoiced} rows).</p><div class="row"><button data-act="read">Read again</button></div></div>`;
+    case "denied": return `<div class="card stack"><h2 class="err">Can't open the Cash Flow Sheet</h2><p>The sheet isn't shared with the plugin's Google account. Ask whoever owns the sheet to share it (Viewer) with the service account, then read again.</p><div class="row"><button data-variant="primary" data-act="read">Read again</button><button data-act="key">Replace key…</button></div></div>`;
+    case "offline": return `<div class="card stack"><h2 class="err">Can't reach Google</h2><p>Check the internet connection, then read again.</p><div class="row"><button data-variant="primary" data-act="read">Read again</button></div></div>`;
+  }
+  return "";
+}
+
+function resultPanel() {
+  if (!S.result) return "";
+  const { lines, ok, failed } = S.result;
+  return `<div class="stack card"><div class="row"><b class="grow">Saved ${ok} Invoice${ok === 1 ? "" : "s"}${failed ? `, ${failed} failed` : ""}.</b><button data-act="open">Open folder</button><button class="link" data-act="dismiss">Dismiss</button></div>
+    <div class="log">${lines.map((l) => `<div class="${l.tone}">${l.text}</div>`).join("")}</div></div>`;
+}
+
+function banner(inv) {
+  const f = review(inv).filter((x) => x.kind !== "fill"); if (!f.length) return "";
+  const b = f.some((x) => x.kind === "block");
+  return `<div class="banner ${b ? "block" : ""}"><b>${b ? "Can't be saved" : "Check before saving"}</b><ul>${f.map((x) => `<li>${x.msg}</li>`).join("")}</ul></div>`;
+}
+function formHtml(inv) {
+  const f = review(inv); const fl = (k) => f.find((x) => x.field === k);
+  const field = (k, label, input) => `<label class="${fl(k) && fl(k).kind !== "fill" ? "flagged" : ""}">${label}${input}${fl(k) && fl(k).kind !== "fill" ? `<span class="err">${fl(k).msg}</span>` : ""}</label>`;
+  const ro = inv.fromSheet ? "readonly" : "";
+  return `
+    ${field("no", "Receipt No.", `<input value="${inv.no || "assigned on Save (INV-…)"}" readonly>`)}
+    ${field("date", `Date${inv.fromSheet ? " (from sheet)" : ""}`, `<input type="date" data-k="date" value="${inv.date}" ${ro}>`)}
+    ${field("from", "Received from (Parent / Guardian)", `<input data-k="from" value="${inv.from}">`)}
+    ${field("student", "Student Name", `<input data-k="student" value="${inv.student}">`)}
+    ${inv.fromSheet ? `<p class="muted" style="margin:0;font-size:12px">Sheet Remark: “${inv.remark || "—"}”</p>` : ""}
+    ${inv.items.map((it, i) => `<div class="row"><label style="flex:3">Description<input data-item="${i}" data-ik="desc" value="${it.desc}" ${ro}></label><label style="flex:1">HKD<input type="number" data-item="${i}" data-ik="amt" value="${it.amt}" ${ro}></label></div>`).join("")}
+    ${inv.fromSheet ? "" : `<button type="button" data-act="additem">+ Line item</button>`}
+    ${field("method", "Payment Method", `<select data-k="method"><option></option>${METHODS.map((m) => `<option ${m === inv.method ? "selected" : ""}>${m}</option>`).join("")}</select>`)}
+    ${field("remarks", "Remarks", `<input data-k="remarks" value="${inv.remarks}">`)}
+    ${field("by", "Received by", `<input data-k="by" value="${inv.by}">`)}`;
+}
+function paper(inv) {
+  if (!canPreview()) return `<div class="gate"><div class="stack" style="max-width:340px"><h2>No Official Receipt template</h2><p class="muted">Import the template .docx once; the plugin remembers it. Until then you can fill in Invoices but not preview or save them.</p><div><button data-variant="primary" data-act="template">Import template…</button></div></div></div>`;
+  const v = (x) => x ? x : `<mark>⚠ missing</mark>`;
+  return `<div class="paper-wrap"><div class="paper"><h3>HAWKEYE EDUCATION<br>OFFICIAL RECEIPT 正式收據</h3>
+    <table style="width:100%;border-collapse:collapse">
+    <tr><td>Receipt No.</td><td><b>${inv.no || "INV-…"}</b></td></tr><tr><td>Date</td><td><b>${inv.date}</b></td></tr>
+    <tr><td>Received from</td><td><b>${v(inv.from)}</b></td></tr><tr><td>Student Name</td><td><b>${v(inv.student)}</b></td></tr>
+    ${inv.items.map((i) => `<tr><td>${v(i.desc)}</td><td style="text-align:right"><b>${hkd(Number(i.amt || 0))}</b></td></tr>`).join("")}
+    <tr><td style="text-align:right">Total</td><td style="text-align:right"><b>${hkd(total(inv))}</b></td></tr></table>
+    <p>Payment Method: ${inv.method ? METHODS.map((m) => `${m === inv.method ? "☑" : "☐"} ${m}`).join("  ") : v("")}</p>
+    <p>Remarks: ${inv.remarks || "—"}</p><p style="margin-top:40px">Received by: <b>${inv.by}</b> &nbsp; Signature: ________ &nbsp; Chop: ________</p></div></div>`;
+}
+function saveButton() {
+  const n = savable().length;
+  const why = !canPreview() ? "Import the template first" : W.folder !== "chosen" ? "Choose a save folder first" : !n ? "Nothing ready to save" : "";
+  return `${why ? `<span class="muted">${why}</span>` : ""}<button data-variant="primary" data-act="save" ${canSave() ? "" : "disabled"}>${S.mode === "fill" ? "Save" : `Save ${n} Invoice${n === 1 ? "" : "s"}`}</button>`;
+}
+// the settled editing screen; `picker` = what sits above it for Import
+function editor({ picker = true } = {}) {
+  const inv = cur(); if (!inv) return "";
+  const imp = S.mode !== "fill";
+  return `<div class="ed">
+    <form class="card stack ed-form" onsubmit="return false">${formHtml(inv)}
+      ${imp ? `<div class="row"><button type="button" data-act="skip">${inv.skipped ? "Un-skip" : "Skip this one"}</button><span class="grow"></span><button type="button" data-act="nextinv" ${S.i < S.batch.length - 1 ? "" : "disabled"}>Next ›</button></div>` : ""}
+    </form>
+    <div class="stack">${picker && imp ? `<div class="row"><select data-act="pick" style="width:auto">${S.batch.map((b, i) => `<option value="${i}" ${i === S.i ? "selected" : ""}>${i + 1}. ${b.no} — ${LABEL[status(b)]}</option>`).join("")}</select></div>` : ""}
+      ${banner(inv)}${paper(inv)}</div></div>`;
+}
+const invoicedNote = () => `<span class="muted">${invoiced} rows already invoiced, not shown</span>`;
+
+// ---------------- Variant A: Start page, then a mode screen ----------------
+// Two-step like Tutor Finder. The start page holds setup as a checklist and the two big mode buttons.
+// Choosing Import reads the sheet; the mode screen has ‹ Back to the start page.
+function VariantA() {
+  if (!S.mode) {
+    const items = [
+      [W.key === "stored", "Google key", keyLine(), "Needed to read the Cash Flow Sheet."],
+      [W.template === "imported", "Official Receipt template", templateLine(), "Needed to preview and save."],
+      [W.folder === "chosen", "Save folder", folderField(""), "Where every Invoice .docx is written."],
+    ];
+    const allSet = items.every(([d]) => d);
+    return `<div class="stack">
+      <h1>Invoices</h1>
+      <div class="a-modes">
+        <button class="card a-mode" data-act="mode-import" ${setupReady() ? "" : "disabled"}><b>Import from Cash Flow Sheet</b><span class="muted">Make an Invoice for every new Revenues row, review them, save them together.</span>${setupReady() ? "" : `<span class="err">Import the Google key first.</span>`}</button>
+        <button class="card a-mode" data-act="mode-fill"><b>Fill in by hand</b><span class="muted">One blank Invoice for revenue that isn't on the sheet.</span></button>
+      </div>
+      <details class="card" ${allSet ? "" : "open"}><summary><b>Setup</b> ${allSet ? `<span class="chip ready">all set</span>` : `<span class="chip blocked">${items.filter(([d]) => !d).length} to do</span>`}</summary>
+        <ol class="check">${items.map(([d, t, ctl, hint]) => `<li><span class="${d ? "done" : ""}">${d ? "✓" : "○"} <b>${t}</b></span> <span class="muted">${hint}</span><div style="margin-top:4px">${ctl}</div></li>`).join("")}</ol></details>
+    </div>`;
+  }
+  const head = `<div class="row" style="margin-bottom:12px"><button data-act="back">‹ Back</button>
+    <h1>${S.mode === "import" ? "Import from Cash Flow Sheet" : "New Invoice"}</h1>
+    ${S.mode === "import" && S.read === "ok" ? invoicedNote() : ""}<span class="grow"></span>
+    ${S.mode === "import" && S.read !== "loading" ? `<button data-act="read">Read sheet again</button>` : ""}
+    ${S.mode === "fill" || S.batch.length ? saveButton() : ""}</div>
+    ${W.folder === "chosen" ? "" : `<div class="banner" style="margin-bottom:12px">${folderField("Choose where to save before you can Save")}</div>`}`;
+  return `${head}${resultPanel()}${S.mode === "import" ? (S.read === "ok" && S.batch.length ? editor() : S.read === "ok" ? `<div class="card">All imported Invoices are saved. <button class="link" data-act="back">Back to start</button></div>` : readState()) : editor()}`;
+}
+
+// ---------------- Variant B: Tabs, setup in a strip ----------------
+// Two tabs always visible; each keeps its own work. The sheet is read on opening the Import tab.
+// Setup lives in a collapsible strip above the tabs, opened automatically while anything is missing.
+function VariantB() {
+  if (!S.mode) { S.mode = "import"; if (setupReady()) readSheet(); }
+  const missing = [W.key !== "stored" && "Google key", W.template !== "imported" && "template", W.folder !== "chosen" && "save folder"].filter(Boolean);
+  return `<details class="card b-set" ${missing.length ? "open" : ""} style="margin-bottom:12px"><summary><b>Settings</b> ${missing.length ? `<span class="err">missing: ${missing.join(", ")}</span>` : `<span class="muted">key ✓ · template ✓ · ${FOLDER}</span>`}</summary>
+      <div class="stack" style="margin-top:12px">${keyLine()}${templateLine()}${folderField()}</div></details>
+    <div class="b-tabs" role="tablist">
+      <button role="tab" aria-selected="${S.mode === "import"}" data-act="tab-import">Import from Cash Flow Sheet ${S.batch.length ? `<span class="chip fill">${S.batch.length}</span>` : ""}</button>
+      <button role="tab" aria-selected="${S.mode === "fill"}" data-act="tab-fill">Fill in by hand</button>
+      <span class="grow"></span>
+      <div class="row" style="padding-bottom:6px">${S.mode === "import" && S.read === "ok" ? invoicedNote() : ""}${S.mode === "import" && setupReady() && S.read !== "loading" ? `<button data-act="read">↻ Refresh</button>` : ""}${saveButton()}</div>
+    </div>
+    ${resultPanel()}
+    ${S.mode === "fill" ? editor() : !setupReady() ? `<div class="card">Import the Google key in Settings to read the Cash Flow Sheet.</div>` : S.read === "ok" && S.batch.length ? editor() : S.read === "ok" ? `<div class="card">Nothing left in this import.</div>` : readState()}`;
+}
+
+// ---------------- Variant C: One worklist, no modes ----------------
+// No mode choice: the screen opens on a list of Invoices (sheet read on open). "+ New Invoice" adds a
+// hand-filled one to the same list; Save saves everything ready. Setup gates sit where they bite:
+// the template gate replaces the page, the folder field sits next to Save.
+function VariantC() {
+  if (!S.mode) { S.mode = "list"; if (setupReady()) readSheet(); }
+  const list = S.batch;
+  const counts = {}; list.forEach((b) => (counts[status(b)] = (counts[status(b)] ?? 0) + 1));
+  const top = `<div class="row" style="margin-bottom:12px"><h1>Invoices</h1>
+      ${Object.entries(counts).map(([k, n]) => `<span class="chip ${k}">${n} ${LABEL[k]}</span>`).join("")}
+      <span class="grow"></span><div style="width:340px">${folderField("Save into")}</div>${saveButton()}</div>
+    <div class="row muted" style="margin:-4px 0 12px;font-size:12px">${templateLine()} · ${keyLine()}</div>`;
+  const side = `<div class="c-list">
+      ${list.map((b, i) => `<button class="c-item ${b.skipped ? "skipped" : ""}" data-act="pick-c" data-i="${i}" aria-current="${i === S.i}"><span class="row" style="gap:6px"><b class="grow" style="font-size:12px">${b.no || "New (by hand)"}</b>${chip(b)}</span><span class="muted" style="font-size:12px">${b.fromSheet ? `Row ${b.item} · ` : ""}${hkd(total(b))} · ${b.from || "no parent yet"}</span></button>`).join("")}
+      <button data-act="new-c">+ New Invoice (by hand)</button>
+      <div class="muted" style="font-size:12px">${!setupReady() ? `<span class="err">No Google key: sheet not read.</span>` : S.read === "loading" ? `<span class="spin">Reading sheet…</span>` : S.read === "ok" || S.read === "empty" ? `${invoiced} sheet rows already invoiced, not shown. <button class="link" data-act="read">Read again</button>` : `<span class="err">Sheet not read (${S.read}).</span> <button class="link" data-act="read">Retry</button>`}</div></div>`;
+  const inv = cur();
+  const body = inv ? `<form class="card stack ed-form" onsubmit="return false">${formHtml(inv)}<div class="row"><button type="button" data-act="skip">${inv.fromSheet ? (inv.skipped ? "Un-skip" : "Skip") : "Remove"}</button></div></form><div class="stack">${banner(inv)}${paper(inv)}</div>`
+    : `<div class="card" style="grid-column:span 2">${S.read === "loading" ? `<p class="spin muted">Reading the Cash Flow Sheet…</p>` : ["denied", "offline"].includes(S.read) ? readState() : `<h2>Nothing to invoice</h2><p class="muted">No new Revenues rows on the sheet. Use <b>+ New Invoice</b> for revenue that isn't on it.</p>`}</div>`;
+  return `${top}${resultPanel()}<div class="c-grid">${side}${body}</div>`;
+}
+
+// ---------------- events ----------------
+const app = document.getElementById("app");
+app.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]"); if (!el || el.tagName === "SELECT") return;
+  const a = el.dataset.act;
+  if (a === "mode-import") { S.mode = "import"; readSheet(); return; }
+  if (a === "mode-fill") S.mode = "fill";
+  if (a === "back") { if (dirty() && !confirm("Leave? Unsaved changes to these Invoices are lost.")) return; S.mode = null; S.batch = []; S.read = "idle"; S.result = null; S.fill = blankInvoice(); }
+  if (a === "tab-import") { S.mode = "import"; if (S.read === "idle" && setupReady()) return readSheet(); }
+  if (a === "tab-fill") S.mode = "fill";
+  if (a === "read") { if (S.batch.some((b) => b.from || b.student) && !confirm("Read the sheet again? Edits to unsaved Invoices are lost.")) return; return readSheet(); }
+  if (a === "browse") { W.folder = "chosen"; syncBar(); }
+  if (a === "template") { W.template = "imported"; syncBar(); alert("(stub) File picker → validates placeholders → keeps it in Plugin Data."); }
+  if (a === "key") { W.key = "stored"; syncBar(); }
+  if (a === "save") return save();
+  if (a === "open") alert(`(stub) hub.files.openFolder("${FOLDER}")`);
+  if (a === "dismiss") S.result = null;
+  if (a === "skip") { const inv = cur(); if (S.variant === "C" && !inv.fromSheet) { S.batch.splice(S.i, 1); S.i = Math.max(0, S.i - 1); } else inv.skipped = !inv.skipped; }
+  if (a === "nextinv") S.i++;
+  if (a === "additem") cur().items.push({ desc: "", amt: 0 });
+  if (a === "pick-c") S.i = +el.dataset.i;
+  if (a === "new-c") { S.batch.push(blankInvoice()); S.i = S.batch.length - 1; }
+  render();
+});
+app.addEventListener("change", (e) => {
+  if (e.target.dataset.act === "pick") { S.i = +e.target.value; return render(); }
+  edit(e.target); render();
+});
+app.addEventListener("input", (e) => edit(e.target));
+function edit(el) {
+  const inv = cur(); if (!inv || el.readOnly) return;
+  if (el.dataset.k) inv[el.dataset.k] = el.value;
+  if (el.dataset.item) inv.items[+el.dataset.item][el.dataset.ik] = el.dataset.ik === "amt" ? Number(el.value) : el.value;
+}
+
+// ---------------- switcher ----------------
+const VARIANTS = { A: ["Start page → mode screen", VariantA], B: ["Tabs + settings strip", VariantB], C: ["One worklist, no modes", VariantC] };
+const keys = Object.keys(VARIANTS);
+function render() {
+  document.getElementById("vlabel").textContent = `${S.variant} · ${VARIANTS[S.variant][0]}`;
+  app.innerHTML = VARIANTS[S.variant][1]();
+  document.querySelector("#state pre").textContent = JSON.stringify({ world: W, mode: S.mode, read: S.read, invoiced, current: S.i, batch: S.batch.map((b) => `${b.no || "(new)"}: ${LABEL[status(b)]}`), fill: S.mode === "fill" ? LABEL[status(S.fill)] : undefined, result: S.result && `${S.result.ok} ok, ${S.result.failed} failed` }, null, 1);
+}
+function resetApp() { Object.assign(S, { mode: null, read: "idle", batch: [], i: 0, fill: blankInvoice(), result: null }); render(); }
+function go(d) { S.variant = keys[(keys.indexOf(S.variant) + d + keys.length) % keys.length]; const u = new URL(location); u.searchParams.set("variant", S.variant); history.replaceState(null, "", u); resetApp(); }
+const syncBar = () => document.querySelectorAll("[data-w]").forEach((s) => (s.value = W[s.dataset.w]));
+document.querySelectorAll("[data-w]").forEach((s) => (s.onchange = () => { W[s.dataset.w] = s.value; if (s.dataset.w === "sheet" || s.dataset.w === "key") resetApp(); else render(); }));
+document.getElementById("prev").onclick = () => go(-1);
+document.getElementById("next").onclick = () => go(1);
+document.getElementById("reset").onclick = resetApp;
+document.addEventListener("keydown", (e) => { if (e.target.closest("input,select,textarea")) return; if (e.key === "ArrowLeft") go(-1); if (e.key === "ArrowRight") go(1); });
+if (!VARIANTS[S.variant]) S.variant = "A";
+syncBar(); render();
+</script>
+</body>
+</html>
