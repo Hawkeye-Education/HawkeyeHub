@@ -52,8 +52,30 @@
           <button id="dismiss" type="button"></button>
         </div>
       </section>
-      <section id="import" role="tabpanel">
-        <p id="import-placeholder" class="muted"></p>
+      <section id="import" role="tabpanel" class="stack">
+        <div class="row">
+          <button id="refresh" type="button"></button>
+          <span id="invoiced-count" class="muted"></span>
+        </div>
+        <div id="refresh-confirm" class="row" role="alert" hidden>
+          <span id="refresh-confirm-text"></span>
+          <button id="refresh-discard" type="button"></button>
+          <button id="refresh-cancel" type="button"></button>
+        </div>
+        <p id="import-state" role="status"></p>
+        <div><button id="read-again" type="button" hidden></button></div>
+        <div id="batch-view" class="stack" hidden>
+          <div id="batch" class="row"></div>
+          <div class="row">
+            <button id="skip" type="button"></button>
+            <button id="next" type="button"></button>
+          </div>
+          <p id="blocked" role="alert"></p>
+          <p class="muted">
+            <span id="remark-label"></span>
+            <span id="remark" class="remark"></span>
+          </p>
+        </div>
       </section>
       <section id="fill-in" role="tabpanel" hidden></section>
     </main>

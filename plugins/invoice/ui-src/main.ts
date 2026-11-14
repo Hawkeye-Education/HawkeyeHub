@@ -3,13 +3,30 @@
 // itself naming what's missing, and collapses to one line once all are set. Nothing here logs.
 
 import type { HubError } from "@hawkeye-hub/hub-api";
-import { KEY_SECRET, parseKey, parseSheetLink, sheetLink } from "./google";
+import {
+  KEY_SECRET,
+  parseCashFlow,
+  parseKey,
+  parseSheetLink,
+  readSheet,
+  SheetReadFailed,
+  sheetLink,
+  type KeyParse,
+  type ReadFailure,
+} from "./google";
 import { t } from "./i18n";
 import { loadPluginData, savePluginData, type PluginData } from "./plugin-data";
 import { checkTemplate, loadTemplate, saveTemplate } from "./template";
 import { createEditor } from "./editor";
-import { blankDraft, today } from "./invoice";
-import { review } from "./review";
+import { blankDraft, today, type InvoiceDraft } from "./invoice";
+import {
+  importEntry,
+  review,
+  reviewBatch,
+  type BlockReason,
+  type EntryStatus,
+  type ImportEntry,
+} from "./review";
 import { fileName, saveFillIn } from "./save";
 
 /** The element `<tag id=id>`, which index.html always has. */
@@ -52,8 +69,9 @@ function update(next: PluginData): void {
 
 const stored = await hub.secrets.get(KEY_SECRET);
 // The stored text passed parseKey before it was saved; parsed again here, at the boundary.
-let keyStored =
-  stored.kind === "stored" && parseKey(stored.value).kind === "valid";
+let key: KeyParse =
+  stored.kind === "stored" ? parseKey(stored.value) : { kind: "invalid" };
+let keyStored = key.kind === "valid";
 let template = await loadTemplate();
 
 // --- The tabs and Save -----------------------------------------------------------------------
@@ -77,22 +95,275 @@ const resultLog = byId("hub-log", "result-log");
 const openFolderButton = byId("button", "open-folder");
 tabs.import.tab.textContent = t("tab.import");
 tabs["fill-in"].tab.textContent = t("tab.fillIn");
-byId("p", "import-placeholder").textContent = t("import.placeholder");
 openFolderButton.textContent = t("result.openFolder");
 byId("button", "dismiss").textContent = t("result.dismiss");
 
 const rememberedName = (): string =>
   data.receivedBy.kind === "set" ? data.receivedBy.name : "";
-let fillDraft = blankDraft(today(), rememberedName());
-const fillEditor = createEditor("none", template, (draft) => {
-  fillDraft = draft;
+/** Remembers a newly typed Received by for later Invoices, then refreshes Save. */
+function edited(draft: InvoiceDraft): void {
   const name = draft.receivedBy.trim();
   if (name !== "" && name !== rememberedName())
     update({ ...data, receivedBy: { kind: "set", name } });
   else showSave();
+}
+let fillDraft = blankDraft(today(), rememberedName());
+const fillEditor = createEditor("none", template, (draft) => {
+  fillDraft = draft;
+  edited(draft);
 });
 tabs["fill-in"].panel.append(fillEditor.element);
 fillEditor.load(fillDraft, t("editor.assignedOnSave"));
+
+// --- Import from Cash Flow Sheet --------------------------------------------------------------
+
+/**
+ * The Import tab. `batch.entries` is the batch in sheet order; Save (#207) writes each entry
+ * `reviewBatch` calls ready or warned, then drops the written ones and records them as invoiced.
+ */
+type ImportState =
+  | { readonly kind: "setup" }
+  | { readonly kind: "reading" }
+  | { readonly kind: "failed"; readonly failure: ReadFailure | "layoutChanged" }
+  | { readonly kind: "batch"; readonly batch: Batch };
+interface Batch {
+  entries: ImportEntry[];
+  /** Rows not shown because their Transaction ID is already invoiced. */
+  readonly hidden: number;
+  /** The entry in the editor. */
+  current: number;
+  /** Whether staff typed or skipped anything since the read, so Refresh asks first. */
+  edited: boolean;
+}
+let importState: ImportState = { kind: "setup" };
+
+const refreshButton = byId("button", "refresh");
+const readAgainButton = byId("button", "read-again");
+const invoicedCount = byId("span", "invoiced-count");
+const refreshConfirm = byId("div", "refresh-confirm");
+const importStatus = byId("p", "import-state");
+const batchView = byId("div", "batch-view");
+const batchPicker = byId("div", "batch");
+const skipButton = byId("button", "skip");
+const nextButton = byId("button", "next");
+const blockedText = byId("p", "blocked");
+const remark = byId("span", "remark");
+refreshButton.textContent = t("import.refresh");
+readAgainButton.textContent = t("import.readAgain");
+byId("span", "refresh-confirm-text").textContent = t("import.confirm");
+byId("button", "refresh-discard").textContent = t("import.discard");
+byId("button", "refresh-cancel").textContent = t("import.cancel");
+nextButton.textContent = t("import.next");
+byId("span", "remark-label").textContent = t("import.remark");
+
+const importEditor = createEditor("sheet-values", template, (draft) => {
+  if (importState.kind !== "batch")
+    throw new Error("the Import editor changed with no batch");
+  const { batch } = importState;
+  batch.entries[batch.current] = { ...entryAt(batch), draft };
+  batch.edited = true;
+  edited(draft);
+});
+batchView.append(importEditor.element);
+
+function entryAt(batch: Batch): ImportEntry {
+  const entry = batch.entries[batch.current];
+  if (entry === undefined) throw new Error("the current entry is gone");
+  return entry;
+}
+
+/** Reads the sheet into a fresh batch, replacing the last one. */
+async function read(): Promise<void> {
+  if (key.kind === "invalid" || data.sheet.kind === "none") {
+    importState = { kind: "setup" };
+    showImport();
+    return;
+  }
+  const signer = key.key;
+  importState = { kind: "reading" };
+  showImport();
+  let grid: string[][];
+  try {
+    grid = await readSheet(signer, data.sheet.id);
+  } catch (e) {
+    if (!(e instanceof SheetReadFailed)) throw e;
+    importState = { kind: "failed", failure: e.failure };
+    showImport();
+    return;
+  }
+  const sheet = parseCashFlow(grid);
+  if (sheet.kind === "layoutChanged") {
+    importState = { kind: "failed", failure: "layoutChanged" };
+    showImport();
+    return;
+  }
+  const invoiced = new Set<string>(data.invoiced);
+  const fresh = sheet.rows.filter((r) => !invoiced.has(r.transactionId));
+  importState = {
+    kind: "batch",
+    batch: {
+      entries: fresh.map((r) => importEntry(r, rememberedName())),
+      hidden: sheet.rows.length - fresh.length,
+      current: 0,
+      edited: false,
+    },
+  };
+  showImport();
+  loadCurrent();
+}
+
+/** Puts the current entry in the editor. */
+function loadCurrent(): void {
+  if (importState.kind !== "batch") return;
+  const { batch } = importState;
+  if (batch.entries.length === 0) return;
+  let entry = entryAt(batch);
+  // A name typed into an earlier entry since the read: staff type their own name once.
+  if (entry.draft.receivedBy === "") {
+    entry = {
+      ...entry,
+      draft: { ...entry.draft, receivedBy: rememberedName() },
+    };
+    batch.entries[batch.current] = entry;
+  }
+  importEditor.load(entry.draft, entry.sourceRow.transactionId);
+  showSave();
+}
+
+/** The Import tab for `importState`: its message, the batch and the current entry's status. */
+function showImport(): void {
+  refreshConfirm.hidden = true;
+  refreshButton.disabled = importState.kind === "reading";
+  readAgainButton.hidden = true;
+  invoicedCount.textContent = "";
+  batchView.hidden = true;
+  switch (importState.kind) {
+    case "setup":
+      importStatus.textContent = t("import.setup");
+      break;
+    case "reading":
+      importStatus.textContent = t("import.reading");
+      break;
+    case "failed": {
+      const { failure } = importState;
+      importStatus.textContent =
+        failure === "noAccess" && key.kind === "valid"
+          ? t("import.noAccess", { email: key.key.client_email })
+          : t(`import.${failure}`);
+      readAgainButton.hidden =
+        failure !== "noAccess" && failure !== "unreachable";
+      break;
+    }
+    case "batch": {
+      const { batch } = importState;
+      if (batch.hidden > 0)
+        invoicedCount.textContent = t("import.invoiced", {
+          count: batch.hidden,
+        });
+      importStatus.textContent =
+        batch.entries.length === 0 ? t("import.nothingNew") : "";
+      batchView.hidden = batch.entries.length === 0;
+      break;
+    }
+    default:
+      importState satisfies never;
+  }
+}
+
+/** The picker, Skip, Next, Remark and blocked banner for the batch's current entry. */
+function showEntry(batch: Batch, statuses: readonly EntryStatus[]): void {
+  batchPicker.replaceChildren(
+    ...batch.entries.map((entry, i) => {
+      const status = statuses[i];
+      if (status === undefined) throw new Error("an entry has no status");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset["status"] = status.kind;
+      button.setAttribute("aria-current", String(i === batch.current));
+      button.textContent = `${entry.sourceRow.transactionId} · ${t(`import.status.${status.kind}`)}`;
+      button.addEventListener("click", () => {
+        batch.current = i;
+        loadCurrent();
+      });
+      return button;
+    }),
+  );
+  const entry = entryAt(batch);
+  const status = statuses[batch.current];
+  if (status === undefined) throw new Error("the current entry has no status");
+  skipButton.textContent = entry.skipped
+    ? t("import.unskip")
+    : t("import.skip");
+  nextButton.disabled = batch.current === batch.entries.length - 1;
+  remark.textContent = entry.sourceRow.remark;
+  blockedText.textContent =
+    status.kind === "blocked"
+      ? [
+          ...status.reasons.map(blockedBecause),
+          t("import.blocked.fix", { itemNo: entry.sourceRow.itemNo }),
+        ].join(" ")
+      : "";
+  switch (status.kind) {
+    case "to-fill-in":
+    case "warned":
+      importEditor.flag(status.problems);
+      break;
+    case "ready":
+    case "blocked":
+    case "skipped":
+      importEditor.flag([]);
+      break;
+    default:
+      status satisfies never;
+  }
+}
+
+function blockedBecause(reason: BlockReason): string {
+  switch (reason.kind) {
+    case "transactionId":
+    case "amount":
+    case "date":
+      return t(`import.blocked.${reason.kind}`);
+    case "duplicate":
+      return t("import.blocked.duplicate", {
+        rows: new Intl.ListFormat("en", { type: "conjunction" }).format(
+          reason.itemNos,
+        ),
+      });
+    default:
+      return reason satisfies never;
+  }
+}
+
+skipButton.addEventListener("click", () => {
+  if (importState.kind !== "batch")
+    throw new Error("Skip showed with no batch");
+  const { batch } = importState;
+  const entry = entryAt(batch);
+  batch.entries[batch.current] = { ...entry, skipped: !entry.skipped };
+  batch.edited = true;
+  showSave();
+});
+nextButton.addEventListener("click", () => {
+  if (importState.kind !== "batch")
+    throw new Error("Next showed with no batch");
+  importState.batch.current++;
+  loadCurrent();
+});
+refreshButton.addEventListener("click", () => {
+  if (importState.kind === "batch" && importState.batch.edited)
+    refreshConfirm.hidden = false;
+  else void read();
+});
+byId("button", "refresh-discard").addEventListener("click", () => {
+  void read();
+});
+byId("button", "refresh-cancel").addEventListener("click", () => {
+  refreshConfirm.hidden = true;
+});
+readAgainButton.addEventListener("click", () => {
+  void read();
+});
 
 function showTab(): void {
   for (const [name, { tab, panel }] of Object.entries(tabs)) {
@@ -106,15 +377,25 @@ function showTab(): void {
 function showSave(): void {
   const fillReview = review(fillDraft, today());
   fillEditor.flag(fillReview.kind === "ready" ? [] : fillReview.problems);
+  const statuses =
+    importState.kind === "batch"
+      ? reviewBatch(importState.batch.entries, today())
+      : [];
+  if (importState.kind === "batch" && importState.batch.entries.length > 0)
+    showEntry(importState.batch, statuses);
   const why = [
     ...(template.kind === "none" ? [t("save.noTemplate")] : []),
     ...(data.folder.kind === "none" ? [t("save.noFolder")] : []),
   ];
   switch (active) {
-    case "import":
-      saveButton.textContent = t("save.many", { n: 0 });
-      why.push(t("save.nothingReady")); // until the Import ticket
+    case "import": {
+      const n = statuses.filter(
+        (s) => s.kind === "ready" || s.kind === "warned",
+      ).length;
+      saveButton.textContent = t("save.many", { n });
+      if (n === 0) why.push(t("save.nothingReady"));
       break;
+    }
     case "fill-in":
       saveButton.textContent = t("save.one");
       if (fillReview.kind === "to-fill-in") why.push(t("save.toFillIn"));
@@ -122,7 +403,8 @@ function showSave(): void {
     default:
       active satisfies never;
   }
-  saveButton.disabled = why.length > 0;
+  // Saving the batch is #207's: until then Import's Save shows its count but stays disabled.
+  saveButton.disabled = why.length > 0 || active === "import";
   saveReason.textContent = why.join(" ");
 }
 
@@ -258,6 +540,12 @@ function show(): void {
 }
 show();
 showTab();
+void read();
+
+/** Reads the sheet once the key and link are both set, if nothing was read for want of them. */
+function readOnceSetUp(): void {
+  if (importState.kind === "setup") void read();
+}
 
 keyFile.addEventListener("change", () => {
   void (async () => {
@@ -265,7 +553,8 @@ keyFile.addEventListener("change", () => {
     if (file === undefined) return; // the picker was cancelled
     const text = await file.text();
     keyFile.value = ""; // choosing the same file again fires change again
-    if (parseKey(text).kind === "invalid") {
+    const picked = parseKey(text);
+    if (picked.kind === "invalid") {
       keyError.textContent = t("key.invalid");
       return;
     }
@@ -276,8 +565,10 @@ keyFile.addEventListener("change", () => {
       return;
     }
     keyError.textContent = "";
+    key = picked;
     keyStored = true;
     show();
+    readOnceSetUp();
   })();
 });
 
@@ -290,6 +581,7 @@ sheetInput.addEventListener("change", () => {
   sheetError.textContent = "";
   sheetInput.value = sheetLink(parsed.id);
   update({ ...data, sheet: { kind: "set", id: parsed.id } });
+  readOnceSetUp();
 });
 
 templateFile.addEventListener("change", () => {
@@ -332,6 +624,7 @@ templateFile.addEventListener("change", () => {
     templateError.textContent = "";
     template = { kind: "imported", template: imported };
     fillEditor.useTemplate(template);
+    importEditor.useTemplate(template);
     show();
   })();
 });

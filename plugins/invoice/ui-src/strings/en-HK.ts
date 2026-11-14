@@ -37,7 +37,43 @@ export const enHK = {
     fillIn: "Fill in by hand",
   },
   import: {
-    placeholder: "Importing from the Cash Flow Sheet is coming soon.",
+    refresh: "↻ Refresh",
+    readAgain: "Read again",
+    invoiced_one: "{{count}} row already invoiced, not shown",
+    invoiced_other: "{{count}} rows already invoiced, not shown",
+    confirm: "Refreshing discards what you've typed into this batch.",
+    discard: "Discard and refresh",
+    cancel: "Keep editing",
+    setup:
+      "Add the service-account key and the Cash Flow Sheet link in Settings to read the sheet.",
+    reading: "Reading the Cash Flow Sheet…",
+    nothingNew: "Nothing new on the Cash Flow Sheet.",
+    keyRejected:
+      "Google rejected the service-account key. Replace it in Settings.",
+    noAccess:
+      "The Cash Flow Sheet isn't shared with the service account. Ask the sheet's owner to share it with {{email}}, then read again.",
+    unreachable:
+      "Couldn't reach Google. Check the connection, then read again.",
+    layoutChanged:
+      "The Cash Flow Sheet's layout changed: its header row isn't the one this Plugin reads. Nothing was imported.",
+    skip: "Skip",
+    unskip: "Don't skip",
+    next: "Next",
+    remark: "Remark on the sheet:",
+    status: {
+      "to-fill-in": "to fill in",
+      ready: "ready",
+      warned: "warned",
+      blocked: "blocked: fix on sheet",
+      skipped: "skipped",
+    },
+    blocked: {
+      transactionId: "Transaction ID invalid.",
+      duplicate: "Transaction ID used on rows {{rows}}.",
+      amount: "Amount can't be read or isn't above 0.",
+      date: "Date can't be read.",
+      fix: "Item No. {{itemNo}}: fix it on the Cash Flow Sheet and import again.",
+    },
   },
   save: {
     one: "Save",

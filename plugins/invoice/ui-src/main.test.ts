@@ -33,6 +33,11 @@ beforeEach(() => {
   localStorage.clear();
   indexedDB = new IDBFactory(); // a fresh, empty template store per test
   vi.resetModules();
+  // No test reaches the real Google: one that doesn't stub it is offline.
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))),
+  );
 });
 
 /** Opens the Plugin UI against `fake`. */
@@ -708,5 +713,472 @@ test("problems are listed above the page and highlighted on it", async () => {
     expect(banner()).toEqual([]);
   });
   expect(highlighted()).toEqual([]);
+  vi.useRealTimers();
+});
+
+// --- Import from Cash Flow Sheet ------------------------------------------------------------
+
+const EMAIL = "invoice@example.iam.gserviceaccount.com";
+const keys = await crypto.subtle.generateKey(
+  {
+    name: "RSASSA-PKCS1-v1_5",
+    modulusLength: 2048,
+    publicExponent: new Uint8Array([1, 0, 1]),
+    hash: "SHA-256",
+  },
+  true,
+  ["sign", "verify"],
+);
+const der = new Uint8Array(
+  await crypto.subtle.exportKey("pkcs8", keys.privateKey),
+);
+const base64 = btoa(String.fromCharCode(...der));
+const pem = `-----BEGIN PRIVATE KEY-----\n${(base64.match(/.{1,64}/g) ?? []).join("\n")}\n-----END PRIVATE KEY-----\n`;
+const signingKeyJson = JSON.stringify({
+  type: "service_account",
+  project_id: "example",
+  client_email: EMAIL,
+  private_key: pem,
+});
+
+const HEADER = [
+  "Item No.",
+  "Datetime",
+  "Revenues/Expenses",
+  "Transaction ID",
+  "Description",
+  "Frequency",
+  "Amount",
+  "Status",
+  "Responsible person",
+  "Remark",
+  "InFolder?",
+  "Receipt unmatched",
+];
+/** One synthetic sheet row. Google leaves out trailing blank cells, so `remark` may end it. */
+const row = (
+  itemNo: string,
+  date: string,
+  kind: string,
+  id: string,
+  amount: string,
+  remark = "",
+): string[] => [
+  itemNo,
+  date,
+  kind,
+  id,
+  kind === "Revenues" ? "Agent Commission" : "Office rent",
+  "One-Time",
+  amount,
+  "Pending",
+  "Bank",
+  remark,
+];
+
+/** How Google answers one read: the rows (header first), an HTTP error at one step, or no network. */
+type Answer =
+  string[][] | { step: "token" | "values"; status: number } | "offline";
+
+interface Google {
+  reads: number;
+  urls: string[];
+}
+
+/** Stubs `fetch` as Google: each read (a token request, then values.get) answers with the next of
+ * `answers`, the last repeating. */
+function stubGoogle(answers: Answer[]): Google {
+  const google: Google = { reads: 0, urls: [] };
+  let attempts = 0;
+  const current = (): Answer =>
+    answers[Math.min(attempts, answers.length) - 1] ?? "offline";
+  const failure = (step: "token" | "values"): Promise<Response> | null => {
+    const answer = current();
+    if (answer === "offline")
+      return Promise.reject(new TypeError("Failed to fetch"));
+    if (Array.isArray(answer) || answer.step !== step) return null;
+    return Promise.resolve(
+      Response.json({ error: "synthetic" }, { status: answer.status }),
+    );
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string, init: RequestInit) => {
+      if (url === "https://oauth2.googleapis.com/token") {
+        attempts++;
+        google.reads = attempts;
+        return (
+          failure("token") ??
+          Promise.resolve(
+            Response.json({ access_token: "ya29.test", expires_in: 3599 }),
+          )
+        );
+      }
+      google.urls.push(url);
+      expect(new Headers(init.headers).get("authorization")).toBe(
+        "Bearer ya29.test",
+      );
+      const failed = failure("values");
+      if (failed !== null) return failed;
+      return Promise.resolve(Response.json({ values: current() }));
+    }),
+  );
+  return google;
+}
+
+/** Plugin Data with the sheet link set and `invoiced` remembered, as an earlier session left it. */
+function remember(invoiced: string[]): void {
+  localStorage.setItem(
+    "invoice",
+    JSON.stringify({
+      v: 1,
+      sheet: { kind: "set", id: SHEET_ID },
+      folder: { kind: "none" },
+      receivedBy: { kind: "none" },
+      invoiced,
+    }),
+  );
+}
+
+/** Opens the Plugin with the key and sheet link stored, Google answering `answers`. */
+async function openImport(
+  answers: Answer[],
+  invoiced: string[] = [],
+): Promise<[FakeHub, Google]> {
+  remember(invoiced);
+  const fake = installFakeHub({ manifest, displayLanguage: "en-HK" });
+  fake.secrets.stored.set("google-service-account", signingKeyJson);
+  const google = stubGoogle(answers);
+  await open(fake);
+  await readDone(google, 1);
+  return [fake, google];
+}
+
+async function readDone(google: Google, reads: number): Promise<void> {
+  await vi.waitFor(() => {
+    expect(google.reads).toBe(reads);
+    expect($<HTMLButtonElement>("refresh").disabled).toBe(false);
+  });
+}
+
+/** Each batch entry's picker button: its Invoice No. and status. */
+const picker = (): string[] =>
+  [...$("batch").querySelectorAll("button")].map((b) => b.textContent);
+
+function inImport(selector: string): HTMLElement {
+  const found = $("import").querySelector<HTMLElement>(selector);
+  if (found === null) throw new Error(`no ${selector} in Import`);
+  return found;
+}
+// The editor's fields are inputs; a test that types into the textarea names it.
+const importField = (name: string): HTMLInputElement =>
+  inImport(`[name="${name}"]`) as HTMLInputElement;
+function typeImport(name: string, value: string): void {
+  const input = importField(name);
+  input.value = value;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+function chooseImportPayment(value: string): void {
+  const radio = inImport(
+    `[name="paymentMethod"][value="${value}"]`,
+  ) as HTMLInputElement;
+  radio.checked = true;
+  radio.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+const SHEET = [
+  HEADER,
+  row(
+    "1",
+    "3/7/2026",
+    "Revenues",
+    "TXN-20260703-0001",
+    "HKD$1,234.50",
+    "Mrs Wong, for Wong Siu Ming, cash",
+  ),
+  row("2", "3/7/2026", "Expenses", "TXO-20260703-0001", "HKD$8,000.00"),
+  row("3", "15/10/2026", "Revenues", "TXN-20261015-0001", "HKD$600.00"),
+];
+
+test("the sheet is read on open, and each Revenues row becomes an Invoice to fill in", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const [, google] = await openImport([SHEET]);
+
+  expect(google.urls).toEqual([
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent("Cashflow_sheet!A6:L")}`,
+  ]);
+  expect(picker()).toEqual([
+    "TXN-20260703-0001 · to fill in",
+    "TXN-20261015-0001 · to fill in",
+  ]);
+  expect(inImport(".invoice-no").textContent).toBe("TXN-20260703-0001");
+  expect(importField("date").value).toBe("2026-07-03");
+  expect(importField("date").readOnly).toBe(true);
+  expect(importField("item-amount").value).toBe("1,234.50");
+  expect(importField("item-amount").readOnly).toBe(true);
+  expect(importField("item-description").value).toBe("Agent Commission");
+  expect(importField("item-description").readOnly).toBe(false);
+  expect(text("remark")).toBe("Mrs Wong, for Wong Siu Ming, cash");
+  expect(importField("remarks").value).toBe("");
+  expect($("import").querySelector(".add-line-item")).toBeNull();
+  vi.useRealTimers();
+});
+
+test("rows already invoiced are hidden behind a count", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  await openImport([SHEET], ["TXN-20260703-0001"]);
+  expect(picker()).toEqual(["TXN-20261015-0001 · to fill in"]);
+  expect(text("invoiced-count")).toBe("1 row already invoiced, not shown");
+  vi.useRealTimers();
+});
+
+test("with every row invoiced, Import says nothing new and still shows the count", async () => {
+  await openImport([SHEET], ["TXN-20260703-0001", "TXN-20261015-0001"]);
+  expect(text("import-state")).toBe("Nothing new on the Cash Flow Sheet.");
+  expect(text("invoiced-count")).toBe("2 rows already invoiced, not shown");
+  expect($("batch-view").hidden).toBe(true);
+});
+
+test("with no key stored, Import points to Settings and reads nothing", async () => {
+  remember([]);
+  const google = stubGoogle([SHEET]);
+  await open(installFakeHub({ manifest, displayLanguage: "en-HK" }));
+  expect(text("import-state")).toBe(
+    "Add the service-account key and the Cash Flow Sheet link in Settings to read the sheet.",
+  );
+  expect(google.reads).toBe(0);
+});
+
+test("adding the key in Settings reads the sheet", async () => {
+  remember([]);
+  const google = stubGoogle([SHEET]);
+  await open(installFakeHub({ manifest, displayLanguage: "en-HK" }));
+  pick("key-file", new File([signingKeyJson], "key.json"));
+  await readDone(google, 1);
+  expect(picker()).toHaveLength(2);
+});
+
+const NO_ACCESS = `The Cash Flow Sheet isn't shared with the service account. Ask the sheet's owner to share it with ${EMAIL}, then read again.`;
+const KEY_REJECTED =
+  "Google rejected the service-account key. Replace it in Settings.";
+const UNREACHABLE =
+  "Couldn't reach Google. Check the connection, then read again.";
+const LAYOUT_CHANGED =
+  "The Cash Flow Sheet's layout changed: its header row isn't the one this Plugin reads. Nothing was imported.";
+
+test.each<[string, Answer, string, boolean]>([
+  ["token 400", { step: "token", status: 400 }, KEY_REJECTED, false],
+  ["values 401", { step: "values", status: 401 }, KEY_REJECTED, false],
+  ["values 403", { step: "values", status: 403 }, NO_ACCESS, true],
+  ["values 404", { step: "values", status: 404 }, NO_ACCESS, true],
+  ["no network", "offline", UNREACHABLE, true],
+  ["values 503", { step: "values", status: 503 }, UNREACHABLE, true],
+  [
+    "a renamed header",
+    [
+      HEADER.map((h) => (h === "Amount" ? "Amount (HKD)" : h)),
+      ...SHEET.slice(1),
+    ],
+    LAYOUT_CHANGED,
+    false,
+  ],
+  ["an empty range", [], LAYOUT_CHANGED, false],
+])("a read answered with %s says so", async (_, answer, message, readAgain) => {
+  await openImport([answer]);
+  expect(text("import-state")).toBe(message);
+  expect($("read-again").hidden).toBe(!readAgain);
+  expect($("batch-view").hidden).toBe(true);
+});
+
+test("Read again reads the sheet once it is shared", async () => {
+  const [, google] = await openImport([{ step: "values", status: 403 }, SHEET]);
+  $("read-again").click();
+  await readDone(google, 2);
+  expect(picker()).toHaveLength(2);
+  expect($("read-again").hidden).toBe(true);
+});
+
+/** Picks entry `i` in the batch picker. */
+function choose(i: number): void {
+  const button = $("batch").querySelectorAll("button")[i];
+  if (button === undefined) throw new Error(`no entry ${String(i)}`);
+  button.click();
+}
+
+test("rows the sheet must fix are blocked, naming why and the Item No.", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  await openImport([
+    [
+      HEADER,
+      row("4", "3/7/2026", "Revenues", "TXN-2026073-0001", "HKD$100.00"),
+      row("5", "3/7/2026", "Revenues", "TXN-20260704-0001", "HKD$100.00"),
+      row("6", "4/7/2026", "Revenues", "TXN-20260704-0002", "HKD$100.00"),
+      row("7", "4/7/2026", "Revenues", "TXN-20260704-0002", "HKD$200.00"),
+      row("8", "5/7/2026", "Revenues", "TXN-20260705-0001", "HKD$0.00"),
+      row("9", "5/7/2026", "Revenues", "TXN-20260705-0002", "1,000"),
+      row("10", "31/2/2026", "Revenues", "TXN-20260231-0001", "HKD$100.00"),
+      row("11", "5/7/2026", "Revenues", "TXN-20260705-0003", "HKD$100.00"),
+    ],
+  ]);
+  expect(picker()).toEqual([
+    "TXN-2026073-0001 · blocked: fix on sheet",
+    "TXN-20260704-0001 · blocked: fix on sheet",
+    "TXN-20260704-0002 · blocked: fix on sheet",
+    "TXN-20260704-0002 · blocked: fix on sheet",
+    "TXN-20260705-0001 · blocked: fix on sheet",
+    "TXN-20260705-0002 · blocked: fix on sheet",
+    "TXN-20260231-0001 · blocked: fix on sheet",
+    "TXN-20260705-0003 · to fill in",
+  ]);
+  const banner = (i: number): string => {
+    choose(i);
+    return text("blocked");
+  };
+  expect(banner(0)).toBe(
+    "Transaction ID invalid. Item No. 4: fix it on the Cash Flow Sheet and import again.",
+  );
+  expect(banner(1)).toBe(
+    "Transaction ID invalid. Item No. 5: fix it on the Cash Flow Sheet and import again.",
+  );
+  expect(banner(2)).toBe(
+    "Transaction ID used on rows 6 and 7. Item No. 6: fix it on the Cash Flow Sheet and import again.",
+  );
+  expect(banner(3)).toBe(
+    "Transaction ID used on rows 6 and 7. Item No. 7: fix it on the Cash Flow Sheet and import again.",
+  );
+  expect(banner(4)).toBe(
+    "Amount can't be read or isn't above 0. Item No. 8: fix it on the Cash Flow Sheet and import again.",
+  );
+  expect(banner(5)).toBe(
+    "Amount can't be read or isn't above 0. Item No. 9: fix it on the Cash Flow Sheet and import again.",
+  );
+  expect(banner(6)).toBe(
+    "Date can't be read. Item No. 10: fix it on the Cash Flow Sheet and import again.",
+  );
+  expect(banner(7)).toBe("");
+  vi.useRealTimers();
+});
+
+/** Fills what the sheet doesn't hold for the Import tab's current Invoice. */
+function fillImport(): void {
+  typeImport("receivedFrom", "Mrs Wong");
+  typeImport("studentName", "Wong Siu Ming");
+  chooseImportPayment("cash");
+  typeImport("receivedBy", "Ms Lee");
+}
+
+test("a filled-in Invoice turns ready, a future-dated one warned, and Save counts both", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  await openImport([
+    [
+      HEADER,
+      row("1", "3/7/2026", "Revenues", "TXN-20260703-0001", "HKD$1,234.50"),
+      row("2", "1/12/2026", "Revenues", "TXN-20261201-0001", "HKD$600.00"),
+    ],
+  ]);
+  expect(saveButton().textContent).toBe("Save 0 Invoices");
+  expect(importField("receivedFrom").getAttribute("aria-invalid")).toBe("true");
+
+  fillImport();
+  expect(picker()[0]).toBe("TXN-20260703-0001 · ready");
+  expect(saveButton().textContent).toBe("Save 1 Invoices");
+
+  choose(1);
+  // Received by is remembered from the first Invoice.
+  expect(importField("receivedBy").value).toBe("Ms Lee");
+  typeImport("receivedFrom", "Mr Chan");
+  typeImport("studentName", "Chan Siu Fong");
+  chooseImportPayment("fps");
+  expect(picker()[1]).toBe("TXN-20261201-0001 · warned");
+  expect(inImport('[data-flag="date"]').textContent).toBe(
+    "This date is after today. Check it before saving.",
+  );
+  expect(saveButton().textContent).toBe("Save 2 Invoices");
+
+  // Each entry keeps what was typed into it.
+  choose(0);
+  expect(importField("receivedFrom").value).toBe("Mrs Wong");
+  vi.useRealTimers();
+});
+
+test("Skip leaves an Invoice out of the count, and Next steps through the batch", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  await openImport([SHEET]);
+  fillImport();
+  expect(saveButton().textContent).toBe("Save 1 Invoices");
+
+  $("skip").click();
+  expect(picker()[0]).toBe("TXN-20260703-0001 · skipped");
+  expect(saveButton().textContent).toBe("Save 0 Invoices");
+  expect(text("skip")).toBe("Don't skip");
+  $("skip").click();
+  expect(picker()[0]).toBe("TXN-20260703-0001 · ready");
+
+  $("next").click();
+  expect(inImport(".invoice-no").textContent).toBe("TXN-20261015-0001");
+  expect(text("remark")).toBe("");
+  expect($<HTMLButtonElement>("next").disabled).toBe(true);
+  vi.useRealTimers();
+});
+
+test("Refresh reads again at once with nothing typed, and asks first when edits would be lost", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const later = [
+    ...SHEET,
+    row("4", "16/10/2026", "Revenues", "TXN-20261016-0001", "HKD$50.00"),
+  ];
+  const [, google] = await openImport([SHEET, SHEET, later]);
+  $("refresh").click();
+  await readDone(google, 2);
+  expect($("refresh-confirm").hidden).toBe(true);
+
+  typeImport("receivedFrom", "Mrs Wong");
+  $("refresh").click();
+  expect($("refresh-confirm").hidden).toBe(false);
+  $("refresh-cancel").click();
+  expect($("refresh-confirm").hidden).toBe(true);
+  expect(google.reads).toBe(2);
+  expect(importField("receivedFrom").value).toBe("Mrs Wong");
+
+  $("refresh").click();
+  $("refresh-discard").click();
+  await readDone(google, 3);
+  expect(picker()).toHaveLength(3);
+  expect(importField("receivedFrom").value).toBe("");
+  vi.useRealTimers();
+});
+
+test("no sheet row or typed name reaches the Plugin's log", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const spies = (["log", "info", "warn", "error"] as const).map((level) =>
+    vi.spyOn(console, level),
+  );
+  const [, google] = await openImport([SHEET, { step: "values", status: 403 }]);
+  fillImport();
+  $("skip").click();
+  $("refresh").click();
+  $("refresh-discard").click();
+  await readDone(google, 2);
+  for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+  vi.useRealTimers();
+});
+
+test("the Import tab previews its Invoice under its Transaction ID", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  await openImport([SHEET]);
+  const importPage = (): string => inImport(".page").textContent;
+  await vi.waitFor(() => {
+    expect(importPage()).toBe(
+      "Import the Official Receipt template in Settings to see the page here.",
+    );
+  });
+
+  pick("template-file", docx(await fixtureTemplate()));
+  fillImport();
+  await vi.waitFor(() => {
+    expect(importPage()).toContain("invoice_no: TXN-20260703-0001");
+  });
+  expect(importPage()).toContain("received_from: Mrs Wong");
+  expect(importPage()).toContain("total: 1,234.50");
   vi.useRealTimers();
 });

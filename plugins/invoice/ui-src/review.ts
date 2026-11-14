@@ -2,8 +2,12 @@
 // Import batch's review (blocked: fix on sheet, duplicates, skipped) wraps this per entry.
 
 import type { HkdCents } from "./amountInWords";
+import { money } from "./fill";
+import type { SheetRow } from "./google";
 import {
   CalendarDate,
+  InvoiceNo,
+  type Invoice,
   type InvoiceDraft,
   type InvoiceFields,
   type LineItem,
@@ -124,4 +128,104 @@ export function review(draft: InvoiceDraft, on: CalendarDate): Review {
         problems: [{ field: "date", reason: "future" }],
       }
     : { kind: "ready", invoice };
+}
+
+// --- The Import batch ---------------------------------------------------------------------------
+
+/** An Import batch entry: the Invoice's draft as staff type it, and the sheet row it came from. */
+export interface ImportEntry {
+  readonly draft: InvoiceDraft;
+  readonly sourceRow: SheetRow;
+  readonly skipped: boolean;
+}
+
+/** A sheet row's entry: its date and amount locked in, its description to word for the parent. */
+export function importEntry(row: SheetRow, receivedBy: string): ImportEntry {
+  return {
+    draft: {
+      date: row.date === "unreadable" ? "" : row.date,
+      receivedFrom: "",
+      studentName: "",
+      lineItems: [
+        {
+          description: row.description,
+          amount: row.amount === "unreadable" ? "" : money(row.amount),
+        },
+      ],
+      paymentMethod: { kind: "none" },
+      remarks: "", // never copied from the sheet: Remarks reach the parent
+      receivedBy,
+    },
+    sourceRow: row,
+    skipped: false,
+  };
+}
+
+/** Why an imported Invoice can only be fixed on the Cash Flow Sheet. */
+export type BlockReason =
+  | { readonly kind: "transactionId" }
+  /** Every row sharing the Transaction ID, by Item No. */
+  | { readonly kind: "duplicate"; readonly itemNos: readonly string[] }
+  | { readonly kind: "amount" }
+  | { readonly kind: "date" };
+
+/** An entry's status. Ready and warned carry the Invoice Save writes. */
+export type EntryStatus =
+  | { readonly kind: "blocked"; readonly reasons: readonly BlockReason[] }
+  | { readonly kind: "skipped" }
+  | { readonly kind: "to-fill-in"; readonly problems: readonly Problem[] }
+  | { readonly kind: "ready"; readonly invoice: Invoice }
+  | {
+      readonly kind: "warned";
+      readonly invoice: Invoice;
+      readonly problems: readonly Problem[];
+    };
+
+/** Each entry's status, in order. Duplicates are found across the whole batch. */
+export function reviewBatch(
+  entries: readonly ImportEntry[],
+  on: CalendarDate,
+): EntryStatus[] {
+  return entries.map(({ draft, sourceRow: row, skipped }) => {
+    if (skipped) return { kind: "skipped" };
+    const reasons: BlockReason[] = [];
+    const match = /^TXN-(\d{8})-\d{4}$/.exec(row.transactionId);
+    const invoiceNo = InvoiceNo.safeParse(row.transactionId);
+    if (
+      match === null ||
+      !invoiceNo.success ||
+      (row.date !== "unreadable" && match[1] !== row.date.replace(/-/g, ""))
+    )
+      reasons.push({ kind: "transactionId" });
+    const sharing = entries.filter(
+      (e) => e.sourceRow.transactionId === row.transactionId,
+    );
+    if (sharing.length > 1)
+      reasons.push({
+        kind: "duplicate",
+        itemNos: sharing.map((e) => e.sourceRow.itemNo),
+      });
+    if (row.amount === "unreadable") reasons.push({ kind: "amount" });
+    if (row.date === "unreadable") reasons.push({ kind: "date" });
+    if (reasons.length > 0 || !invoiceNo.success)
+      return { kind: "blocked", reasons };
+
+    const reviewed = review(draft, on);
+    switch (reviewed.kind) {
+      case "to-fill-in":
+        return reviewed;
+      case "ready":
+        return {
+          kind: "ready",
+          invoice: { ...reviewed.invoice, invoiceNo: invoiceNo.data },
+        };
+      case "warned":
+        return {
+          ...reviewed,
+          invoice: { ...reviewed.invoice, invoiceNo: invoiceNo.data },
+        };
+      default:
+        return reviewed satisfies never;
+    }
+  });
 }

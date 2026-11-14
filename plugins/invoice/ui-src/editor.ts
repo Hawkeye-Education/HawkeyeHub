@@ -24,7 +24,7 @@ export interface Editor {
   readonly element: HTMLElement;
   /** The right-hand column, where the Preview renders. */
   readonly page: HTMLElement;
-  /** Shows `draft`, numbered `invoiceNo` (a number, or "Assigned on Save"). Call it first. */
+  /** Shows `draft`, numbered `invoiceNo` (a number, or "Assigned on Save"). The page renders from the first load on. */
   load(draft: InvoiceDraft, invoiceNo: string): void;
   /** Flags each problem on its field and on the page; fields not named are cleared. */
   flag(problems: readonly Problem[]): void;
@@ -65,8 +65,10 @@ export function createEditor(
   let otherText = "";
   let problems: readonly Problem[] = [];
 
+  /** Whether `load` has run: Import flags its editor before any batch is read. */
+  let loaded = false;
   function showPage(): void {
-    preview.show({ template, draft, invoiceNo, problems });
+    if (loaded) preview.show({ template, draft, invoiceNo, problems });
   }
 
   function change(next: InvoiceDraft): void {
@@ -293,6 +295,7 @@ export function createEditor(
       draft = next;
       invoiceNo = number;
       otherText = "";
+      loaded = true;
       render();
     },
     flag,
