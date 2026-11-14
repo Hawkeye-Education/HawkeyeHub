@@ -84,7 +84,7 @@ byId("button", "dismiss").textContent = t("result.dismiss");
 const rememberedName = (): string =>
   data.receivedBy.kind === "set" ? data.receivedBy.name : "";
 let fillDraft = blankDraft(today(), rememberedName());
-const fillEditor = createEditor("none", (draft) => {
+const fillEditor = createEditor("none", template, (draft) => {
   fillDraft = draft;
   const name = draft.receivedBy.trim();
   if (name !== "" && name !== rememberedName())
@@ -331,6 +331,7 @@ templateFile.addEventListener("change", () => {
     await saveTemplate(imported);
     templateError.textContent = "";
     template = { kind: "imported", template: imported };
+    fillEditor.useTemplate(template);
     show();
   })();
 });

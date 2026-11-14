@@ -613,3 +613,100 @@ test("nothing typed into an Invoice reaches the Plugin's log", async () => {
   for (const spy of spies) expect(spy).not.toHaveBeenCalled();
   vi.useRealTimers();
 });
+
+// --- The Preview ----------------------------------------------------------------------------
+
+/** The Fill-in tab's page column, where the Preview renders. */
+const preview = (): HTMLElement => inFillIn(".page");
+
+test("the Preview renders the page Save would write, re-rendering as staff type", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const fake = installFakeHub({ manifest, displayLanguage: "en-HK" });
+  await open(fake);
+  await setUp(fake);
+  $("tab-fill-in").click();
+  type("date", "2026-03-15");
+  fillIn();
+
+  await vi.waitFor(() => {
+    expect(preview().textContent).toContain("received_from: Chan Tai Man");
+  });
+  for (const printed of [
+    "invoice_no: Assigned on Save",
+    "date: 15/03/2026",
+    "Tuition, March",
+    "1,200.50",
+    "total: 1,200.50",
+  ])
+    expect(preview().textContent).toContain(printed);
+
+  type("receivedFrom", "Wong Mei Ling");
+  await vi.waitFor(() => {
+    expect(preview().textContent).toContain("received_from: Wong Mei Ling");
+  });
+  expect(preview().textContent).not.toContain("Chan Tai Man");
+  vi.useRealTimers();
+});
+
+test("with no template the page asks for one, and importing one renders it", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const fake = installFakeHub({ manifest, displayLanguage: "en-HK" });
+  await open(fake);
+  $("tab-fill-in").click();
+  fillIn();
+  await vi.waitFor(() => {
+    expect(preview().textContent).toBe(
+      "Import the Official Receipt template in Settings to see the page here.",
+    );
+  });
+
+  await setUp(fake);
+  await vi.waitFor(() => {
+    expect(preview().textContent).toContain("received_from: Chan Tai Man");
+  });
+  vi.useRealTimers();
+});
+
+/** The problems the banner above the page lists. */
+const banner = (): string[] =>
+  [...preview().querySelectorAll(".problems li")].map((li) => li.textContent);
+/** The text highlighted on the rendered page. */
+const highlighted = (): string[] =>
+  [...preview().querySelectorAll("mark")].map((m) => m.textContent);
+
+test("problems are listed above the page and highlighted on it", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const fake = installFakeHub({ manifest, displayLanguage: "en-HK" });
+  await open(fake);
+  await setUp(fake);
+  $("tab-fill-in").click();
+  fillIn();
+  type("studentName", "");
+  type("item-amount", "12.345");
+
+  await vi.waitFor(() => {
+    expect(banner()).toEqual([
+      "Student Name: Required.",
+      "Amount (HKD), line 1: Enter an amount above 0, such as 1,234.50.",
+    ]);
+  });
+  expect(preview().textContent).toContain("received_from: Chan Tai Man");
+  expect(highlighted()).toEqual(["⚠", "⚠"]);
+
+  type("studentName", "Chan Siu Ming");
+  type("item-amount", "1,200.50");
+  type("date", "2026-12-01");
+  await vi.waitFor(() => {
+    expect(banner()).toEqual([
+      "Date: This date is after today. Check it before saving.",
+    ]);
+  });
+  expect(highlighted()).toEqual(["01/12/2026"]);
+
+  type("date", "2026-11-01");
+  await vi.waitFor(() => {
+    expect(banner()).toEqual([]);
+  });
+  expect(highlighted()).toEqual([]);
+  vi.useRealTimers();
+});

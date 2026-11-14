@@ -12,6 +12,7 @@
     "@hawkeye-hub/fake-hub": "workspace:*",
     "@hawkeye-hub/hub-api": "workspace:*",
     "docx": "9.10.0",
+    "docx-preview": "0.4.1",
     "fake-indexeddb": "6.2.6",
     "happy-dom": "20.14.6",
     "i18next": "26.4.2",

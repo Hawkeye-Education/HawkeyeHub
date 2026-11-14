@@ -88,10 +88,12 @@ async function store(mode: IDBTransactionMode): Promise<IDBObjectStore> {
   return db.transaction(STORE, mode).objectStore(STORE);
 }
 
+/** The template staff imported, or none before the first import. */
+export type StoredTemplate =
+  { kind: "none" } | { kind: "imported"; template: Template };
+
 /** The imported template, or none before the first import; throws on a corrupt record. */
-export async function loadTemplate(): Promise<
-  { kind: "none" } | { kind: "imported"; template: Template }
-> {
+export async function loadTemplate(): Promise<StoredTemplate> {
   const raw: unknown = await request((await store("readonly")).get(KEY));
   if (raw === undefined) return { kind: "none" };
   // Only v1 exists. When V2 lands, add it to Stored and migrate forward here, by `v`.

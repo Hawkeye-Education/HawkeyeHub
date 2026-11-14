@@ -47,6 +47,24 @@ main {
   grid-template-columns: minmax(18rem, 1fr) 2fr;
   gap: var(--hub-space-4);
 }
+/* The Preview: docx-preview's page, scaled to the column in preview.ts. */
+.page {
+  min-width: 0;
+  align-self: start;
+}
+.problems {
+  margin: 0;
+  padding: var(--hub-space-2) var(--hub-space-2) var(--hub-space-2)
+    var(--hub-space-6);
+  border: 1px solid var(--hub-color-danger);
+  border-radius: var(--hub-radius-1);
+  color: var(--hub-color-danger);
+}
+.page mark {
+  background: none;
+  outline: 2px solid var(--hub-color-danger);
+  color: var(--hub-color-danger);
+}
 .line-item {
   display: grid;
   grid-template-columns: 2fr 1fr;

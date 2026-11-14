@@ -9,7 +9,9 @@ import {
   type InvoiceDraft,
   type PaymentKind,
 } from "./invoice";
+import { createPreview } from "./preview";
 import type { Field, Problem } from "./review";
+import type { StoredTemplate } from "./template";
 
 /**
  * `none`: every field editable, as in Fill in. `sheet-values`: the date and the line item's amount
@@ -22,10 +24,12 @@ export interface Editor {
   readonly element: HTMLElement;
   /** The right-hand column, where the Preview renders. */
   readonly page: HTMLElement;
-  /** Shows `draft`, numbered `invoiceNo` (a number, or "Assigned on Save"). */
+  /** Shows `draft`, numbered `invoiceNo` (a number, or "Assigned on Save"). Call it first. */
   load(draft: InvoiceDraft, invoiceNo: string): void;
-  /** Flags each problem on its field; fields not named are cleared. */
+  /** Flags each problem on its field and on the page; fields not named are cleared. */
   flag(problems: readonly Problem[]): void;
+  /** Re-renders the page in a changed template. */
+  useTemplate(template: StoredTemplate): void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -40,14 +44,20 @@ function el<K extends keyof HTMLElementTagNameMap>(
 
 export function createEditor(
   locked: Locked,
+  template: StoredTemplate,
   onChange: (draft: InvoiceDraft) => void,
 ): Editor {
   const form = el("form", { className: "invoice-form stack" });
   form.addEventListener("submit", (e) => {
     e.preventDefault();
   });
-  const page = el("div", { className: "page" });
-  const element = el("div", { className: "editing-screen" }, form, page);
+  const preview = createPreview();
+  const element = el(
+    "div",
+    { className: "editing-screen" },
+    form,
+    preview.element,
+  );
 
   let draft: InvoiceDraft;
   let invoiceNo = "";
@@ -55,8 +65,13 @@ export function createEditor(
   let otherText = "";
   let problems: readonly Problem[] = [];
 
+  function showPage(): void {
+    preview.show({ template, draft, invoiceNo, problems });
+  }
+
   function change(next: InvoiceDraft): void {
     draft = next;
+    showPage();
     onChange(draft);
   }
 
@@ -194,6 +209,7 @@ export function createEditor(
         lineItems: [...draft.lineItems, { description: "", amount: "" }],
       };
       render();
+      showPage();
       onChange(draft);
     });
     form.replaceChildren(
@@ -267,11 +283,12 @@ export function createEditor(
       flagEl.textContent =
         problem === undefined ? "" : t(`problem.${problem.reason}`);
     }
+    showPage();
   }
 
   return {
     element,
-    page,
+    page: preview.element,
     load(next, number) {
       draft = next;
       invoiceNo = number;
@@ -279,5 +296,9 @@ export function createEditor(
       render();
     },
     flag,
+    useTemplate(next) {
+      template = next;
+      showPage();
+    },
   };
 }

@@ -77,6 +77,11 @@ export const enHK = {
     remarks: "Remarks (optional)",
     receivedBy: "Received by",
   },
+  preview: {
+    noTemplate:
+      "Import the Official Receipt template in Settings to see the page here.",
+    line: "{{label}}, line {{n}}",
+  },
   problem: {
     required: "Required.",
     amount: "Enter an amount above 0, such as 1,234.50.",

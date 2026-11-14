@@ -167,6 +167,9 @@ importers:
       docx:
         specifier: 9.10.0
         version: 9.10.0
+      docx-preview:
+        specifier: 0.4.1
+        version: 0.4.1
       fake-indexeddb:
         specifier: 6.2.6
         version: 6.2.6
@@ -1522,6 +1525,9 @@ packages:
 
   dmg-builder@26.16.1:
     resolution: {integrity: sha512-pnI/3Qb24Uk+rMTgIUrsVUKosVgwmBUdF8Zeb8TexOSbpq8MWc7v6l+n+FrEqVkjNZwzBN+XpDS9ENgZ/rkWAw==}
+
+  docx-preview@0.4.1:
+    resolution: {integrity: sha512-Dv4g+LeE0swHpPvNC0lAT0YsR5Zq5pAxw7d3vHQ8EChBLgIrqqe9VPL5nVt2HBJap8bEZbXUI0TJob7kBeNU9w==}
 
   docx@9.10.0:
     resolution: {integrity: sha512-ogiWhZvSTsN6+Pjs5uQrSdyR0TI6A1ou+cVzZ/b1mCfaoiW3cIzaUMnF4fISIA26QBq4xCz7r38GvjMZAYB3iw==}
@@ -3981,6 +3987,10 @@ snapshots:
     transitivePeerDependencies:
       - electron-builder-squirrel-windows
       - supports-color
+
+  docx-preview@0.4.1:
+    dependencies:
+      jszip: 3.10.2
 
   docx@9.10.0:
     dependencies:
