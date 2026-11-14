@@ -30,6 +30,8 @@ export interface Editor {
   flag(problems: readonly Problem[]): void;
   /** Re-renders the page in a changed template. */
   useTemplate(template: StoredTemplate): void;
+  /** Makes every field read-only, or editable again: Save holds the form still while it writes. */
+  setReadOnly(readOnly: boolean): void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -47,7 +49,9 @@ export function createEditor(
   template: StoredTemplate,
   onChange: (draft: InvoiceDraft) => void,
 ): Editor {
-  const form = el("form", { className: "invoice-form stack" });
+  // One fieldset around every field, so disabling it makes the whole form read-only.
+  const fields = el("fieldset", { className: "stack" });
+  const form = el("form", { className: "invoice-form" }, fields);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
   });
@@ -214,12 +218,15 @@ export function createEditor(
       showPage();
       onChange(draft);
     });
-    form.replaceChildren(
+    const number = el("output", { className: "invoice-no" }, invoiceNo);
+    number.dataset["field"] = "invoiceNo";
+    fields.replaceChildren(
       el(
         "div",
         { className: "stack-tight" },
         el("span", {}, t("editor.invoiceNo")),
-        el("output", { className: "invoice-no" }, invoiceNo),
+        number,
+        flagFor("invoiceNo"),
       ),
       labelled(
         t("editor.date"),
@@ -302,6 +309,9 @@ export function createEditor(
     useTemplate(next) {
       template = next;
       showPage();
+    },
+    setReadOnly(readOnly) {
+      fields.disabled = readOnly;
     },
   };
 }

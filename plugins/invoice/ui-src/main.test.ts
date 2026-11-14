@@ -1268,3 +1268,137 @@ test("the Import tab previews its Invoice under its Transaction ID", async () =>
   expect(importPage()).toContain("total: 1,234.50");
   vi.useRealTimers();
 });
+
+/** Holds every `hub.files.writeBytes` until the returned release, as a slow disk would. */
+function holdWrites(): () => void {
+  const real = window.hub;
+  let release = (): void => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  Object.defineProperty(window, "hub", {
+    value: {
+      ...real,
+      files: {
+        ...real.files,
+        writeBytes: async (
+          ...args: Parameters<typeof real.files.writeBytes>
+        ) => {
+          await gate;
+          return real.files.writeBytes(...args);
+        },
+      },
+    },
+    configurable: true,
+  });
+  return release;
+}
+
+test("Refresh and Read again wait while a batch saves, and the saved rows leave the list", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const [fake, google] = await openImport([SHEET]);
+  await setUp(fake);
+  fillImport();
+  const release = holdWrites();
+  saveButton().click();
+  await vi.waitFor(() => {
+    expect(fake.busy.state.kind).toBe("busy");
+  });
+  expect($<HTMLButtonElement>("refresh").disabled).toBe(true);
+  expect($<HTMLButtonElement>("read-again").disabled).toBe(true);
+
+  release();
+  await vi.waitFor(() => {
+    expect(fake.busy.state).toEqual({ kind: "idle" });
+  });
+  expect(picker()).toEqual(["TXN-20261015-0001 · to fill in"]);
+  expect($<HTMLButtonElement>("refresh").disabled).toBe(false);
+  expect($<HTMLButtonElement>("read-again").disabled).toBe(false);
+  expect(google.reads).toBe(1);
+  vi.useRealTimers();
+});
+
+test("the form is read-only while it saves, so nothing typed then is lost", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const [fake] = await openImport([SHEET]);
+  await setUp(fake);
+  $("tab-fill-in").click();
+  fillIn();
+  const release = holdWrites();
+  saveButton().click();
+  await vi.waitFor(() => {
+    expect(fake.busy.state.kind).toBe("busy");
+  });
+  // A field inside a disabled fieldset is disabled (HTML's "actually disabled"); happy-dom's
+  // :disabled doesn't follow the fieldset, so the selector names it.
+  const readOnly = (input: HTMLElement): boolean =>
+    input.matches("fieldset:disabled *");
+  expect(readOnly(field("receivedFrom"))).toBe(true);
+  expect(readOnly(importField("receivedFrom"))).toBe(true);
+
+  release();
+  await vi.waitFor(() => {
+    expect(fake.busy.state).toEqual({ kind: "idle" });
+  });
+  expect(readOnly(field("receivedFrom"))).toBe(false);
+  expect(readOnly(importField("receivedFrom"))).toBe(false);
+  vi.useRealTimers();
+});
+
+test("after a save, Refresh reads again at once when nothing unsaved is left", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const [fake, google] = await openImport([SHEET]);
+  await setUp(fake);
+  fillImport();
+  saveButton().click();
+  await vi.waitFor(() => {
+    expect(picker()).toEqual(["TXN-20261015-0001 · to fill in"]);
+  });
+
+  $("refresh").click();
+  expect($("refresh-confirm").hidden).toBe(true);
+  await readDone(google, 2);
+  vi.useRealTimers();
+});
+
+test("a blocked Invoice shows why on its read-only fields, above the page and on it", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const [fake] = await openImport([
+    [
+      HEADER,
+      row("10", "31/2/2026", "Revenues", "TXN-2026023-0001", "HKD$0.00"),
+    ],
+  ]);
+  await setUp(fake);
+  const flagOn = (field: string): string =>
+    inImport(`[data-flag="${field}"]`).textContent;
+  expect(flagOn("invoiceNo")).toBe("Transaction ID invalid.");
+  expect(flagOn("date")).toBe("Date can't be read.");
+  expect(flagOn("item-amount-0")).toBe(
+    "Amount can't be read or isn't above 0.",
+  );
+  expect(importField("date").getAttribute("aria-invalid")).toBe("true");
+  expect(importField("receivedFrom").getAttribute("aria-invalid")).toBe(
+    "false",
+  );
+
+  const importPage = (): HTMLElement => inImport(".page");
+  await vi.waitFor(() => {
+    expect(
+      [...importPage().querySelectorAll(".problems li")].map(
+        (li) => li.textContent,
+      ),
+    ).toEqual([
+      "Receipt No.: Transaction ID invalid.",
+      "Amount (HKD), line 1: Amount can't be read or isn't above 0.",
+      "Date: Date can't be read.",
+    ]);
+  });
+  // The unreadable date and amount print ⚠, which every other empty field prints too.
+  const marks = [...importPage().querySelectorAll("mark")].map(
+    (m) => m.textContent,
+  );
+  expect(marks[0]).toBe("TXN-2026023-0001");
+  expect(marks).toContain("⚠");
+  vi.useRealTimers();
+});

@@ -16,6 +16,7 @@ import {
 
 /** A form field a problem is shown on. Line-item fields carry the item's index. */
 export type Field =
+  | "invoiceNo"
   | "date"
   | "receivedFrom"
   | "studentName"
@@ -25,8 +26,12 @@ export type Field =
   | `item-description-${string}`
   | `item-amount-${string}`;
 
-/** `required`: empty. `amount`: not a sum above 0. `date`: not a date. `future`: after today. */
-export type Reason = "required" | "amount" | "date" | "future";
+/**
+ * `required`: empty. `amount`: not a sum above 0. `date`: not a date. `future`: after today.
+ * `sheet-*`: a blocked Import entry's BlockReason, shown on the read-only field it concerns.
+ */
+export type Reason =
+  "required" | "amount" | "date" | "future" | `sheet-${BlockReason["kind"]}`;
 
 export interface Problem {
   readonly field: Field;
@@ -168,6 +173,24 @@ export type BlockReason =
   | { readonly kind: "duplicate"; readonly itemNos: readonly string[] }
   | { readonly kind: "amount" }
   | { readonly kind: "date" };
+
+/** Each of a blocked entry's reasons, flagged on the read-only field it concerns. */
+export function sheetProblems(reasons: readonly BlockReason[]): Problem[] {
+  return reasons.map((reason) => {
+    switch (reason.kind) {
+      case "transactionId":
+      case "duplicate":
+        return { field: "invoiceNo", reason: `sheet-${reason.kind}` };
+      case "amount":
+        // An imported Invoice has the one line item its sheet row holds.
+        return { field: "item-amount-0", reason: "sheet-amount" };
+      case "date":
+        return { field: "date", reason: "sheet-date" };
+      default:
+        return reason satisfies never;
+    }
+  });
+}
 
 /** An entry's status. Ready and warned carry the Invoice Save writes. */
 export type EntryStatus =

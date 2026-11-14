@@ -125,5 +125,9 @@ export const enHK = {
     amount: "Enter an amount above 0, such as 1,234.50.",
     date: "Enter a date.",
     future: "This date is after today. Check it before saving.",
+    "sheet-transactionId": "Transaction ID invalid.",
+    "sheet-duplicate": "Transaction ID used on more than one row.",
+    "sheet-amount": "Amount can't be read or isn't above 0.",
+    "sheet-date": "Date can't be read.",
   },
 };

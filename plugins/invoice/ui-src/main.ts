@@ -28,6 +28,7 @@ import {
   importEntry,
   review,
   reviewBatch,
+  sheetProblems,
   type BlockReason,
   type EntryStatus,
   type ImportEntry,
@@ -106,7 +107,7 @@ byId("button", "dismiss").textContent = t("result.dismiss");
 const rememberedName = (): string =>
   data.receivedBy.kind === "set" ? data.receivedBy.name : "";
 /** Remembers a newly typed Received by for later Invoices, then refreshes Save. */
-function edited(draft: InvoiceDraft): void {
+function typed(draft: InvoiceDraft): void {
   const name = draft.receivedBy.trim();
   if (name !== "" && name !== rememberedName())
     update({ ...data, receivedBy: { kind: "set", name } });
@@ -115,7 +116,7 @@ function edited(draft: InvoiceDraft): void {
 let fillDraft = blankDraft(today(), rememberedName());
 const fillEditor = createEditor("none", template, (draft) => {
   fillDraft = draft;
-  edited(draft);
+  typed(draft);
 });
 tabs["fill-in"].panel.append(fillEditor.element);
 fillEditor.load(fillDraft, t("editor.assignedOnSave"));
@@ -137,10 +138,20 @@ interface Batch {
   readonly hidden: number;
   /** The entry in the editor. */
   current: number;
-  /** Whether staff typed or skipped anything since the read, so Refresh asks first. */
-  edited: boolean;
 }
 let importState: ImportState = { kind: "setup" };
+/** Whether Save is writing: the form and the sheet reads wait for it. */
+let saving = false;
+
+/** Whether an entry is skipped or differs from its sheet row, so Refresh asks before discarding it. */
+function edited(batch: Batch): boolean {
+  return batch.entries.some((e) => {
+    // Received by is remembered across reads, so a name alone loses nothing. Both drafts are built
+    // by importEntry and the editor's spreads, so their keys stringify in the same order.
+    const fresh = importEntry(e.sourceRow, e.draft.receivedBy).draft;
+    return e.skipped || JSON.stringify(e.draft) !== JSON.stringify(fresh);
+  });
+}
 
 const refreshButton = byId("button", "refresh");
 const readAgainButton = byId("button", "read-again");
@@ -166,8 +177,7 @@ const importEditor = createEditor("sheet-values", template, (draft) => {
     throw new Error("the Import editor changed with no batch");
   const { batch } = importState;
   batch.entries[batch.current] = { ...entryAt(batch), draft };
-  batch.edited = true;
-  edited(draft);
+  typed(draft);
 });
 batchView.append(importEditor.element);
 
@@ -210,7 +220,6 @@ async function read(): Promise<void> {
       entries: fresh.map((r) => importEntry(r, rememberedName())),
       hidden: sheet.rows.length - fresh.length,
       current: 0,
-      edited: false,
     },
   };
   showImport();
@@ -238,7 +247,9 @@ function loadCurrent(): void {
 /** The Import tab for `importState`: its message, the batch and the current entry's status. */
 function showImport(): void {
   refreshConfirm.hidden = true;
-  refreshButton.disabled = importState.kind === "reading";
+  // A read mid-save would replace the batch Save is writing from.
+  refreshButton.disabled = importState.kind === "reading" || saving;
+  readAgainButton.disabled = saving;
   readAgainButton.hidden = true;
   invoicedCount.textContent = "";
   batchView.hidden = true;
@@ -313,8 +324,10 @@ function showEntry(batch: Batch, statuses: readonly EntryStatus[]): void {
     case "warned":
       importEditor.flag(status.problems);
       break;
-    case "ready":
     case "blocked":
+      importEditor.flag(sheetProblems(status.reasons));
+      break;
+    case "ready":
     case "skipped":
       importEditor.flag([]);
       break;
@@ -346,7 +359,6 @@ skipButton.addEventListener("click", () => {
   const { batch } = importState;
   const entry = entryAt(batch);
   batch.entries[batch.current] = { ...entry, skipped: !entry.skipped };
-  batch.edited = true;
   showSave();
 });
 nextButton.addEventListener("click", () => {
@@ -356,7 +368,7 @@ nextButton.addEventListener("click", () => {
   loadCurrent();
 });
 refreshButton.addEventListener("click", () => {
-  if (importState.kind === "batch" && importState.batch.edited)
+  if (importState.kind === "batch" && edited(importState.batch))
     refreshConfirm.hidden = false;
   else void read();
 });
@@ -408,8 +420,16 @@ function showSave(): void {
     default:
       active satisfies never;
   }
-  saveButton.disabled = why.length > 0;
+  saveButton.disabled = saving || why.length > 0;
   saveReason.textContent = why.join(" ");
+}
+
+function setSaving(on: boolean): void {
+  saving = on;
+  fillEditor.setReadOnly(on);
+  importEditor.setReadOnly(on);
+  showImport();
+  showSave();
 }
 
 for (const [name, { tab }] of Object.entries(tabs)) {
@@ -429,8 +449,8 @@ saveButton.addEventListener("click", () => {
     active === "import"
       ? () => saveBatch(folderPath, bytes)
       : () => saveFillInTab(folderPath, bytes);
-  saveButton.disabled = true;
   void (async () => {
+    setSaving(true);
     await hub.busy.set(t("save.busy"));
     try {
       resultLog.clear();
@@ -438,7 +458,7 @@ saveButton.addEventListener("click", () => {
       result.hidden = false;
     } finally {
       await hub.busy.clear();
-      showSave();
+      setSaving(false);
     }
   })();
 });
@@ -476,8 +496,7 @@ async function saveBatch(
 ): Promise<void> {
   if (importState.kind !== "batch")
     throw new Error("Save was clickable with no batch");
-  const { batch } = importState;
-  const statuses = reviewBatch(batch.entries, today());
+  const statuses = reviewBatch(importState.batch.entries, today());
   const saved: InvoiceNo[] = [];
   for (const status of statuses) {
     if (status.kind !== "ready" && status.kind !== "warned") continue;
@@ -506,8 +525,9 @@ async function saveBatch(
         outcome satisfies never;
     }
   }
-  // By Transaction ID, since staff may have edited entries while it saved. A Refresh mid-save
-  // replaces the batch; that read already hid nothing newer, so the next read hides these.
+  // From the live batch, by Transaction ID: staff may have picked another entry meanwhile. Reads
+  // wait for Save, so it is still the batch this save started from.
+  const { batch } = importState;
   const done = new Set<string>(saved);
   batch.entries = batch.entries.filter(
     (e) => !done.has(e.sourceRow.transactionId),

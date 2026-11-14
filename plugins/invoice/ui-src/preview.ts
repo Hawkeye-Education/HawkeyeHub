@@ -79,6 +79,8 @@ function printedFor(page: Page, field: Field): readonly string[] {
     return [item[1] === "amount" ? line.amount : line.description];
   }
   switch (field) {
+    case "invoiceNo":
+      return [page.invoiceNo];
     case "date":
       return [page.date];
     case "receivedFrom":
@@ -107,6 +109,8 @@ function label(field: Field): string {
       n: Number(item[2]) + 1,
     });
   switch (field) {
+    case "invoiceNo":
+      return t("editor.invoiceNo");
     case "date":
       return t("editor.date");
     case "receivedFrom":

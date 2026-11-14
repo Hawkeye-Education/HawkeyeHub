@@ -77,6 +77,13 @@ main {
   outline: 2px solid var(--hub-color-danger);
   color: var(--hub-color-danger);
 }
+/* The fieldset that makes the whole form read-only while Save writes: no box of its own. */
+.invoice-form > fieldset {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-inline-size: 0;
+}
 .line-item {
   display: grid;
   grid-template-columns: 2fr 1fr;
