@@ -37,7 +37,7 @@ main {
   gap: var(--hub-space-3);
 }
 #batch button[aria-current="true"] {
-  font-weight: bold;
+  font-weight: var(--hub-weight-strong);
 }
 .remark {
   white-space: pre-line; /* a Remark may span several lines */
@@ -51,7 +51,7 @@ main {
   margin-inline-end: auto;
 }
 [role="tab"][aria-selected="true"] {
-  font-weight: bold;
+  font-weight: var(--hub-weight-strong);
 }
 /* Form left, page right (the Preview's column). */
 .editing-screen {
@@ -64,6 +64,7 @@ main {
   min-width: 0;
   align-self: start;
 }
+/* ADR 0006 has no --hub-* border-width token: the widths below are layout, every colour a token. */
 .problems {
   margin: 0;
   padding: var(--hub-space-2) var(--hub-space-2) var(--hub-space-2)

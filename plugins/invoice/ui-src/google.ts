@@ -119,7 +119,9 @@ async function call(
 
 const Token = z.object({ access_token: z.string().min(1) });
 // FORMATTED_VALUE (the default) gives every cell as a string. Google leaves out `values` for an
-// empty range and trailing blank cells in a row; parseCashFlow reads a short row as blanks.
+// empty range and trailing blank cells in a row ("For output, empty trailing rows and columns will
+// not be included": https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values#ValueRange),
+// so parseCashFlow reads a short row as blanks.
 const ValueRange = z.object({
   values: z.array(z.array(z.string())).optional(),
 });
@@ -135,7 +137,8 @@ export async function readSheet(
     `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(RANGE)}`,
     { headers: { authorization: `Bearer ${token}` } },
   );
-  return ValueRange.parse(await res.json()).values ?? []; // absent `values`: an empty range
+  // Absent `values` is an empty range (ValueRange docs above; the "an empty range" test covers it).
+  return ValueRange.parse(await res.json()).values ?? [];
 }
 
 // ponytail: a fresh token for every read; reads are once per open plus Refresh, so no token cache.
@@ -256,7 +259,7 @@ export function parseCashFlow(grid: readonly string[][]): CashFlow {
         (cells) =>
           (i: number): string =>
             (cells[i] ?? "").trim(),
-      ) // a short row ends in blanks
+      ) // a short row ends in blanks: Google omits trailing empty cells (ValueRange docs, at ValueRange above)
       .filter((cell) => cell(2) === "Revenues")
       .map((cell) => ({
         itemNo: cell(0),
