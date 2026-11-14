@@ -77,13 +77,15 @@ export const enHK = {
   },
   save: {
     one: "Save",
-    many: "Save {{n}} Invoices",
+    many_one: "Save {{count}} Invoice",
+    many_other: "Save {{count}} Invoices",
     noTemplate: "Import the Official Receipt template in Settings first.",
     noFolder: "Choose a save folder in Settings first.",
     nothingReady: "Nothing ready to save yet.",
     toFillIn: "Fill in the flagged fields first.",
     busy: "Saving Invoices",
     written: "Saved {{name}}",
+    exists: "Already saved {{name}}",
     failed: "Couldn't save {{name}}: {{message}}",
   },
   result: {

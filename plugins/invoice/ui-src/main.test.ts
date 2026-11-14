@@ -984,7 +984,7 @@ test("a filled-in Invoice turns ready, a future-dated one warned, and Save count
 
   fillImport();
   expect(picker()[0]).toBe("TXN-20260703-0001 · ready");
-  expect(saveButton().textContent).toBe("Save 1 Invoices");
+  expect(saveButton().textContent).toBe("Save 1 Invoice");
 
   choose(1);
   // Received by is remembered from the first Invoice.
@@ -1008,7 +1008,7 @@ test("Skip leaves an Invoice out of the count, and Next steps through the batch"
   vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
   await openImport([SHEET]);
   fillImport();
-  expect(saveButton().textContent).toBe("Save 1 Invoices");
+  expect(saveButton().textContent).toBe("Save 1 Invoice");
 
   $("skip").click();
   expect(picker()[0]).toBe("TXN-20260703-0001 · skipped");
@@ -1021,6 +1021,64 @@ test("Skip leaves an Invoice out of the count, and Next steps through the batch"
   expect(inImport(".invoice-no").textContent).toBe("TXN-20261015-0001");
   expect(text("remark")).toBe("");
   expect($<HTMLButtonElement>("next").disabled).toBe(true);
+  vi.useRealTimers();
+});
+
+test("Save N Invoices writes every ready one, carries on past failures, and remembers what was saved", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const sheet = [
+    HEADER,
+    row("1", "1/7/2026", "Revenues", "TXN-20260701-0001", "HKD$100.00"),
+    row("2", "2/7/2026", "Revenues", "TXN-20260702-0001", "HKD$200.00"),
+    row("3", "3/7/2026", "Revenues", "TXN-20260703-0001", "HKD$300.00"),
+    row("4", "4/7/2026", "Revenues", "TXN-20260704-0001", "HKD$400.00"),
+  ];
+  const [fake] = await openImport([sheet]);
+  // Saved from another machine already.
+  fake.files.written.push({
+    folder: FOLDER,
+    name: "TXN-20260702-0001.docx",
+    bytes: new Uint8Array(),
+  });
+  await setUp(fake);
+  for (const i of [0, 1, 2]) {
+    choose(i);
+    fillImport();
+  }
+  expect(saveButton().textContent).toBe("Save 3 Invoices");
+  expect(saveButton().disabled).toBe(false);
+  fake.files.failNextWrite({
+    code: "write-failed",
+    folder: FOLDER,
+    name: "TXN-20260701-0001.docx",
+    message: "Access is denied.",
+  });
+
+  saveButton().click();
+  await vi.waitFor(() => {
+    expect(logLines($("result-log"))).toEqual([
+      {
+        tone: "danger",
+        text: "Couldn't save TXN-20260701-0001.docx: Access is denied.",
+      },
+      { tone: "info", text: "Already saved TXN-20260702-0001.docx" },
+      { tone: "success", text: "Saved TXN-20260703-0001.docx" },
+    ]);
+  });
+  expect(shown(await savedXml(fake, "TXN-20260703-0001.docx"))).toContain(
+    "invoice_no: TXN-20260703-0001",
+  );
+  expect(fake.busy.state).toEqual({ kind: "idle" });
+  expect($("result").hidden).toBe(false);
+  // The failed one stays to retry, with what was typed; the saved ones leave the list.
+  expect(picker()).toEqual([
+    "TXN-20260701-0001 · ready",
+    "TXN-20260704-0001 · to fill in",
+  ]);
+  expect(saveButton().textContent).toBe("Save 1 Invoice");
+  expect(JSON.parse(localStorage.getItem("invoice") ?? "{}")).toMatchObject({
+    invoiced: ["TXN-20260702-0001", "TXN-20260703-0001"],
+  });
   vi.useRealTimers();
 });
 
