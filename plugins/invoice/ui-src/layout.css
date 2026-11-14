@@ -1,0 +1,25 @@
+/* PLUGIN_STANDARD.md §4.3: layout, plus every visual value from a --hub-* token, never a literal. */
+main {
+  padding: var(--hub-space-4);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hub-space-3);
+}
+.stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hub-space-1);
+}
+#settings > .stack {
+  max-width: 40rem;
+  padding-block: var(--hub-space-3);
+}
+.muted {
+  font-size: var(--hub-text-sm);
+  color: var(--hub-color-fg-muted);
+}
+[role="alert"] {
+  color: var(--hub-color-danger);
+}

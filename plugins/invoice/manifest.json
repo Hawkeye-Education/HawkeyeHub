@@ -1,0 +1,12 @@
+{
+  "id": "invoice",
+  "version": "0.1.0",
+  "hubApi": "^1.5.0",
+  "name": "Invoice",
+  "description": "Turn revenue on the Cash Flow Sheet into Official Receipts filled from the company's template, or fill one in by hand.",
+  "platforms": ["win32-x64", "darwin-arm64"],
+  "identity": { "kind": "none" },
+  "stores": [],
+  "backend": { "kind": "none" },
+  "assistant": { "kind": "none" }
+}

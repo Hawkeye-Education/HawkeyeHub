@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- The Hub preload has already set <html lang>, loaded the --hub-* tokens, the native-element
+         stylesheet and the Hub Kit, and exposed window.hub (PLUGIN_STANDARD.md §4.2). -->
+    <link rel="stylesheet" href="./layout.css" />
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <main class="stack">
+      <!-- The Settings strip: open while anything is missing, a one-line summary once all is set. -->
+      <details id="settings">
+        <summary id="settings-summary"></summary>
+        <div class="stack">
+          <label class="stack-tight">
+            <span id="key-label"></span>
+            <span id="key-state" class="muted"></span>
+            <input id="key-file" type="file" accept=".json,application/json" />
+            <span id="key-error" role="alert"></span>
+          </label>
+          <label class="stack-tight">
+            <span id="sheet-label"></span>
+            <input id="sheet-link" type="url" />
+            <span id="sheet-error" role="alert"></span>
+          </label>
+          <label class="stack-tight">
+            <span id="template-label"></span>
+            <span id="template-state" class="muted"></span>
+            <input
+              id="template-file"
+              type="file"
+              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            />
+            <span id="template-error" role="alert"></span>
+          </label>
+          <hub-folder-field id="folder"></hub-folder-field>
+        </div>
+      </details>
+    </main>
+  </body>
+</html>
