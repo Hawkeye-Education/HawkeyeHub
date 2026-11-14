@@ -20,6 +20,40 @@ main {
   font-size: var(--hub-text-sm);
   color: var(--hub-color-fg-muted);
 }
-[role="alert"] {
+[role="alert"],
+.flag {
   color: var(--hub-color-danger);
+}
+.flag {
+  font-size: var(--hub-text-sm);
+}
+[aria-invalid="true"] {
+  border-color: var(--hub-color-danger);
+}
+.tab-row {
+  display: flex;
+  align-items: center;
+  gap: var(--hub-space-3);
+}
+.tab-row [role="tablist"] {
+  margin-inline-end: auto;
+}
+[role="tab"][aria-selected="true"] {
+  font-weight: bold;
+}
+/* Form left, page right (the Preview's column). */
+.editing-screen {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1fr) 2fr;
+  gap: var(--hub-space-4);
+}
+.line-item {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--hub-space-2);
+}
+.choice {
+  display: flex;
+  align-items: center;
+  gap: var(--hub-space-1);
 }

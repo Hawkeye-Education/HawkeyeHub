@@ -7,6 +7,10 @@ import { KEY_SECRET, parseKey, parseSheetLink, sheetLink } from "./google";
 import { t } from "./i18n";
 import { loadPluginData, savePluginData, type PluginData } from "./plugin-data";
 import { checkTemplate, loadTemplate, saveTemplate } from "./template";
+import { createEditor } from "./editor";
+import { blankDraft, today } from "./invoice";
+import { review } from "./review";
+import { fileName, saveFillIn } from "./save";
 
 /** The element `<tag id=id>`, which index.html always has. */
 function byId<K extends keyof HTMLElementTagNameMap>(
@@ -52,6 +56,171 @@ let keyStored =
   stored.kind === "stored" && parseKey(stored.value).kind === "valid";
 let template = await loadTemplate();
 
+// --- The tabs and Save -----------------------------------------------------------------------
+
+const tabs = {
+  import: {
+    tab: byId("button", "tab-import"),
+    panel: byId("section", "import"),
+  },
+  "fill-in": {
+    tab: byId("button", "tab-fill-in"),
+    panel: byId("section", "fill-in"),
+  },
+};
+type Tab = keyof typeof tabs;
+let active: Tab = "import";
+const saveButton = byId("button", "save");
+const saveReason = byId("span", "save-reason");
+const result = byId("section", "result");
+const resultLog = byId("hub-log", "result-log");
+const openFolderButton = byId("button", "open-folder");
+tabs.import.tab.textContent = t("tab.import");
+tabs["fill-in"].tab.textContent = t("tab.fillIn");
+byId("p", "import-placeholder").textContent = t("import.placeholder");
+openFolderButton.textContent = t("result.openFolder");
+byId("button", "dismiss").textContent = t("result.dismiss");
+
+const rememberedName = (): string =>
+  data.receivedBy.kind === "set" ? data.receivedBy.name : "";
+let fillDraft = blankDraft(today(), rememberedName());
+const fillEditor = createEditor("none", (draft) => {
+  fillDraft = draft;
+  const name = draft.receivedBy.trim();
+  if (name !== "" && name !== rememberedName())
+    update({ ...data, receivedBy: { kind: "set", name } });
+  else showSave();
+});
+tabs["fill-in"].panel.append(fillEditor.element);
+fillEditor.load(fillDraft, t("editor.assignedOnSave"));
+
+function showTab(): void {
+  for (const [name, { tab, panel }] of Object.entries(tabs)) {
+    tab.setAttribute("aria-selected", String(name === active));
+    panel.hidden = name !== active;
+  }
+  showSave();
+}
+
+/** The Save button for the active tab, and why it is disabled. */
+function showSave(): void {
+  const fillReview = review(fillDraft, today());
+  fillEditor.flag(fillReview.kind === "ready" ? [] : fillReview.problems);
+  const why = [
+    ...(template.kind === "none" ? [t("save.noTemplate")] : []),
+    ...(data.folder.kind === "none" ? [t("save.noFolder")] : []),
+  ];
+  switch (active) {
+    case "import":
+      saveButton.textContent = t("save.many", { n: 0 });
+      why.push(t("save.nothingReady")); // until the Import ticket
+      break;
+    case "fill-in":
+      saveButton.textContent = t("save.one");
+      if (fillReview.kind === "to-fill-in") why.push(t("save.toFillIn"));
+      break;
+    default:
+      active satisfies never;
+  }
+  saveButton.disabled = why.length > 0;
+  saveReason.textContent = why.join(" ");
+}
+
+for (const [name, { tab }] of Object.entries(tabs)) {
+  tab.addEventListener("click", () => {
+    // Object.entries loses the key type; the keys are tabs'.
+    active = name as Tab;
+    showTab();
+  });
+}
+
+saveButton.addEventListener("click", () => {
+  const fillReview = review(fillDraft, today());
+  if (
+    active !== "fill-in" ||
+    template.kind === "none" ||
+    data.folder.kind === "none" ||
+    fillReview.kind === "to-fill-in"
+  )
+    throw new Error("Save was clickable with nothing to save");
+  const folderPath = data.folder.path;
+  const bytes = template.template.bytes;
+  saveButton.disabled = true;
+  void (async () => {
+    await hub.busy.set(t("save.busy"));
+    try {
+      const saved = await saveFillIn(folderPath, bytes, fillReview.invoice);
+      const name = fileName(saved.invoiceNo);
+      resultLog.clear();
+      switch (saved.kind) {
+        case "written":
+          resultLog.append({
+            tone: "success",
+            text: t("save.written", { name }),
+          });
+          fillDraft = blankDraft(today(), rememberedName());
+          fillEditor.load(fillDraft, t("editor.assignedOnSave"));
+          break;
+        case "failed":
+          resultLog.append({
+            tone: "danger",
+            text: t("save.failed", { name, message: saved.message }),
+          });
+          break;
+        default:
+          saved satisfies never;
+      }
+      result.hidden = false;
+    } finally {
+      await hub.busy.clear();
+      showSave();
+    }
+  })();
+});
+
+openFolderButton.addEventListener("click", () => {
+  if (data.folder.kind === "none")
+    throw new Error("a save showed with no folder");
+  const path = data.folder.path;
+  void (async () => {
+    try {
+      await hub.files.openFolder(path);
+    } catch (e) {
+      resultLog.append({ tone: "danger", text: notOpened(e) });
+    }
+  })();
+});
+
+/** Why `hub.files.openFolder` could not open the save folder. */
+function notOpened(e: unknown): string {
+  // Every window.hub rejection is a HubError (ADR 0009); TypeScript cannot type a promise's rejection.
+  const err = e as HubError;
+  switch (err.code) {
+    case "folder-not-opened":
+      return t("result.notOpened", { message: err.message });
+    case "secret-name-invalid":
+    case "secret-too-large":
+    case "backend-error":
+    case "store-not-declared":
+    case "bad-path":
+    case "not-found":
+    case "no-provider":
+    case "provider-missing":
+    case "provider-rejected":
+    case "provider-unreachable":
+    case "exists":
+    case "write-failed":
+      throw new Error(`hub.files.openFolder refused with ${err.code}`);
+    default: {
+      const unreachable: never = err;
+      throw new Error(`unhandled HubError ${String(unreachable)}`);
+    }
+  }
+}
+byId("button", "dismiss").addEventListener("click", () => {
+  result.hidden = true;
+});
+
 sheetInput.value = data.sheet.kind === "set" ? sheetLink(data.sheet.id) : "";
 folder.value = data.folder;
 
@@ -85,8 +254,10 @@ function show(): void {
     settings.open = true;
     complete = false;
   }
+  showSave();
 }
 show();
+showTab();
 
 keyFile.addEventListener("change", () => {
   void (async () => {

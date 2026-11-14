@@ -5,6 +5,7 @@
 import type { FolderPath } from "@hawkeye-hub/hub-api";
 import { z } from "zod";
 import { SheetId } from "./google";
+import { InvoiceNo } from "./invoice";
 
 const V1 = z.strictObject({
   v: z.literal(1),
@@ -26,7 +27,7 @@ const V1 = z.strictObject({
     z.strictObject({ kind: z.literal("set"), name: z.string().min(1) }),
   ]),
   /** The Invoice Nos. whose file was written, or met `exists`, from this machine. */
-  invoiced: z.array(z.string()),
+  invoiced: z.array(InvoiceNo),
 });
 const Stored = z.discriminatedUnion("v", [V1]);
 export type PluginData = z.infer<typeof V1>; // always the newest version

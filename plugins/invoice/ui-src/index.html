@@ -37,6 +37,25 @@
           <hub-folder-field id="folder"></hub-folder-field>
         </div>
       </details>
+      <div class="tab-row">
+        <div role="tablist">
+          <button id="tab-import" type="button" role="tab"></button>
+          <button id="tab-fill-in" type="button" role="tab"></button>
+        </div>
+        <span id="save-reason" class="muted"></span>
+        <button id="save" type="button"></button>
+      </div>
+      <section id="result" class="stack-tight" hidden>
+        <hub-log id="result-log"></hub-log>
+        <div>
+          <button id="open-folder" type="button"></button>
+          <button id="dismiss" type="button"></button>
+        </div>
+      </section>
+      <section id="import" role="tabpanel">
+        <p id="import-placeholder" class="muted"></p>
+      </section>
+      <section id="fill-in" role="tabpanel" hidden></section>
     </main>
   </body>
 </html>
