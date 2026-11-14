@@ -1,0 +1,319 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Answers "Previewer: how should an Invoice look before Save?" (issue #194).
+  Three structurally different Previewers on one page, switchable via ?variant=A|B|C (or ← →).
+  Double-click to open; needs internet (loads docx + docx-preview from jsDelivr).
+  The receipt is a STAND-IN built in code, not the real Official Receipt template (still private, see #197).
+  All data is fake. Saving is stubbed. Import batch of 4; Fill-in mode = a batch of one (toggle in the bar).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>PROTOTYPE · Invoice Previewer</title>
+<style>
+  :root {
+    --hub-bg: #f4f5f7; --hub-surface: #fff; --hub-text: #1d2330; --hub-muted: #667085;
+    --hub-border: #d8dce3; --hub-accent: #2f5bd3; --hub-danger: #c0362c; --hub-warn-bg: #fff3c4;
+    --hub-ok: #1f7a4d; --hub-radius: 8px; --hub-space-2: 8px; --hub-space-3: 12px; --hub-space-4: 16px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: var(--hub-bg); color: var(--hub-text); }
+  button { font: inherit; padding: 6px 12px; border: 1px solid var(--hub-border); border-radius: var(--hub-radius); background: var(--hub-surface); cursor: pointer; }
+  button[data-variant=primary] { background: var(--hub-accent); color: #fff; border-color: var(--hub-accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input, select, textarea { font: inherit; padding: 5px 8px; border: 1px solid var(--hub-border); border-radius: 6px; width: 100%; }
+  input[readonly] { background: var(--hub-bg); }
+  label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--hub-muted); }
+  label.flagged input, label.flagged select { border-color: var(--hub-danger); background: #fff6f5; }
+  label .err { color: var(--hub-danger); }
+  .row { display: flex; gap: var(--hub-space-3); align-items: center; flex-wrap: wrap; }
+  .stack { display: flex; flex-direction: column; gap: var(--hub-space-3); }
+  .grow { flex: 1; }
+  .muted { color: var(--hub-muted); }
+  .chip { font-size: 11px; padding: 1px 7px; border-radius: 99px; border: 1px solid; white-space: nowrap; }
+  .chip.ready { color: var(--hub-ok); } .chip.flagged { color: var(--hub-danger); } .chip.blocked { color:#fff; background: var(--hub-danger); border-color: var(--hub-danger);} .chip.skipped { color: var(--hub-muted); }
+  .banner { background: var(--hub-warn-bg); border: 1px solid #e7c95b; border-radius: var(--hub-radius); padding: 8px 12px; }
+  .banner.block { background: #fde8e6; border-color: var(--hub-danger); }
+  .banner ul { margin: 4px 0 0; padding-left: 18px; }
+
+  /* docx-preview output */
+  .paper-wrap { overflow: auto; background: #e6e8ec; border-radius: var(--hub-radius); padding: 12px; }
+  .paper-wrap .docx-wrapper { background: transparent !important; padding: 0 !important; }
+  .paper-wrap .docx-wrapper > section.docx { box-shadow: 0 2px 10px #0003; margin: 0 auto !important; }
+  .scaler { transform-origin: top left; }
+  mark.flag { background: #ffd84d; outline: 2px solid var(--hub-danger); border-radius: 2px; cursor: pointer; }
+  body.no-hl mark.flag { background: none; outline: none; }
+
+  main { padding: var(--hub-space-4); padding-bottom: 90px; max-width: 1200px; margin: 0 auto; }
+
+  /* A */
+  .a-toolbar { position: sticky; top: 0; z-index: 2; background: var(--hub-bg); padding: 8px 0; }
+  .a-actions { position: sticky; bottom: 64px; background: var(--hub-surface); border: 1px solid var(--hub-border); border-radius: var(--hub-radius); padding: 8px 12px; box-shadow: 0 4px 16px #0002; }
+  dialog { border: 1px solid var(--hub-border); border-radius: 12px; width: min(520px, 92vw); }
+  /* B */
+  .b-grid { display: grid; grid-template-columns: 340px 1fr; gap: var(--hub-space-4); align-items: start; }
+  .b-form { background: var(--hub-surface); border: 1px solid var(--hub-border); border-radius: var(--hub-radius); padding: 12px; position: sticky; top: 12px; }
+  /* C */
+  .c-grid { display: grid; grid-template-columns: 220px 1fr; gap: var(--hub-space-4); align-items: start; }
+  .c-rail { display: flex; flex-direction: column; gap: 8px; position: sticky; top: 12px; max-height: calc(100vh - 110px); overflow: auto; }
+  .c-card { background: var(--hub-surface); border: 2px solid transparent; border-radius: var(--hub-radius); padding: 6px; cursor: pointer; text-align: left; }
+  .c-card[aria-current=true] { border-color: var(--hub-accent); }
+  .c-card.skipped { opacity: .5; }
+  .c-thumb { height: 150px; overflow: hidden; pointer-events: none; background: #e6e8ec; border-radius: 4px; }
+  .pop { position: absolute; z-index: 5; background: var(--hub-surface); border: 1px solid var(--hub-border); border-radius: var(--hub-radius); padding: 10px; box-shadow: 0 8px 24px #0003; width: 280px; }
+
+  /* switcher: deliberately not part of the design */
+  #switcher { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); background: #111; color: #fff; border-radius: 99px; padding: 6px 10px; display: flex; gap: 10px; align-items: center; box-shadow: 0 6px 20px #0006; z-index: 10; font-size: 13px; }
+  #switcher button { background: #333; color: #fff; border: 0; border-radius: 99px; padding: 4px 10px; }
+  #switcher label { flex-direction: row; color: #ccc; align-items: center; gap: 4px; font-size: 12px; }
+  #state { position: fixed; right: 12px; bottom: 70px; max-width: 360px; z-index: 9; font-size: 11px; }
+  #state pre { max-height: 40vh; overflow: auto; background: #111; color: #9fe; padding: 8px; border-radius: 6px; margin: 4px 0 0; }
+  #state summary { cursor: pointer; background: #111; color: #fff; padding: 3px 8px; border-radius: 6px; display: inline-block; }
+</style>
+</head>
+<body>
+<main id="app"><p class="muted">Loading docx + docx-preview…</p></main>
+<details id="state"><summary>state</summary><pre></pre></details>
+<div id="switcher">
+  <button id="prev" title="←">◀</button><span id="vlabel"></span><button id="next" title="→">▶</button>
+  <label><input type="checkbox" id="fillin" style="width:auto" /> Fill-in mode</label>
+  <label><input type="checkbox" id="hl" checked style="width:auto" /> highlight flags</label>
+</div>
+
+<script type="module">
+import * as D from "https://cdn.jsdelivr.net/npm/docx@9.10.0/+esm";
+import { renderAsync } from "https://cdn.jsdelivr.net/npm/docx-preview@0.3.5/+esm";
+
+// ---------- fake data + review ----------
+const TXN = /^TXN-\d{8}-\d{4}$/;
+const METHODS = ["Cash", "Bank Transfer", "FPS", "Cheque", "Other"];
+const importBatch = () => [
+  { no: "TXN-20261103-0001", date: "2026-11-03", from: "Chan Tai Man", student: "Chan Siu Ming", items: [{ desc: "Tuition – November (8 lessons)", amt: 3200 }], method: "Bank Transfer", remarks: "", by: "Staff A" },
+  { no: "TXN-20261104-0002", date: "2026-11-04", from: "Wong Mei Ling", student: "", items: [{ desc: "Tuition – November (4 lessons)", amt: 1600 }], method: "FPS", remarks: "", by: "Staff A" },
+  { no: "TXN-2026115-03", date: "2026-11-05", from: "Lee Ka Wai", student: "Lee Chun Hei", items: [{ desc: "Exam prep workshop", amt: 950 }], method: "Bank Transfer", remarks: "", by: "Staff A" },
+  { no: "TXN-20261106-0004", date: "2026-11-06", from: "", student: "Ho Wing Yan", items: [{ desc: "Tuition – November (8 lessons)", amt: 3200 }], method: "Cash", remarks: "Paid at centre", by: "Staff A" },
+].map((inv) => ({ ...inv, status: "pending" }));
+const fillInBatch = () => [{ no: "FI-0001", date: "2026-11-14", from: "", student: "", items: [{ desc: "", amt: 0 }], method: "", remarks: "", by: "Staff A", status: "pending" }];
+
+function review(inv) {
+  const f = [];
+  if (!TXN.test(inv.no) && !inv.no.startsWith("FI-")) f.push({ field: "no", msg: "Invoice No. is not TXN-YYYYMMDD-NNNN", blocks: true });
+  if (!inv.from.trim()) f.push({ field: "from", msg: "Received from: no parent name found" });
+  if (!inv.student.trim()) f.push({ field: "student", msg: "Student Name: not found in Remark" });
+  if (!inv.method) f.push({ field: "method", msg: "Payment Method not chosen" });
+  if (inv.items.some((i) => !i.desc.trim())) f.push({ field: "desc", msg: "Line item has no description" });
+  if (!(total(inv) > 0)) f.push({ field: "amt", msg: "Total is zero" });
+  return f;
+}
+const total = (inv) => inv.items.reduce((s, i) => s + Number(i.amt || 0), 0);
+const status = (inv) => inv.status === "skipped" ? "skipped" : review(inv).some((f) => f.blocks) ? "blocked" : review(inv).length ? "flagged" : "ready";
+const words = (n) => n ? `Hong Kong Dollars ${n.toLocaleString("en")} Only / 港幣${n.toLocaleString("en")}元正` : "";
+const MISSING = "⚠ missing";
+
+// ---------- stand-in Official Receipt .docx ----------
+const T = (text, o = {}) => new D.TextRun({ text, font: { ascii: "Arial", eastAsia: "Microsoft JhengHei" }, size: 20, ...o });
+const P = (runs, o = {}) => new D.Paragraph({ children: Array.isArray(runs) ? runs : [runs], spacing: { after: 60 }, ...o });
+const cell = (kids, w, o = {}) => new D.TableCell({ children: kids, width: { size: w, type: D.WidthType.PERCENTAGE }, margins: { top: 60, bottom: 60, left: 100, right: 100 }, ...o });
+const val = (v) => T(v || MISSING, { bold: true });
+async function buildDocx(inv) {
+  const kv = (k, v) => new D.TableRow({ children: [cell([P(T(k))], 35), cell([P(val(v))], 65)] });
+  const items = inv.items.map((i) => new D.TableRow({ children: [cell([P(val(i.desc))], 75), cell([P(T(i.amt ? Number(i.amt).toLocaleString("en", { minimumFractionDigits: 2 }) : MISSING, { bold: true }), { alignment: D.AlignmentType.RIGHT })], 25)] }));
+  const doc = new D.Document({ sections: [{ properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 900, bottom: 900, left: 1000, right: 1000 } } }, children: [
+    P(T("HAWKEYE EDUCATION", { bold: true, size: 32 }), { alignment: D.AlignmentType.CENTER }),
+    P(T("[company address line — stand-in]", { size: 16, color: "888888" }), { alignment: D.AlignmentType.CENTER }),
+    P(T("OFFICIAL RECEIPT 正式收據", { bold: true, size: 28 }), { alignment: D.AlignmentType.CENTER, spacing: { before: 200, after: 200 } }),
+    new D.Table({ width: { size: 100, type: D.WidthType.PERCENTAGE }, rows: [kv("Receipt No. 收據編號", inv.no), kv("Date 日期", inv.date), kv("Received from 茲收到 (Parent / Guardian 家長)", inv.from), kv("Student Name 學生姓名", inv.student)] }),
+    P(T(""), {}),
+    new D.Table({ width: { size: 100, type: D.WidthType.PERCENTAGE }, rows: [
+      new D.TableRow({ children: [cell([P(T("Description 項目", { bold: true }))], 75), cell([P(T("Amount (HKD) 金額", { bold: true }), { alignment: D.AlignmentType.RIGHT })], 25)] }),
+      ...items,
+      new D.TableRow({ children: [cell([P(T("Total 總額", { bold: true }), { alignment: D.AlignmentType.RIGHT })], 75), cell([P(T(total(inv).toLocaleString("en", { minimumFractionDigits: 2 }), { bold: true }), { alignment: D.AlignmentType.RIGHT })], 25)] }),
+    ] }),
+    P([T("Amount in words 金額（大寫）: "), val(words(total(inv)))], { spacing: { before: 160, after: 120 } }),
+    P([T("Payment Method 付款方式:  "), ...(inv.method ? METHODS.map((m) => T(`${m === inv.method ? "☑" : "☐"} ${m}    `)) : [val("")])]),
+    P([T("Remarks 備註: "), T(inv.remarks || "—")], { spacing: { before: 120 } }),
+    P(T(""), { spacing: { before: 600 } }),
+    new D.Table({ width: { size: 100, type: D.WidthType.PERCENTAGE }, rows: [new D.TableRow({ children: [
+      cell([P(T("Received by 收款人")), P(val(inv.by))], 34), cell([P(T("Signature 簽署")), P(T(" ")), P(T(" "))], 33), cell([P(T("Company Chop 公司印鑑")), P(T(" ")), P(T(" "))], 33),
+    ] })] }),
+  ] }] });
+  return D.Packer.toBlob(doc);
+}
+async function renderPaper(inv, host, scale = 1) {
+  host.innerHTML = "";
+  const inner = document.createElement("div"); inner.className = "scaler"; host.append(inner);
+  await renderAsync(await buildDocx(inv), inner, undefined, { inWrapper: true, ignoreLastRenderedPageBreak: true });
+  if (scale !== 1) { inner.style.transform = `scale(${scale})`; host.style.height = inner.scrollHeight * scale + 24 + "px"; host.style.overflow = "hidden"; }
+  // highlight flagged values inside the rendered page
+  const w = document.createTreeWalker(inner, NodeFilter.SHOW_TEXT); const hits = [];
+  while (w.nextNode()) if (w.currentNode.data.includes("⚠") || (review(inv).some((f) => f.blocks) && w.currentNode.data === inv.no)) hits.push(w.currentNode);
+  for (const t of hits) { const m = document.createElement("mark"); m.className = "flag"; m.dataset.field = t.data === inv.no ? "no" : guessField(t); t.replaceWith(m); m.append(t); }
+  return inner;
+}
+function guessField(textNode) { // which row is this ⚠ in? read the label cell beside it
+  const row = textNode.parentElement.closest("tr")?.textContent ?? textNode.parentElement.closest("p")?.textContent ?? "";
+  if (/Received from/.test(row)) return "from"; if (/Student/.test(row)) return "student"; if (/Payment/.test(row)) return "method";
+  if (/Amount in words/.test(row)) return "amt"; return textNode.parentElement.closest("td")?.cellIndex === 1 ? "amt" : "desc";
+}
+
+// ---------- shared bits ----------
+function flagBanner(inv) {
+  const f = review(inv); if (!f.length) return "";
+  const block = f.some((x) => x.blocks);
+  return `<div class="banner ${block ? "block" : ""}"><b>${block ? "Can't be saved until fixed" : "Check before saving"}</b><ul>${f.map((x) => `<li>${x.msg}</li>`).join("")}</ul></div>`;
+}
+function formHtml(inv, fill) {
+  const f = review(inv); const fl = (k) => f.find((x) => x.field === k);
+  const field = (k, label, input) => `<label class="${fl(k) ? "flagged" : ""}">${label}${input}${fl(k) ? `<span class="err">${fl(k).msg}</span>` : ""}</label>`;
+  return `
+    ${field("no", "Receipt No. (from Transaction ID, can't edit)", `<input data-k="no" value="${inv.no}" readonly>`)}
+    ${field("date", "Date", `<input type="date" data-k="date" value="${inv.date}">`)}
+    ${field("from", "Received from (Parent / Guardian)", `<input data-k="from" value="${inv.from}">`)}
+    ${field("student", "Student Name", `<input data-k="student" value="${inv.student}">`)}
+    ${inv.items.map((it, i) => `<div class="row">${field("desc", "Description", `<input data-item="${i}" data-ik="desc" value="${it.desc}">`).replace("<label", '<label style="flex:3"')}${field("amt", "HKD", `<input type="number" data-item="${i}" data-ik="amt" value="${it.amt}">`).replace("<label", '<label style="flex:1"')}</div>`).join("")}
+    ${fill ? `<button type="button" data-add-item>+ Line item</button>` : ""}
+    ${field("method", "Payment Method", `<select data-k="method"><option value=""></option>${METHODS.map((m) => `<option ${m === inv.method ? "selected" : ""}>${m}</option>`).join("")}</select>`)}
+    ${field("remarks", "Remarks", `<input data-k="remarks" value="${inv.remarks}">`)}
+    ${field("by", "Received by", `<input data-k="by" value="${inv.by}">`)}`;
+}
+function bindForm(root, inv, onChange) {
+  root.addEventListener("input", (e) => {
+    const el = e.target;
+    if (el.dataset.k && !el.readOnly) inv[el.dataset.k] = el.value;
+    if (el.dataset.item) inv.items[+el.dataset.item][el.dataset.ik] = el.dataset.ik === "amt" ? Number(el.value) : el.value;
+    onChange();
+  });
+  root.addEventListener("click", (e) => { if (e.target.matches("[data-add-item]")) { inv.items.push({ desc: "", amt: 0 }); onChange(true); } });
+}
+const savable = () => S.batch.filter((i) => status(i) === "ready" || status(i) === "flagged");
+function save() { const n = savable().length; alert(`(stub) Would save ${n} .docx file${n === 1 ? "" : "s"}:\n` + savable().map((i) => `  ${i.no}.docx`).join("\n")); }
+const debounce = (fn, ms = 250) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+
+// ---------- state ----------
+const S = { variant: new URLSearchParams(location.search).get("variant") ?? "A", fill: new URLSearchParams(location.search).has("fill"), i: 0, batch: [] };
+S.batch = S.fill ? fillInBatch() : importBatch();
+const cur = () => S.batch[S.i];
+const app = document.getElementById("app");
+function showState() { document.querySelector("#state pre").textContent = JSON.stringify({ variant: S.variant, mode: S.fill ? "fill-in" : "import", current: S.i, batch: S.batch.map((b) => ({ no: b.no, status: status(b), flags: review(b).map((f) => f.field) })), invoice: cur() }, null, 1); }
+
+// ---------- Variant A: Paper first ----------
+// The page at real size is the whole screen. Problems listed above it, highlighted on it. Edit is a detour (dialog).
+async function VariantA() {
+  const inv = cur(); const n = S.batch.length; const st = status(inv);
+  app.innerHTML = `
+    <div class="a-toolbar row">
+      <b>${S.fill ? "New Invoice" : `Invoice ${S.i + 1} of ${n}`}</b> <span class="chip ${st}">${st}</span>
+      ${S.fill ? "" : `<button id="a-prev" ${S.i ? "" : "disabled"}>‹ Previous</button><button id="a-next" ${S.i < n - 1 ? "" : "disabled"}>Next ›</button>`}
+      <span class="grow"></span>
+      <label style="flex-direction:row;align-items:center;gap:6px">Zoom <select id="a-zoom" style="width:auto"><option value="fit">Fit width</option><option value="1">100%</option><option value="0.6">60%</option></select></label>
+    </div>
+    <div class="stack">${flagBanner(inv)}<div class="paper-wrap" id="a-paper"></div>
+      <div class="a-actions row">
+        <button id="a-edit">✎ Edit</button>${S.fill ? "" : `<button id="a-skip">${inv.status === "skipped" ? "Un-skip" : "Skip this one"}</button>`}
+        <span class="grow muted">${S.fill ? "" : `${savable().length} of ${n} will be saved`}</span>
+        <button data-variant="primary" id="a-save" ${savable().length ? "" : "disabled"}>${S.fill ? "Save" : `Save ${savable().length} Invoices`}</button>
+      </div></div>
+    <dialog id="a-dlg"><form method="dialog" class="stack"><h3 style="margin:0">Edit ${inv.no}</h3><div class="stack" id="a-form">${formHtml(inv, S.fill)}</div><div class="row"><span class="grow"></span><button data-variant="primary">Done</button></div></form></dialog>`;
+  const paper = document.getElementById("a-paper"); const zoom = document.getElementById("a-zoom");
+  const draw = async () => { const z = zoom.value === "fit" ? Math.min(1, (paper.clientWidth - 24) / 794) : +zoom.value; await renderPaper(inv, paper, z); paper.querySelectorAll("mark.flag").forEach((m) => m.onclick = openEdit); };
+  const dlg = document.getElementById("a-dlg"); const openEdit = () => dlg.showModal();
+  bindForm(document.getElementById("a-form"), inv, () => {}); dlg.onclose = () => rerender();
+  zoom.value = S.zoomA ?? "fit"; zoom.onchange = () => { S.zoomA = zoom.value; draw(); };
+  document.getElementById("a-edit").onclick = openEdit;
+  document.getElementById("a-prev")?.addEventListener("click", () => { S.i--; rerender(); });
+  document.getElementById("a-next")?.addEventListener("click", () => { S.i++; rerender(); });
+  document.getElementById("a-skip")?.addEventListener("click", () => { inv.status = inv.status === "skipped" ? "pending" : "skipped"; if (S.i < n - 1) S.i++; rerender(); });
+  document.getElementById("a-save").onclick = save;
+  await draw();
+}
+
+// ---------- Variant B: Form + live preview ----------
+// Editing is the primary surface; the paper beside it re-renders as staff type. Flags live on the form fields.
+async function VariantB() {
+  const inv = cur(); const n = S.batch.length;
+  app.innerHTML = `
+    <div class="row" style="margin-bottom:12px">
+      ${S.fill ? "<b>New Invoice</b>" : `<select id="b-pick" style="width:auto">${S.batch.map((b, i) => `<option value="${i}" ${i === S.i ? "selected" : ""}>${i + 1}. ${b.no} — ${status(b)}</option>`).join("")}</select>`}
+      <span class="grow"></span><span class="muted">${S.fill ? "" : `${savable().length} of ${n} will be saved`}</span>
+      <button data-variant="primary" id="b-save" ${savable().length ? "" : "disabled"}>${S.fill ? "Save" : `Save ${savable().length} Invoices`}</button>
+    </div>
+    <div class="b-grid">
+      <form class="b-form stack" id="b-form" onsubmit="return false">${formHtml(inv, S.fill)}
+        ${S.fill ? "" : `<div class="row"><button type="button" id="b-skip">${inv.status === "skipped" ? "Un-skip" : "Skip this one"}</button><span class="grow"></span><button type="button" id="b-next" ${S.i < n - 1 ? "" : "disabled"}>Next ›</button></div>`}
+      </form>
+      <div class="stack"><div id="b-banner">${flagBanner(inv)}</div><div class="paper-wrap" id="b-paper"></div></div>
+    </div>`;
+  const paper = document.getElementById("b-paper");
+  const draw = async () => { await renderPaper(inv, paper, Math.min(1, (paper.clientWidth - 24) / 794)); document.getElementById("b-banner").innerHTML = flagBanner(inv); showState(); };
+  const redraw = debounce(draw);
+  bindForm(document.getElementById("b-form"), inv, (structural) => structural ? rerender() : redraw());
+  document.getElementById("b-form").addEventListener("change", () => rerender()); // refresh field flags on blur
+  document.getElementById("b-pick")?.addEventListener("change", (e) => { S.i = +e.target.value; rerender(); });
+  document.getElementById("b-next")?.addEventListener("click", () => { S.i++; rerender(); });
+  document.getElementById("b-skip")?.addEventListener("click", () => { inv.status = inv.status === "skipped" ? "pending" : "skipped"; rerender(); });
+  document.getElementById("b-save").onclick = save;
+  await draw();
+}
+
+// ---------- Variant C: Batch board ----------
+// The whole batch at a glance as page thumbnails; open one large; fix a flag by clicking it on the page.
+async function VariantC() {
+  const inv = cur(); const n = S.batch.length;
+  const counts = Object.groupBy ? Object.groupBy(S.batch, status) : {};
+  app.innerHTML = `
+    <div class="row" style="margin-bottom:12px">
+      <b>${S.fill ? "New Invoice" : "Import review"}</b>
+      ${S.fill ? "" : ["ready", "flagged", "blocked", "skipped"].map((s) => `<span class="chip ${s}">${(counts[s] ?? []).length} ${s}</span>`).join("")}
+      <span class="grow"></span>
+      <button data-variant="primary" id="c-save" ${savable().length ? "" : "disabled"}>${S.fill ? "Save" : `Save ${savable().length} Invoices`}</button>
+    </div>
+    <div class="c-grid">
+      <div class="c-rail">${S.batch.map((b, i) => `<button class="c-card ${b.status === "skipped" ? "skipped" : ""}" data-i="${i}" aria-current="${i === S.i}"><div class="c-thumb" id="c-th-${i}"></div><div class="row" style="margin-top:4px;gap:4px"><small class="grow">${b.no}</small><span class="chip ${status(b)}">${status(b)}</span></div></button>`).join("")}</div>
+      <div class="stack" style="position:relative">
+        <div class="row"><span class="muted grow">${review(inv).length ? "Click a highlighted value on the page to fix it." : "Nothing flagged."}</span>
+          ${S.fill ? `<button id="c-full">✎ Edit all fields</button>` : `<button id="c-skip">${inv.status === "skipped" ? "Un-skip" : "Skip"}</button>`}</div>
+        ${flagBanner(inv)}
+        <div class="paper-wrap" id="c-paper"></div>
+      </div>
+    </div>`;
+  app.querySelectorAll(".c-card").forEach((c) => c.onclick = () => { S.i = +c.dataset.i; rerender(); });
+  document.getElementById("c-skip")?.addEventListener("click", () => { inv.status = inv.status === "skipped" ? "pending" : "skipped"; rerender(); });
+  document.getElementById("c-save").onclick = save;
+  const paper = document.getElementById("c-paper");
+  await renderPaper(inv, paper, Math.min(1, (paper.clientWidth - 24) / 794));
+  const pop = (anchor, keys) => {
+    document.querySelector(".pop")?.remove();
+    const box = document.createElement("form"); box.className = "pop stack"; box.onsubmit = (e) => { e.preventDefault(); rerender(); };
+    const tmp = document.createElement("div"); tmp.innerHTML = formHtml(inv, S.fill);
+    const labels = [...tmp.querySelectorAll("label")].filter((l) => keys.some((k) => l.querySelector(`[data-k=${k}],[data-ik=${k}]`)));
+    box.append(...labels); box.insertAdjacentHTML("beforeend", `<div class="row"><span class="grow"></span><button data-variant="primary">Apply</button></div>`);
+    bindForm(box, inv, () => {});
+    const r = anchor.getBoundingClientRect(), host = paper.parentElement.getBoundingClientRect();
+    box.style.left = Math.max(0, r.left - host.left) + "px"; box.style.top = r.bottom - host.top + 6 + "px";
+    paper.parentElement.append(box); box.querySelector("input:not([readonly]),select")?.focus();
+  };
+  paper.querySelectorAll("mark.flag").forEach((m) => m.onclick = () => pop(m, m.dataset.field === "no" ? ["no"] : [m.dataset.field]));
+  document.getElementById("c-full")?.addEventListener("click", (e) => pop(e.target, ["date", "from", "student", "desc", "amt", "method", "remarks", "by"]));
+  for (const [i, b] of S.batch.entries()) await renderPaper(b, document.getElementById(`c-th-${i}`), 0.24);
+}
+
+// ---------- switcher ----------
+const VARIANTS = { A: ["Paper first", VariantA], B: ["Form + live preview", VariantB], C: ["Batch board", VariantC] };
+const keys = Object.keys(VARIANTS);
+async function rerender() {
+  document.querySelector(".pop")?.remove();
+  document.getElementById("vlabel").textContent = `${S.variant} (${VARIANTS[S.variant][0]})`;
+  await VARIANTS[S.variant][1](); showState();
+}
+function go(d) { S.variant = keys[(keys.indexOf(S.variant) + d + keys.length) % keys.length]; const u = new URL(location); u.searchParams.set("variant", S.variant); history.replaceState(null, "", u); rerender(); }
+document.getElementById("prev").onclick = () => go(-1);
+document.getElementById("next").onclick = () => go(1);
+document.addEventListener("keydown", (e) => { if (e.target.closest("input,textarea,select,[contenteditable]") || document.querySelector("dialog[open]")) return; if (e.key === "ArrowLeft") go(-1); if (e.key === "ArrowRight") go(1); });
+const fillBox = document.getElementById("fillin"); fillBox.checked = S.fill;
+fillBox.onchange = () => { S.fill = fillBox.checked; S.i = 0; S.batch = S.fill ? fillInBatch() : importBatch(); const u = new URL(location); S.fill ? u.searchParams.set("fill", "") : u.searchParams.delete("fill"); history.replaceState(null, "", u); rerender(); };
+document.getElementById("hl").onchange = (e) => document.body.classList.toggle("no-hl", !e.target.checked);
+if (!VARIANTS[S.variant]) S.variant = "A";
+rerender();
+</script>
+</body>
+</html>
