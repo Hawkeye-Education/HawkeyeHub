@@ -212,6 +212,17 @@ test("a file that isn't a .docx is refused", async () => {
     expect(text("template-error")).toContain("isn't a Word .docx");
   });
   expect(text("settings-summary")).toContain("Official Receipt template");
+
+  // A zip, but not a Word document.
+  $("template-error").textContent = "";
+  const zip = new JSZip().file("notes.txt", "hello");
+  pick(
+    "template-file",
+    new File([await zip.generateAsync({ type: "blob" })], "notes.docx"),
+  );
+  await vi.waitFor(() => {
+    expect(text("template-error")).toContain("isn't a Word .docx");
+  });
 });
 
 // --- The save folder and the whole strip ----------------------------------------------------

@@ -3,6 +3,7 @@
 // a template is company stationery.
 
 import { patchDetector } from "docx";
+import JSZip from "jszip";
 import { z } from "zod";
 
 /** Every placeholder a template must have, and the only ones it may have. */
@@ -42,14 +43,16 @@ export type TemplateCheck =
 
 /** Whether `bytes` is a `.docx` that opens and carries exactly the PLACEHOLDERS. */
 export async function checkTemplate(bytes: Uint8Array): Promise<TemplateCheck> {
-  let found: readonly string[];
+  let zip: JSZip;
   try {
-    // The same scan patchDocument fills by, so a placeholder Word split across runs counts as it will fill.
-    found = await patchDetector({ data: bytes });
+    zip = await JSZip.loadAsync(bytes);
   } catch {
-    // Not a zip, or a zip that isn't a Word document: staff picked the wrong file.
+    // Only the zip parse is in the try, and it fails only on a file that isn't a zip.
     return { kind: "not-docx" };
   }
+  if (zip.file("word/document.xml") === null) return { kind: "not-docx" };
+  // The same scan patchDocument fills by, so a placeholder Word split across runs counts as it will fill.
+  const found = await patchDetector({ data: bytes });
   const known: readonly string[] = PLACEHOLDERS;
   const missing = known.filter((name) => !found.includes(name));
   const unknown = [...new Set(found)].filter((name) => !known.includes(name));
@@ -74,6 +77,8 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
       resolve(req.result);
     };
     req.onerror = () => {
+      // `error` is typed `DOMException | null`, but is null only while no error has happened
+      // (https://w3c.github.io/IndexedDB/#dom-idbrequest-error), so the fallback never runs here.
       reject(req.error ?? new Error("IndexedDB request failed"));
     };
   });
