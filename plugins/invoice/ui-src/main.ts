@@ -18,12 +18,7 @@ import { t } from "./i18n";
 import { loadPluginData, savePluginData, type PluginData } from "./plugin-data";
 import { checkTemplate, loadTemplate, saveTemplate } from "./template";
 import { createEditor } from "./editor";
-import {
-  blankDraft,
-  today,
-  type InvoiceDraft,
-  type InvoiceNo,
-} from "./invoice";
+import { blankDraft, InvoiceNo, today, type InvoiceDraft } from "./invoice";
 import {
   importEntry,
   review,
@@ -119,7 +114,7 @@ const fillEditor = createEditor("none", template, (draft) => {
   typed(draft);
 });
 tabs["fill-in"].panel.append(fillEditor.element);
-fillEditor.load(fillDraft, t("editor.assignedOnSave"));
+fillEditor.load(fillDraft, { kind: "on-save" });
 
 // --- Import from Cash Flow Sheet --------------------------------------------------------------
 
@@ -240,7 +235,14 @@ function loadCurrent(): void {
     };
     batch.entries[batch.current] = entry;
   }
-  importEditor.load(entry.draft, entry.sourceRow.transactionId);
+  const { transactionId } = entry.sourceRow;
+  const invoiceNo = InvoiceNo.safeParse(transactionId);
+  importEditor.load(
+    entry.draft,
+    invoiceNo.success
+      ? { kind: "assigned", invoiceNo: invoiceNo.data }
+      : { kind: "invalid", transactionId },
+  );
   showSave();
 }
 
@@ -476,7 +478,7 @@ async function saveFillInTab(
     case "written":
       resultLog.append({ tone: "success", text: t("save.written", { name }) });
       fillDraft = blankDraft(today(), rememberedName());
-      fillEditor.load(fillDraft, t("editor.assignedOnSave"));
+      fillEditor.load(fillDraft, { kind: "on-save" });
       break;
     case "failed":
       resultLog.append({

@@ -4,11 +4,13 @@
 
 import { patchDocument, PatchType, TextRun, type IPatch } from "docx";
 import { amountInWords, type HkdCents } from "./amountInWords";
+import { t } from "./i18n";
 import {
   total,
   type CalendarDate,
   type Invoice,
   type InvoiceFields,
+  type Numbering,
   type PaymentMethod,
 } from "./invoice";
 
@@ -22,9 +24,23 @@ export function printedDate(date: CalendarDate): string {
   return `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`;
 }
 
+/** What `{{invoice_no}}` and the editor's Receipt No. show. */
+export function printedNo(numbering: Numbering): string {
+  switch (numbering.kind) {
+    case "assigned":
+      return numbering.invoiceNo;
+    case "on-save":
+      return t("editor.assignedOnSave");
+    case "invalid":
+      return numbering.transactionId;
+    default:
+      return numbering satisfies never;
+  }
+}
+
 /** The text each placeholder prints. The Preview prints a draft still being typed through it too. */
 export interface Page {
-  readonly invoiceNo: string;
+  readonly invoiceNo: Numbering;
   readonly date: string;
   readonly receivedFrom: string;
   readonly studentName: string;
@@ -41,9 +57,9 @@ export interface Page {
   readonly receivedBy: string;
 }
 
-/** What an Invoice's fields print, numbered `invoiceNo` (a number, or "Assigned on Save"). */
-export function invoicePage(fields: InvoiceFields, invoiceNo: string): Page {
-  const sum = total(fields.lineItems);
+/** What an Invoice's fields print, numbered `invoiceNo`. */
+export function invoicePage(fields: InvoiceFields, invoiceNo: Numbering): Page {
+  const sum = total(fields.lineItems.map((item) => item.amount));
   return {
     invoiceNo,
     date: printedDate(fields.date),
@@ -81,7 +97,10 @@ export async function fillTemplate(
   template: Uint8Array,
   invoice: Invoice,
 ): Promise<Uint8Array> {
-  return fillPage(template, invoicePage(invoice, invoice.invoiceNo));
+  return fillPage(
+    template,
+    invoicePage(invoice, { kind: "assigned", invoiceNo: invoice.invoiceNo }),
+  );
 }
 
 /** Fills the template with `page`'s text. */
@@ -113,7 +132,7 @@ export async function fillPage(
           amount: text(item.amount),
         })),
       },
-      invoice_no: text(page.invoiceNo),
+      invoice_no: text(printedNo(page.invoiceNo)),
       date: text(page.date),
       received_from: text(page.receivedFrom),
       student_name: text(page.studentName),

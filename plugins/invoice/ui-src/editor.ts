@@ -2,11 +2,13 @@
 // column on the right where the Preview renders. It holds the draft as staff type it and reports
 // each change; the tab reviews the draft and hands the problems back to be flagged on their fields.
 
+import { printedNo } from "./fill";
 import { t } from "./i18n";
 import {
   PAYMENT_KINDS,
   type DraftLineItem,
   type InvoiceDraft,
+  type Numbering,
   type PaymentKind,
 } from "./invoice";
 import { createPreview } from "./preview";
@@ -19,13 +21,18 @@ import type { StoredTemplate } from "./template";
  */
 export type Locked = "none" | "sheet-values";
 
+interface Shown {
+  readonly draft: InvoiceDraft;
+  readonly invoiceNo: Numbering;
+}
+
 export interface Editor {
   /** The editing screen, to place in a tab. */
   readonly element: HTMLElement;
   /** The right-hand column, where the Preview renders. */
   readonly page: HTMLElement;
-  /** Shows `draft`, numbered `invoiceNo` (a number, or "Assigned on Save"). The page renders from the first load on. */
-  load(draft: InvoiceDraft, invoiceNo: string): void;
+  /** Shows `draft`, numbered `invoiceNo`. The page renders from the first load on. */
+  load(draft: InvoiceDraft, invoiceNo: Numbering): void;
   /** Flags each problem on its field and on the page; fields not named are cleared. */
   flag(problems: readonly Problem[]): void;
   /** Re-renders the page in a changed template. */
@@ -63,22 +70,36 @@ export function createEditor(
     preview.element,
   );
 
-  let draft: InvoiceDraft;
-  let invoiceNo = "";
+  /** What `load` last showed. None yet is real: Import flags its editor before any batch is read. */
+  let shown: { readonly kind: "none" } | ({ readonly kind: "loaded" } & Shown) =
+    { kind: "none" };
   /** Other's text, kept while another method is picked so choosing Other again restores it. */
   let otherText = "";
   let problems: readonly Problem[] = [];
 
-  /** Whether `load` has run: Import flags its editor before any batch is read. */
-  let loaded = false;
-  function showPage(): void {
-    if (loaded) preview.show({ template, draft, invoiceNo, problems });
+  /** The loaded draft and number; the form only exists once `load` has run. */
+  function loaded(): Shown {
+    if (shown.kind === "none") throw new Error("the editor has nothing loaded");
+    return shown;
   }
 
-  function change(next: InvoiceDraft): void {
-    draft = next;
+  function showPage(): void {
+    if (shown.kind === "loaded")
+      preview.show({
+        template,
+        draft: shown.draft,
+        invoiceNo: shown.invoiceNo,
+        problems,
+      });
+  }
+
+  /** Applies one edit to the loaded draft and reports it. */
+  function change(patch: Partial<InvoiceDraft>): void {
+    const { draft, invoiceNo } = loaded();
+    const next = { ...draft, ...patch };
+    shown = { kind: "loaded", draft: next, invoiceNo };
     showPage();
-    onChange(draft);
+    onChange(next);
   }
 
   /** A labelled control with the flag its field's problems show in. */
@@ -118,8 +139,7 @@ export function createEditor(
   function lineItem(item: DraftLineItem, i: number): HTMLElement {
     const setItem = (patch: Partial<DraftLineItem>): void => {
       change({
-        ...draft,
-        lineItems: draft.lineItems.map((it, j) =>
+        lineItems: loaded().draft.lineItems.map((it, j) =>
           j === i ? { ...it, ...patch } : it,
         ),
       });
@@ -150,7 +170,7 @@ export function createEditor(
   }
 
   function paymentMethod(): HTMLElement {
-    const chosen = draft.paymentMethod;
+    const chosen = loaded().draft.paymentMethod;
     const radio = (value: PaymentKind | "other"): HTMLElement => {
       const input = el("input", {
         type: "radio",
@@ -160,7 +180,6 @@ export function createEditor(
       });
       input.addEventListener("change", () => {
         change({
-          ...draft,
           paymentMethod:
             value === "other"
               ? { kind: "other", text: otherText }
@@ -177,8 +196,8 @@ export function createEditor(
     if (chosen.kind === "other") otherText = chosen.text;
     const other = textInput("paymentOtherText", otherText, (text) => {
       otherText = text;
-      if (draft.paymentMethod.kind === "other")
-        change({ ...draft, paymentMethod: { kind: "other", text } });
+      if (loaded().draft.paymentMethod.kind === "other")
+        change({ paymentMethod: { kind: "other", text } });
     });
     other.dataset["field"] = "paymentOtherText";
     other.setAttribute("aria-label", t("editor.payment.otherText"));
@@ -196,13 +215,14 @@ export function createEditor(
   }
 
   function render(): void {
+    const { draft, invoiceNo } = loaded();
     const remarks = el("textarea", {
       name: "remarks",
       value: draft.remarks,
       rows: 2,
     });
     remarks.addEventListener("input", () => {
-      change({ ...draft, remarks: remarks.value });
+      change({ remarks: remarks.value });
     });
     const add = el(
       "button",
@@ -210,15 +230,19 @@ export function createEditor(
       t("editor.addLineItem"),
     );
     add.addEventListener("click", () => {
-      draft = {
-        ...draft,
-        lineItems: [...draft.lineItems, { description: "", amount: "" }],
-      };
+      change({
+        lineItems: [
+          ...loaded().draft.lineItems,
+          { description: "", amount: "" },
+        ],
+      });
       render();
-      showPage();
-      onChange(draft);
     });
-    const number = el("output", { className: "invoice-no" }, invoiceNo);
+    const number = el(
+      "output",
+      { className: "invoice-no" },
+      printedNo(invoiceNo),
+    );
     number.dataset["field"] = "invoiceNo";
     fields.replaceChildren(
       el(
@@ -234,7 +258,7 @@ export function createEditor(
           "date",
           draft.date,
           (date) => {
-            change({ ...draft, date });
+            change({ date });
           },
           { type: "date", readOnly: locked === "sheet-values" },
         ),
@@ -243,14 +267,14 @@ export function createEditor(
       labelled(
         t("editor.receivedFrom"),
         textInput("receivedFrom", draft.receivedFrom, (receivedFrom) => {
-          change({ ...draft, receivedFrom });
+          change({ receivedFrom });
         }),
         "receivedFrom",
       ),
       labelled(
         t("editor.studentName"),
         textInput("studentName", draft.studentName, (studentName) => {
-          change({ ...draft, studentName });
+          change({ studentName });
         }),
         "studentName",
       ),
@@ -271,7 +295,7 @@ export function createEditor(
       labelled(
         t("editor.receivedBy"),
         textInput("receivedBy", draft.receivedBy, (receivedBy) => {
-          change({ ...draft, receivedBy });
+          change({ receivedBy });
         }),
         "receivedBy",
       ),
@@ -298,11 +322,9 @@ export function createEditor(
   return {
     element,
     page: preview.element,
-    load(next, number) {
-      draft = next;
-      invoiceNo = number;
+    load(draft, invoiceNo) {
+      shown = { kind: "loaded", draft, invoiceNo };
       otherText = "";
-      loaded = true;
       render();
     },
     flag,

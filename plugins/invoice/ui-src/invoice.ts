@@ -12,6 +12,14 @@ export const InvoiceNo = z
   .brand<"InvoiceNo">();
 export type InvoiceNo = z.infer<typeof InvoiceNo>;
 
+/** The number an Invoice being edited shows. */
+export type Numbering =
+  | { readonly kind: "assigned"; readonly invoiceNo: InvoiceNo }
+  /** A Fill-in Invoice: Save assigns its number. */
+  | { readonly kind: "on-save" }
+  /** A blocked row's Transaction ID, as the sheet has it, that isn't a valid Invoice No. */
+  | { readonly kind: "invalid"; readonly transactionId: string };
+
 /** A calendar date as `<input type=date>` holds it: `YYYY-MM-DD`. */
 export const CalendarDate = z.iso.date().brand<"CalendarDate">();
 export type CalendarDate = z.infer<typeof CalendarDate>;
@@ -60,9 +68,9 @@ export interface Invoice extends InvoiceFields {
   readonly invoiceNo: InvoiceNo;
 }
 
-export function total(lineItems: readonly LineItem[]): HkdCents {
+export function total(amounts: readonly HkdCents[]): HkdCents {
   // A sum of whole non-negative cents is one too.
-  return lineItems.reduce((sum, item) => sum + item.amount, 0) as HkdCents;
+  return amounts.reduce((sum, amount) => sum + amount, 0) as HkdCents;
 }
 
 /** A form as staff typed it: any field may be empty or not yet valid. */

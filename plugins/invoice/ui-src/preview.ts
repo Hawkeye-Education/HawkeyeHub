@@ -5,9 +5,22 @@
 
 import { renderAsync } from "docx-preview";
 import { amountInWords, type HkdCents } from "./amountInWords";
-import { fillPage, invoicePage, money, printedDate, type Page } from "./fill";
+import {
+  fillPage,
+  invoicePage,
+  money,
+  printedDate,
+  printedNo,
+  type Page,
+} from "./fill";
 import { t } from "./i18n";
-import { CalendarDate, today, type InvoiceDraft } from "./invoice";
+import {
+  CalendarDate,
+  today,
+  total,
+  type InvoiceDraft,
+  type Numbering,
+} from "./invoice";
 import { parseAmount, review, type Field, type Problem } from "./review";
 import type { StoredTemplate } from "./template";
 
@@ -15,7 +28,7 @@ import type { StoredTemplate } from "./template";
 export interface PreviewState {
   readonly template: StoredTemplate;
   readonly draft: InvoiceDraft;
-  readonly invoiceNo: string;
+  readonly invoiceNo: Numbering;
   readonly problems: readonly Problem[];
 }
 
@@ -33,14 +46,13 @@ const DEBOUNCE_MS = 250;
 const MISSING = "⚠";
 
 /** What a draft still to fill in prints: each valid value as Save prints it, MISSING elsewhere. */
-function draftPage(draft: InvoiceDraft, invoiceNo: string): Page {
+function draftPage(draft: InvoiceDraft, invoiceNo: Numbering): Page {
   const shown = (value: string): string =>
     value.trim() === "" ? MISSING : value.trim();
   const date = CalendarDate.safeParse(draft.date);
   const amounts = draft.lineItems.map((item) => parseAmount(item.amount));
   const valid = amounts.filter((a): a is HkdCents => a !== "invalid");
-  // A sum of whole non-negative cents is one too.
-  const sum = valid.reduce((s, a) => s + a, 0) as HkdCents;
+  const sum = total(valid);
   // The total is unknown while any amount is.
   const totalKnown = valid.length === amounts.length && sum > 0;
   return {
@@ -80,7 +92,7 @@ function printedFor(page: Page, field: Field): readonly string[] {
   }
   switch (field) {
     case "invoiceNo":
-      return [page.invoiceNo];
+      return [printedNo(page.invoiceNo)];
     case "date":
       return [page.date];
     case "receivedFrom":
