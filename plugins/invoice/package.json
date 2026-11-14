@@ -1,0 +1,12 @@
+{
+  "name": "invoice",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "vitest": "5.0.5"
+  }
+}
