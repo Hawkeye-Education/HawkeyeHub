@@ -263,6 +263,8 @@ function refusal(e: unknown): string {
     case "provider-rejected":
     case "provider-unreachable":
     case "folder-not-opened":
+    case "exists":
+    case "write-failed":
       // hub.secrets.set raises none of these. The code only: the error names the secret, and an
       // uncaught error reaches the Plugin's log.
       throw new Error(`hub.secrets.set refused with ${err.code}`);

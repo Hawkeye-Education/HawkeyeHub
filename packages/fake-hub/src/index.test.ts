@@ -90,6 +90,38 @@ test("openFolder rejects with the HubError scripted for the next open only", asy
   expect(fake.files.opened).toEqual(["C:\\out", "C:\\out"]);
 });
 
+test("writeBytes records each file, rejects a name already in the folder with exists, and fails as scripted", async () => {
+  const fake = installFakeHub({ manifest, displayLanguage: "en-HK" });
+  fake.files.written.push({
+    folder: "C:\\out",
+    name: "a.docx",
+    bytes: new Uint8Array([1]),
+  });
+  const refused = {
+    code: "write-failed",
+    folder: "C:\\out",
+    name: "b.docx",
+    message: "disk full",
+  } as const;
+  fake.files.failNextWrite(refused);
+
+  await expect(
+    window.hub.files.writeBytes("C:\\out", "b.docx", new Uint8Array([2])),
+  ).rejects.toEqual(refused);
+  await expect(
+    window.hub.files.writeBytes("C:\\out", "a.docx", new Uint8Array([3])),
+  ).rejects.toEqual({
+    code: "exists",
+    folder: "C:\\out",
+    name: "a.docx",
+  });
+  await window.hub.files.writeBytes("C:\\out", "b.docx", new Uint8Array([4]));
+  expect(fake.files.written).toEqual([
+    { folder: "C:\\out", name: "a.docx", bytes: new Uint8Array([1]) },
+    { folder: "C:\\out", name: "b.docx", bytes: new Uint8Array([4]) },
+  ]);
+});
+
 const chatRequest = {
   model: { kind: "default" },
   system: "Draft a regex.",

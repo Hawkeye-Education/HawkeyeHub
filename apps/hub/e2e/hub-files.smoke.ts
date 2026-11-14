@@ -1,6 +1,9 @@
-// `hub.files` (#120): every Plugin UI picks a folder with the Hub's folder dialog, modal to the Hub
-// window, and reveals one with the OS shell. The dialog and the shell are stubbed in main.
+// `hub.files` (#120, #199): every Plugin UI picks a folder with the Hub's folder dialog, modal to the
+// Hub window, reveals one with the OS shell, and writes new files into one. The dialog and the shell
+// are stubbed in main; the writes are real.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ElectronApplication } from "@playwright/test";
 import {
   displayLanguageOf,
@@ -20,6 +23,11 @@ declare const window: {
     files: {
       pickFolder(title: string): Promise<PickFolderResult>;
       openFolder(path: string): Promise<void>;
+      writeBytes(
+        folder: string,
+        name: string,
+        bytes: Uint8Array,
+      ): Promise<void>;
     };
   };
 };
@@ -121,6 +129,35 @@ test("openFolder reveals the folder with shell.openPath", async ({
         () => (globalThis as unknown as { opened: string[] }).opened,
       ),
     ).toEqual([dataDir]);
+  } finally {
+    await hub.close();
+  }
+});
+
+test("writeBytes writes a new file, rejects one already there with exists, and throws for a name that is a path", async ({
+  dataDir,
+}) => {
+  const { hub, timer } = await openTimer(dataDir);
+  const write = (name: string) =>
+    timer.evaluate(
+      ([folder, name]) =>
+        window.hub.files
+          .writeBytes(folder, name, new TextEncoder().encode("receipt"))
+          .then(
+            () => ({ kind: "written" }),
+            (e: unknown) =>
+              e instanceof Error ? { kind: "error" } : { kind: "refused", e },
+          ),
+      [dataDir, name] as const,
+    );
+  try {
+    expect(await write("INV-1.docx")).toEqual({ kind: "written" });
+    expect(readFileSync(join(dataDir, "INV-1.docx"), "utf8")).toBe("receipt");
+    expect(await write("INV-1.docx")).toEqual({
+      kind: "refused",
+      e: { code: "exists", folder: dataDir, name: "INV-1.docx" },
+    });
+    expect(await write("../INV-2.docx")).toEqual({ kind: "error" });
   } finally {
     await hub.close();
   }

@@ -19,6 +19,13 @@ export interface BackendCall {
   readonly params: unknown;
 }
 
+/** A file in a folder, as `hub.files.writeBytes` wrote it. */
+export interface WrittenFile {
+  readonly folder: string;
+  readonly name: string;
+  readonly bytes: Uint8Array;
+}
+
 /** What `hub.busy` was last told. */
 export type BusyState =
   | { readonly kind: "idle" }
@@ -41,6 +48,13 @@ export interface FakeHub {
     failNextOpen(error: HubError): void;
     /** Every path `openFolder` was called with, whether or not it opened. */
     readonly opened: readonly string[];
+    /**
+     * The files in folders: seed it with files already there, and read what `writeBytes` wrote. A
+     * write to a `folder` and `name` already here rejects with `exists`, as the Hub's does.
+     */
+    readonly written: WrittenFile[];
+    /** The next `writeBytes` rejects with `error` and writes nothing, as when the OS refuses. */
+    failNextWrite(error: HubError): void;
   };
   readonly secrets: {
     /**
@@ -93,6 +107,8 @@ export function installFakeHub(options: {
   const picks: PickFolderResult[] = [];
   const opened: string[] = [];
   const openFailures: HubError[] = [];
+  const written: WrittenFile[] = [];
+  const writeFailures: HubError[] = [];
   const replies: string[] = [];
   const chats: AiChatRequest[] = [];
   let busy: BusyState = { kind: "idle" };
@@ -171,6 +187,18 @@ export function installFakeHub(options: {
         // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
         return Promise.reject(failure);
       },
+      writeBytes: (folder: string, name: string, bytes: Uint8Array) => {
+        const failure =
+          writeFailures.shift() ??
+          (written.some((f) => f.folder === folder && f.name === name)
+            ? ({ code: "exists", folder, name } satisfies HubError)
+            : undefined);
+        // A HubError is a plain object by contract (hub-api).
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+        if (failure !== undefined) return Promise.reject(failure);
+        written.push({ folder, name, bytes: bytes.slice() });
+        return Promise.resolve();
+      },
     }),
     // Each call a promise, so a thrown HubError reaches the UI as a rejection.
     secrets: Object.freeze({
@@ -239,6 +267,8 @@ export function installFakeHub(options: {
       queuePick: (result) => picks.push(result),
       failNextOpen: (error) => openFailures.push(error),
       opened,
+      written,
+      failNextWrite: (error) => writeFailures.push(error),
     },
     secrets: { stored: secrets },
     ai: { queueReply: (text) => replies.push(text), chats },
