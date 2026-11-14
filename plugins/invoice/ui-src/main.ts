@@ -2,7 +2,7 @@
 // the key, the Cash Flow Sheet link, the Official Receipt template and the save folder. It opens
 // itself naming what's missing, and collapses to one line once all are set. Nothing here logs.
 
-import type { HubError } from "@hawkeye-hub/hub-api";
+import type { FolderPath, HubError } from "@hawkeye-hub/hub-api";
 import {
   KEY_SECRET,
   parseCashFlow,
@@ -18,7 +18,12 @@ import { t } from "./i18n";
 import { loadPluginData, savePluginData, type PluginData } from "./plugin-data";
 import { checkTemplate, loadTemplate, saveTemplate } from "./template";
 import { createEditor } from "./editor";
-import { blankDraft, today, type InvoiceDraft } from "./invoice";
+import {
+  blankDraft,
+  today,
+  type InvoiceDraft,
+  type InvoiceNo,
+} from "./invoice";
 import {
   importEntry,
   review,
@@ -27,7 +32,7 @@ import {
   type EntryStatus,
   type ImportEntry,
 } from "./review";
-import { fileName, saveFillIn } from "./save";
+import { fileName, saveFillIn, writeInvoice } from "./save";
 
 /** The element `<tag id=id>`, which index.html always has. */
 function byId<K extends keyof HTMLElementTagNameMap>(
@@ -392,7 +397,7 @@ function showSave(): void {
       const n = statuses.filter(
         (s) => s.kind === "ready" || s.kind === "warned",
       ).length;
-      saveButton.textContent = t("save.many", { n });
+      saveButton.textContent = t("save.many", { count: n });
       if (n === 0) why.push(t("save.nothingReady"));
       break;
     }
@@ -403,8 +408,7 @@ function showSave(): void {
     default:
       active satisfies never;
   }
-  // Saving the batch is #207's: until then Import's Save shows its count but stays disabled.
-  saveButton.disabled = why.length > 0 || active === "import";
+  saveButton.disabled = why.length > 0;
   saveReason.textContent = why.join(" ");
 }
 
@@ -417,41 +421,20 @@ for (const [name, { tab }] of Object.entries(tabs)) {
 }
 
 saveButton.addEventListener("click", () => {
-  const fillReview = review(fillDraft, today());
-  if (
-    active !== "fill-in" ||
-    template.kind === "none" ||
-    data.folder.kind === "none" ||
-    fillReview.kind === "to-fill-in"
-  )
+  if (template.kind === "none" || data.folder.kind === "none")
     throw new Error("Save was clickable with nothing to save");
   const folderPath = data.folder.path;
   const bytes = template.template.bytes;
+  const save =
+    active === "import"
+      ? () => saveBatch(folderPath, bytes)
+      : () => saveFillInTab(folderPath, bytes);
   saveButton.disabled = true;
   void (async () => {
     await hub.busy.set(t("save.busy"));
     try {
-      const saved = await saveFillIn(folderPath, bytes, fillReview.invoice);
-      const name = fileName(saved.invoiceNo);
       resultLog.clear();
-      switch (saved.kind) {
-        case "written":
-          resultLog.append({
-            tone: "success",
-            text: t("save.written", { name }),
-          });
-          fillDraft = blankDraft(today(), rememberedName());
-          fillEditor.load(fillDraft, t("editor.assignedOnSave"));
-          break;
-        case "failed":
-          resultLog.append({
-            tone: "danger",
-            text: t("save.failed", { name, message: saved.message }),
-          });
-          break;
-        default:
-          saved satisfies never;
-      }
+      await save();
       result.hidden = false;
     } finally {
       await hub.busy.clear();
@@ -459,6 +442,84 @@ saveButton.addEventListener("click", () => {
     }
   })();
 });
+
+async function saveFillInTab(
+  folderPath: FolderPath,
+  bytes: Uint8Array,
+): Promise<void> {
+  const fillReview = review(fillDraft, today());
+  if (fillReview.kind === "to-fill-in")
+    throw new Error("Save was clickable with nothing to save");
+  const saved = await saveFillIn(folderPath, bytes, fillReview.invoice);
+  const name = fileName(saved.invoiceNo);
+  switch (saved.kind) {
+    case "written":
+      resultLog.append({ tone: "success", text: t("save.written", { name }) });
+      fillDraft = blankDraft(today(), rememberedName());
+      fillEditor.load(fillDraft, t("editor.assignedOnSave"));
+      break;
+    case "failed":
+      resultLog.append({
+        tone: "danger",
+        text: t("save.failed", { name, message: saved.message }),
+      });
+      break;
+    default:
+      saved satisfies never;
+  }
+}
+
+/** Writes each ready or warned entry in turn, past failures, then drops and records the saved ones. */
+async function saveBatch(
+  folderPath: FolderPath,
+  bytes: Uint8Array,
+): Promise<void> {
+  if (importState.kind !== "batch")
+    throw new Error("Save was clickable with no batch");
+  const { batch } = importState;
+  const statuses = reviewBatch(batch.entries, today());
+  const saved: InvoiceNo[] = [];
+  for (const status of statuses) {
+    if (status.kind !== "ready" && status.kind !== "warned") continue;
+    const { invoiceNo } = status.invoice;
+    const name = fileName(invoiceNo);
+    const outcome = await writeInvoice(folderPath, bytes, status.invoice);
+    switch (outcome.kind) {
+      case "written":
+        resultLog.append({
+          tone: "success",
+          text: t("save.written", { name }),
+        });
+        saved.push(invoiceNo);
+        break;
+      case "exists":
+        resultLog.append({ tone: "info", text: t("save.exists", { name }) });
+        saved.push(invoiceNo);
+        break;
+      case "failed":
+        resultLog.append({
+          tone: "danger",
+          text: t("save.failed", { name, message: outcome.message }),
+        });
+        break;
+      default:
+        outcome satisfies never;
+    }
+  }
+  // By Transaction ID, since staff may have edited entries while it saved. A Refresh mid-save
+  // replaces the batch; that read already hid nothing newer, so the next read hides these.
+  const done = new Set<string>(saved);
+  batch.entries = batch.entries.filter(
+    (e) => !done.has(e.sourceRow.transactionId),
+  );
+  batch.current = Math.min(
+    batch.current,
+    Math.max(batch.entries.length - 1, 0),
+  );
+  update({ ...data, invoiced: [...data.invoiced, ...saved] });
+  showImport();
+  loadCurrent();
+}
 
 openFolderButton.addEventListener("click", () => {
   if (data.folder.kind === "none")
