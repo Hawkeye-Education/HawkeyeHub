@@ -30,6 +30,18 @@ main {
 [aria-invalid="true"] {
   border-color: var(--hub-color-danger);
 }
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hub-space-3);
+}
+#batch button[aria-current="true"] {
+  font-weight: bold;
+}
+.remark {
+  white-space: pre-line; /* a Remark may span several lines */
+}
 .tab-row {
   display: flex;
   align-items: center;
