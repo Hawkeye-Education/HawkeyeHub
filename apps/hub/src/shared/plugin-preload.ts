@@ -37,6 +37,15 @@ export const FILES_PICK_FOLDER = "hub:files-pick-folder";
 /** The preload invokes this with the folder's absolute path; main answers an `OpenFolderAnswer`. */
 export const FILES_OPEN_FOLDER = "hub:files-open-folder";
 
+/** The preload invokes this with a `WriteBytesCall`; main answers a `StoreAnswer<undefined>`. */
+export const FILES_WRITE_BYTES = "hub:files-write-bytes";
+
+export interface WriteBytesCall {
+  folder: string;
+  name: string;
+  bytes: Uint8Array;
+}
+
 /** Whether the OS opened the folder, or the message it failed with. */
 export type OpenFolderAnswer =
   { kind: "opened" } | { kind: "failed"; message: string };

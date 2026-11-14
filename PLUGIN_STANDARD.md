@@ -133,12 +133,15 @@ Before your code runs, the Hub preload has set `<html lang>`, loaded the `--hub-
 | Log for diagnostics | `console.log`/`info`/`warn`/`error`; the Hub writes them to the Plugin's log (§1) |
 | A folder the Backend should read or write | `hub.files.pickFolder(title)` |
 | Reveal a folder in Explorer or Finder | `hub.files.openFolder(path)` |
+| Write files into a folder staff picked, without a Backend | `hub.files.writeBytes(folder, name, bytes)` (Hub API 1.5.0) |
 | Talk to your Backend | `hub.backend` |
 | Read or write a Shared Store | `hub.stores` |
 | Call an AI model from your own UI | `hub.ai` |
 | Keep a key or password encrypted | `hub.secrets` (§4.10) |
 | Warn staff before they close mid-work | `hub.busy` |
 | Who is using the Plugin | `hub.identity` |
+
+`hub.files.writeBytes` writes one new file, atomically, and never over an existing one: it rejects with `exists` when `name` is already in the folder, and with `write-failed` (the OS's message) for anything else the OS refuses, including a folder that no longer exists. The folder may be one remembered from an earlier session. Each Plugin decides what to do on `exists`.
 
 `<input type=file>` gives a `File`, never a path, so a Backend cannot open it. When the Backend needs files, pick a folder and let the Backend list it, as the eraser does. A namespace exists only when the Manifest gives it a reason: there is no `hub.backend` without a Backend and no `hub.identity` unless identity is required. Read them once at startup:
 

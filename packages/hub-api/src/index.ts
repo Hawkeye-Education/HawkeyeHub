@@ -38,6 +38,18 @@ export type HubError =
       readonly path: string;
       readonly message: string;
     }
+  /** `hub.files.writeBytes`: a file named `name` is already in `folder`; nothing was written. */
+  | { readonly code: "exists"; readonly folder: string; readonly name: string }
+  /**
+   * `hub.files.writeBytes`: the OS refused the write (folder missing, no permission, disk full, a
+   * name the OS rejects); `message` is the OS's, in English. A failed write leaves nothing behind.
+   */
+  | {
+      readonly code: "write-failed";
+      readonly folder: string;
+      readonly name: string;
+      readonly message: string;
+    }
   /** `hub.secrets`: the name is blank or has a character outside `[a-z0-9-]`. */
   | { readonly code: "secret-name-invalid"; readonly name: string }
   /** `hub.secrets.set`: the value is over 64 KiB of UTF-8. */
@@ -102,12 +114,19 @@ export type PickFolderResult =
   | { readonly kind: "chosen"; readonly path: FolderPath }
   | { readonly kind: "cancelled" };
 
-/** Folders on staff's machine (ADR 0009). The Backend does the I/O on a picked path. */
+/** Folders on staff's machine (ADR 0009). Apart from `writeBytes`, the Backend does the I/O on a picked path. */
 export interface HubFiles {
   /** Opens the OS folder dialog, modal to the Hub window, with `title` as its title. */
   pickFolder(title: string): Promise<PickFolderResult>;
   /** Reveals the folder in Explorer or Finder. Rejects with `folder-not-opened`. */
   openFolder(path: string): Promise<void>;
+  /**
+   * Writes `bytes` as a new file `name` in the absolute `folder`, atomically, and never over an
+   * existing file: rejects with `exists` or `write-failed`. A folder that isn't absolute, or a `name`
+   * that is empty, `.`, `..` or holds `/` or `\`, is the Plugin's mistake and throws a plain `Error`.
+   * Since Hub API 1.5.0.
+   */
+  writeBytes(folder: string, name: string, bytes: Uint8Array): Promise<void>;
 }
 
 /** What `hub.secrets.get` comes to: the stored value, or no secret by that name. */

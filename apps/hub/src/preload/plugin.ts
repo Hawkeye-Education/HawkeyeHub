@@ -29,6 +29,7 @@ import {
   DISPLAY_LANGUAGE_ARG,
   FILES_OPEN_FOLDER,
   FILES_PICK_FOLDER,
+  FILES_WRITE_BYTES,
   HAS_BACKEND_ARG,
   HAS_STORES_ARG,
   SECRETS,
@@ -38,6 +39,7 @@ import {
   type OpenFolderAnswer,
   type StoreAnswer,
   type StoreChanged,
+  type WriteBytesCall,
 } from "../shared/plugin-preload";
 import type { SecretCall } from "../shared/secret-call";
 import type { StoreCall } from "../shared/store-call";
@@ -99,6 +101,16 @@ const files: HubFiles = {
       default:
         answer satisfies never;
     }
+  },
+  // Main refuses with the HubError the call rejects with, and throws for a bad argument.
+  writeBytes: async (folder, name, bytes) => {
+    const call: WriteBytesCall = { folder, name, bytes };
+    const answered = await ipcRenderer
+      .invoke(FILES_WRITE_BYTES, call)
+      .then((received: StoreAnswer<undefined>) => received);
+    // A HubError is a plain object by design (ADR 0009).
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    if (answered.kind === "refused") throw answered.refusal;
   },
 };
 
