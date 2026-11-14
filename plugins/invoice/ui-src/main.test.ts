@@ -1221,6 +1221,34 @@ test("no sheet row or typed name reaches the Plugin's log", async () => {
   vi.useRealTimers();
 });
 
+test("a full import and save logs nothing but Invoice Nos.", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
+  const spies = (["log", "info", "warn", "error"] as const).map((level) =>
+    vi.spyOn(console, level),
+  );
+  const [fake] = await openImport([SHEET]);
+  await setUp(fake);
+  fillImport();
+  saveButton().click();
+  await vi.waitFor(() => {
+    expect(fake.files.written).toHaveLength(1);
+  });
+  for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+  const logged = JSON.stringify(logLines($("result-log")));
+  expect(logged).toContain("TXN-20260703-0001");
+  for (const secret of [
+    "Mrs Wong",
+    "Wong Siu Ming",
+    "1,234.50",
+    "Agent Commission",
+    "{{",
+    "PRIVATE KEY",
+    SHEET_ID,
+  ])
+    expect(logged).not.toContain(secret);
+  vi.useRealTimers();
+});
+
 test("the Import tab previews its Invoice under its Transaction ID", async () => {
   vi.useFakeTimers({ toFake: ["Date"], now: TODAY });
   await openImport([SHEET]);
