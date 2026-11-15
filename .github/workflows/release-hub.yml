@@ -1,0 +1,56 @@
+name: Release Hub
+
+# On a `hub@<version>` tag (ADR 0005): check the tag matches the Hub's version, test, build the
+# Windows installer, launch it with the packaged smoke test, then create the release.
+on:
+  push:
+    tags: ["hub@*"]
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches the Hub's version
+        run: |
+          version="$(jq -r .version apps/hub/package.json)"
+          if [ "$GITHUB_REF_NAME" != "hub@$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match apps/hub/package.json version $version" >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The packaged smoke test's setup makes fixture Backends' venvs with `uv venv`, as in ci.yml.
+      - uses: astral-sh/setup-uv@v6
+      - run: pnpm --filter @hawkeye-hub/hub exec install-electron
+      - run: pnpm --filter @hawkeye-hub/hub test
+      - run: pnpm --filter @hawkeye-hub/hub package
+      - run: pnpm --filter @hawkeye-hub/hub exec playwright test e2e/packaged.smoke.ts
+      # A rerun keeps a published release as it is. A draft is what a run that failed mid-upload
+      # leaves, so it is replaced.
+      - run: |
+          if draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$draft" = "false" ]; then
+              echo "$GITHUB_REF_NAME is already published"
+              exit 0
+            fi
+            gh release delete "$GITHUB_REF_NAME" --yes
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            "apps/hub/dist/HawkeyeHub-Setup-$VERSION.exe" \
+            "apps/hub/dist/HawkeyeHub-Setup-$VERSION.exe.blockmap" \
+            --title "Hawkeye Hub $VERSION" --verify-tag \
+            --notes "Windows x64 installer (per-user, no admin). Unsigned: on first run, click **More info → Run anyway** in SmartScreen."
