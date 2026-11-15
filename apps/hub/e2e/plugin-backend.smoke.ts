@@ -8,7 +8,6 @@ import {
   type ElectronApplication,
   type Page,
 } from "@playwright/test";
-import { HUB_API_VERSION } from "../src/main/hub-api-version";
 import {
   displayLanguageOf,
   expect,
@@ -84,7 +83,7 @@ test("the Backend starts in its backend folder, without LANG or LC_*, and gets i
           "class-lists": join(dataDir, "stores", "class-lists"),
           seating: join(dataDir, "stores", "seating"),
         },
-        hubApi: HUB_API_VERSION,
+        hubApi: "1.5.0",
       },
       dataDirExists: true,
       storesExist: { "class-lists": true, seating: true },
