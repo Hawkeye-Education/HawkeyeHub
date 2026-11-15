@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- The Hub preload has already set <html lang>, loaded the --hub-* tokens, the native-element
+         stylesheet and the Hub Kit, and exposed window.hub (PLUGIN_STANDARD.md §4.2). -->
+    <link rel="stylesheet" href="./layout.css" />
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <main class="stack">
+      <!-- The Settings strip: open while anything is missing, a one-line summary once all is set. -->
+      <details id="settings">
+        <summary id="settings-summary"></summary>
+        <div class="stack">
+          <label class="stack-tight">
+            <span id="key-label"></span>
+            <span id="key-state" class="muted"></span>
+            <input id="key-file" type="file" accept=".json,application/json" />
+            <span id="key-error" role="alert"></span>
+          </label>
+          <label class="stack-tight">
+            <span id="sheet-label"></span>
+            <input id="sheet-link" type="url" />
+            <span id="sheet-error" role="alert"></span>
+          </label>
+          <label class="stack-tight">
+            <span id="template-label"></span>
+            <span id="template-state" class="muted"></span>
+            <input
+              id="template-file"
+              type="file"
+              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            />
+            <span id="template-error" role="alert"></span>
+          </label>
+          <hub-folder-field id="folder"></hub-folder-field>
+        </div>
+      </details>
+      <div class="tab-row">
+        <div role="tablist">
+          <button id="tab-import" type="button" role="tab"></button>
+          <button id="tab-fill-in" type="button" role="tab"></button>
+        </div>
+        <span id="save-reason" class="muted"></span>
+        <button id="save" type="button"></button>
+      </div>
+      <section id="result" class="stack-tight" hidden>
+        <hub-log id="result-log"></hub-log>
+        <div>
+          <button id="open-folder" type="button"></button>
+          <button id="dismiss" type="button"></button>
+        </div>
+      </section>
+      <section id="import" role="tabpanel" class="stack">
+        <div class="row">
+          <button id="refresh" type="button"></button>
+          <span id="invoiced-count" class="muted"></span>
+        </div>
+        <div id="refresh-confirm" class="row" role="alert" hidden>
+          <span id="refresh-confirm-text"></span>
+          <button id="refresh-discard" type="button"></button>
+          <button id="refresh-cancel" type="button"></button>
+        </div>
+        <p id="import-state" role="status"></p>
+        <div><button id="read-again" type="button" hidden></button></div>
+        <div id="batch-view" class="stack" hidden>
+          <div id="batch" class="row"></div>
+          <div class="row">
+            <button id="skip" type="button"></button>
+            <button id="next" type="button"></button>
+          </div>
+          <p id="blocked" role="alert"></p>
+          <p class="muted">
+            <span id="remark-label"></span>
+            <span id="remark" class="remark"></span>
+          </p>
+        </div>
+      </section>
+      <section id="fill-in" role="tabpanel" hidden></section>
+    </main>
+  </body>
+</html>
