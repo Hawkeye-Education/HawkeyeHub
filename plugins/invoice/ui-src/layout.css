@@ -1,4 +1,8 @@
 /* PLUGIN_STANDARD.md §4.3: layout, plus every visual value from a --hub-* token, never a literal. */
+/* .row and .stack set display, which beats the hidden attribute's own display: none. */
+[hidden] {
+  display: none !important;
+}
 main {
   padding: var(--hub-space-4);
 }
@@ -64,6 +68,11 @@ main {
   min-width: 0;
   align-self: start;
 }
+/* docx-preview centres its page: an overflowing page spills left, outside scrollWidth. Sized to
+   its content, the wrapper's width is the page's natural width, which preview.ts scales down. */
+.page .docx-wrapper {
+  width: max-content;
+}
 /* ADR 0006 has no --hub-* border-width token: the widths below are layout, every colour a token. */
 .problems {
   margin: 0;
@@ -89,6 +98,13 @@ main {
   display: grid;
   grid-template-columns: 2fr 1fr;
   gap: var(--hub-space-2);
+}
+/* Fieldsets and inputs keep a min-content width by default, pushing the form into the page. */
+.invoice-form fieldset {
+  min-inline-size: 0;
+}
+.line-item > * {
+  min-width: 0;
 }
 .choice {
   display: flex;

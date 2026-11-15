@@ -207,7 +207,7 @@ export function createPreview(): Preview {
     const sheet = element.querySelector<HTMLElement>(".docx-wrapper");
     if (sheet === null) return; // the prompt shows, or nothing has rendered yet
     sheet.style.zoom = "";
-    const natural = sheet.scrollWidth;
+    const natural = sheet.offsetWidth; // width: max-content in layout.css
     // 0 while its tab is hidden; the observer fits it again once the tab shows.
     if (natural > 0)
       sheet.style.zoom = String(Math.min(1, element.clientWidth / natural));
